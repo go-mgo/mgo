@@ -85,8 +85,16 @@ func (server *mongoServer) RecycleSocket(socket *mongoSocket) {
 }
 
 func (server *mongoServer) Merge(other *mongoServer) {
+    server.Lock()
     server.Master = other.Master
     // XXX Copy socket cache here.
+    server.Unlock()
+}
+
+func (server *mongoServer) SetMaster(isMaster bool) {
+    server.Lock()
+    server.Master = isMaster
+    server.Unlock()
 }
 
 

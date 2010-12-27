@@ -2,7 +2,6 @@ package mongogo
 
 import (
     "strings"
-    "gobson"
     "sync"
     "os"
 )
@@ -51,6 +50,14 @@ func (cluster *mongoCluster) removeServer(server *mongoServer) {
     cluster.Unlock()
 }
 
+type isMasterResult struct {
+    IsMaster bool
+    Secondary bool
+    Primary string
+    Hosts []string
+    Passives []string
+}
+
 func (cluster *mongoCluster) syncServer(server *mongoServer) (
         hosts []string, err os.Error) {
 
@@ -73,55 +80,35 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (
 
     session := newSession(StrongConsistency, cluster, socket)
 
-    // XXX Use Run() here.
-    cmd := session.DB("admin").C("$cmd")
-    value, err := cmd.Find(gobson.M{"ismaster": 1}).One()
+    result := isMasterResult{}
+    err = session.Run("ismaster", &result)
     if err != nil {
         log("[sync] Command 'ismaster' to ", addr, " failed: ", err.String())
         return
     }
+    debugf("[sync] Result of 'ismaster' from %s: %#v", addr, result)
 
-    debugf("[sync] Result of 'ismaster' from %s: %#v", addr, value)
-
-    if master, _ := value["ismaster"].(bool); master {
-        // XXX Lock server here?
-        // Must fix statistics, most importantly for tests.
-        stats.trackConn(-1, server.Master)
-        server.Master = true
-        stats.trackConn(+1, server.Master)
+    if result.IsMaster {
         log("[sync] ", addr, " is a master.")
-    } else if slave, _ := value["secondary"].(bool); slave {
+        // Made an incorrect connection above, so fix stats.
+        stats.trackConn(-1, server.Master)
+        server.SetMaster(true)
+        stats.trackConn(+1, server.Master)
+    } else if result.Secondary {
         log("[sync] ", addr, " is a slave.")
     } else {
         log("[sync] ", addr, " is neither a master nor a slave.")
     }
 
-    // XXX That's hell.  Use structs here instead.
-    hosts = make([]string, 0, 5)
-    if primary, ok := value["primary"].(string); ok {
-        hosts = append(hosts, primary)
+    hosts = make([]string, 0, 1+len(result.Hosts)+len(result.Passives))
+    if result.Primary != "" {
+        // In front to speed up master discovery.
+        hosts = append(hosts, result.Primary)
     }
-    if hostsv, ok := value["hosts"]; ok {
-        if slice, ok := hostsv.([]interface{}); ok {
-            for _, host := range slice {
-                if str, ok := host.(string); ok {
-                    hosts = append(hosts, str)
-                }
-            }
-        }
-    }
-    if hostsv, ok := value["passives"]; ok {
-        if slice, ok := hostsv.([]interface{}); ok {
-            for _, host := range slice {
-                if str, ok := host.(string); ok {
-                    hosts = append(hosts, str)
-                }
-            }
-        }
-    }
+    hosts = append(hosts, result.Hosts...)
+    hosts = append(hosts, result.Passives...)
 
     session.Reset() // Recycle the socket.
-
     cluster.mergeServer(server)
 
     debugf("[sync] %s knows about the following peers: %#v", addr, hosts)

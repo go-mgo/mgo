@@ -98,6 +98,26 @@ func (session *Session) Reset() {
 
 
 // ---------------------------------------------------------------------------
+// Type management.
+
+func (session *Session) RunM(cmd interface{}) (value gobson.M, err os.Error) {
+    if name, ok := cmd.(string); ok {
+        cmd = gobson.M{name: 1}
+    }
+    c := session.DB("admin").C("$cmd")
+    return c.Find(cmd).OneM()
+}
+
+func (session *Session) Run(cmd interface{}, result interface{}) (err os.Error) {
+    if name, ok := cmd.(string); ok {
+        cmd = gobson.M{name: 1}
+    }
+    c := session.DB("admin").C("$cmd")
+    return c.Find(cmd).One(result)
+}
+
+
+// ---------------------------------------------------------------------------
 // Database, collection, and result operations.
 
 func (collection Collection) Insert(documents ...interface{}) os.Error {
@@ -117,7 +137,21 @@ func (collection Collection) Find(query interface{}) *Query {
     return q
 }
 
-func (query *Query) One() (value gobson.M, err os.Error) {
+func (query *Query) OneM() (doc gobson.M, err os.Error) {
+    m, err := query.one(nil)
+    if err == nil {
+         doc = m.(gobson.M)
+    }
+    return
+}
+
+func (query *Query) One(result interface{}) (err os.Error) {
+    _, err = query.one(result)
+    return err
+}
+
+func (query *Query) one(doc interface{}) (interface{}, os.Error) {
+
     socket, err := query.session.getSocket(false)
     if err != nil {
         return nil, err
@@ -140,6 +174,13 @@ func (query *Query) One() (value gobson.M, err os.Error) {
 
     // Unmarshal outside of the read goroutine to avoid blocking it.
     mutex.Lock()
-    return gobson.Unmarshal(docData)
-}
 
+    if doc == nil {
+        doc = make(gobson.M)
+    }
+    err = gobson.UnmarshalTo(doc, docData)
+    if err != nil {
+        return nil, err
+    }
+    return doc, nil
+}

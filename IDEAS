@@ -1,31 +1,19 @@
-con := mngo.Dial(...)
-db := con.DB("db")
-db.SetType("collection", factory)
-db.Run(command)
-col := db.Get("db.collection")
-col.SetType(factory)  // Implements ValueFactory { New() interface{} }
-col.Find(...).One()
 col.Find(...).All() // With exhaust
 col.Find(...).Chan() // With channel
 col.Find(...).ForEach(...)
 col.Find(...).Select(...).Skip(i).Limit(j).All()
 col.Sort(...)
-col.Run(...)
 col.MapReduce(mapfunc, reducefunc, opts) or
-col.Run(MapReduce{}) <= looks better
 col.Save(..., safe=true)
+session.Run(MapReduce{}) <= looks better
 
 col.Find(..., Options{Safe: true, W: 3})?
 
 Delete()
+
 Query(foo).Update(document)
-Find(foo).One()
-Find(foo).One()
 Find(foo).Update(doc)
-Run(foo)
-
-result := session.Find(query)
-
+...or...
 session.UpdateOne(query, update)
 session.UpdateAll(query, update)
 session.Insert(value)
@@ -35,5 +23,3 @@ session.Upsert(query, value)
 session.SafeUpdateOne(query, update, nil)
 session.SafeUpdateAll(query, update, nil)
 session.SafeInsert(value)
-
-session.Run(foo)
