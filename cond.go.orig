@@ -1,0 +1,90 @@
+package mongogo
+
+import (
+    "sync"
+)
+
+
+type cond struct {
+    m sync.Mutex
+    wait []*sync.Mutex
+    ringlen, ringcap int
+    popi, pushi int
+}
+
+func (c *cond) Wait(condition func() bool) {
+    c.m.Lock()
+    defer c.m.Unlock()
+    var w sync.Mutex
+    for !condition() {
+        w.Lock()
+        c.push(&w)
+        c.m.Unlock()
+        w.Lock()
+        c.m.Lock()
+    }
+}
+
+func (c *cond) Broadcast() {
+    c.m.Lock()
+    for {
+        w := c.pop()
+        if w == nil { break }
+        w.Unlock()
+    }
+    c.m.Unlock()
+}
+
+func (c *cond) Signal() {
+    c.m.Lock()
+    w := c.pop()
+    if w != nil {
+        w.Unlock()
+    }
+    debug("All waiters signaled...")
+    c.m.Unlock()
+}
+
+// c.wait is an expanding circular buffer based on http://j.mp/g7KNbn
+
+func (c *cond) push(w *sync.Mutex) {
+    var expandWait, expandRing bool
+    if c.ringcap != cap(c.wait) {
+        expandWait = (c.pushi == 0)
+    } else if c.ringcap == c.ringlen {
+        expandWait = true
+        expandRing = (c.pushi == 0)
+    }
+
+    if expandWait {
+        c.pushi = cap(c.wait)
+        c.wait = append(c.wait, nil)
+        c.wait = c.wait[:cap(c.wait)]
+        if expandRing {
+            c.ringcap = cap(c.wait)
+        }
+    }
+
+    c.wait[c.pushi] = w
+    if c.pushi < c.ringcap {
+        c.ringlen += 1
+    }
+    c.pushi = (c.pushi + 1) % cap(c.wait)
+}
+
+func (c *cond) pop() (w *sync.Mutex) {
+    if c.ringlen == 0 {
+        return nil
+    }
+    w = c.wait[c.popi]
+    c.wait[c.popi] = nil // Help GC.
+    c.ringlen -= 1
+    if c.ringlen == 0 && c.ringcap != cap(c.wait) {
+        c.popi = c.ringcap
+        c.ringcap = cap(c.wait)
+    } else {
+        c.popi = (c.popi + 1) % c.ringcap
+    }
+    return w
+}
+
