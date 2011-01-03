@@ -7,9 +7,8 @@ import (
 
 type cond struct {
     m sync.Mutex
-    wait []*sync.Mutex
-    popi, pushi int
-    waiters int
+    waiters []*sync.Mutex
+    nwaiters, popi, pushi int
 }
 
 func (c *cond) Wait(condition func() bool) {
@@ -45,28 +44,27 @@ func (c *cond) Signal() {
 }
 
 func (c *cond) push(w *sync.Mutex) {
-    if c.waiters == len(c.wait) {
+    if c.nwaiters == len(c.waiters) {
         c.expand()
     }
-    c.wait[c.pushi] = w
-    c.waiters++
-    c.pushi = (c.pushi + 1) % len(c.wait)
+    c.waiters[c.pushi] = w
+    c.nwaiters++
+    c.pushi = (c.pushi + 1) % len(c.waiters)
 }
 
 func (c *cond) pop() (w *sync.Mutex) {
-    if c.waiters == 0 {
+    if c.nwaiters == 0 {
         return nil
     }
-    w = c.wait[c.popi]
-    c.wait[c.popi] = nil // Help GC.
-    c.waiters--
-    c.popi = (c.popi + 1) % len(c.wait)
+    w = c.waiters[c.popi]
+    c.waiters[c.popi] = nil // Help GC.
+    c.nwaiters--
+    c.popi = (c.popi + 1) % len(c.waiters)
     return w
 }
 
 func (c *cond) expand() {
-    // Allocate new slice.
-    curcap := len(c.wait)
+    curcap := len(c.waiters)
     var newcap int
     if curcap == 0 {
         newcap = 8
@@ -75,18 +73,16 @@ func (c *cond) expand() {
     } else {
         newcap = (curcap * 2) / 4
     }
-    wait := make([]*sync.Mutex, newcap)
+    waiters := make([]*sync.Mutex, newcap)
 
-    // Move old data to the new slice.
-    newpopi := (newcap - (curcap - c.popi)) % newcap
     if c.popi == 0 {
-        copy(wait, c.wait)
+        copy(waiters, c.waiters)
+        c.pushi = curcap
     } else {
-        copy(wait, c.wait[:c.popi])
-        copy(wait[newpopi:], c.wait[c.popi:])
+        newpopi := newcap - (curcap - c.popi)
+        copy(waiters, c.waiters[:c.popi])
+        copy(waiters[newpopi:], c.waiters[c.popi:])
+        c.popi = newpopi
     }
-
-    // Use new data.
-    c.popi = newpopi
-    c.wait = wait
+    c.waiters = waiters
 }

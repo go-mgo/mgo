@@ -74,7 +74,7 @@ func (server *mongoServer) Connect() (*mongoSocket, os.Error) {
     }
     log("Connection to ", addr, " established.")
 
-    stats.trackConn(+1, server.Master)
+    stats.conn(+1, server.Master)
     return newSocket(server, conn), nil
 }
 

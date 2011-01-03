@@ -37,11 +37,12 @@ func ResetStats() {
 type Stats struct {
     MasterConns int
     SlaveConns int
-    BytesWritten int
-    BytesRead int
+    SentOps int
+    ReceivedOps int
+    ReceivedDocs int
 }
 
-func (stats *Stats) trackConn(delta int, master bool) {
+func (stats *Stats) conn(delta int, master bool) {
     if stats != nil {
         statsMutex.Lock()
         if master {
@@ -52,3 +53,28 @@ func (stats *Stats) trackConn(delta int, master bool) {
         statsMutex.Unlock()
     }
 }
+
+func (stats *Stats) sentOps(delta int) {
+    if stats != nil {
+        statsMutex.Lock()
+        stats.SentOps += delta
+        statsMutex.Unlock()
+    }
+}
+
+func (stats *Stats) receivedOps(delta int) {
+    if stats != nil {
+        statsMutex.Lock()
+        stats.ReceivedOps += delta
+        statsMutex.Unlock()
+    }
+}
+
+func (stats *Stats) receivedDocs(delta int) {
+    if stats != nil {
+        statsMutex.Lock()
+        stats.ReceivedDocs += delta
+        statsMutex.Unlock()
+    }
+}
+

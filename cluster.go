@@ -91,9 +91,9 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (
     if result.IsMaster {
         log("[sync] ", addr, " is a master.")
         // Made an incorrect connection above, so fix stats.
-        stats.trackConn(-1, server.Master)
+        stats.conn(-1, server.Master)
         server.SetMaster(true)
-        stats.trackConn(+1, server.Master)
+        stats.conn(+1, server.Master)
     } else if result.Secondary {
         log("[sync] ", addr, " is a slave.")
     } else {

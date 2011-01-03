@@ -30,6 +30,13 @@ type queryOp struct {
     replyFunc replyFunc
 }
 
+type getMoreOp struct {
+    collection string
+    limit int32
+    cursorId int64
+    replyFunc replyFunc
+}
+
 type replyOp struct {
     flags uint32
     cursorId int64
@@ -109,6 +116,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
     requestCount := 0
 
     for _, op := range ops {
+        debugf("Serializing op: %#v", op)
         start := len(buf)
         var replyFunc replyFunc
         switch op := op.(type) {
@@ -117,11 +125,13 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
             buf = addInt32(buf, 0) // Reserved
             buf = addCString(buf, op.collection)
             for _, doc := range op.documents {
+                debugf("Serializing document for insertion: %#v", doc)
                 buf, err = addBSON(buf, doc)
                 if err != nil {
                     return err
                 }
             }
+
         case *queryOp:
             buf = addHeader(buf, 2004)
             buf = addInt32(buf, int32(op.flags))
@@ -139,6 +149,17 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
                 }
             }
             replyFunc = op.replyFunc
+
+        case *getMoreOp:
+            buf = addHeader(buf, 2005)
+            buf = addInt32(buf, 0) // Reserved
+            buf = addCString(buf, op.collection)
+            buf = addInt32(buf, op.limit)
+            buf = addInt64(buf, op.cursorId)
+            replyFunc = op.replyFunc
+
+        default:
+            panic("Internal error: unknown operation type")
         }
 
         setInt32(buf, start, int32(len(buf) - start))
@@ -171,6 +192,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
     // XXX Must check if server is set before doing this.
     debug("Sending ", len(ops), " op(s) (", len(buf), " bytes) to ",
           socket.server.Addr)
+    stats.sentOps(+1)
 
     _, err = socket.conn.Write(buf)
     socket.Unlock()
@@ -181,10 +203,8 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
 // document ever seen.
 func (socket *mongoSocket) readLoop() {
     // XXX How to handle locking on this method!?
-
-    var prefixArray [36]byte // 16 from header + 20 from OP_REPLY fixed fields
-    p := prefixArray[:]
-    b := make([]byte, 256)
+    p := [36]byte{}[:] // 16 from header + 20 from OP_REPLY fixed fields
+    s := [4]byte{}[:]
     conn := socket.conn
     for {
         // XXX Handle timeouts, EOFs, stopping, etc
@@ -212,6 +232,9 @@ func (socket *mongoSocket) readLoop() {
                          firstDoc:  getInt32(p, 28),
                          replyDocs: getInt32(p, 32)}
 
+        stats.receivedOps(+1)
+        stats.receivedDocs(int(reply.replyDocs))
+
         socket.Lock()
         replyFunc, found := socket.replyFuncs[uint32(responseTo)]
         if found {
@@ -219,27 +242,35 @@ func (socket *mongoSocket) readLoop() {
         }
         socket.Unlock()
 
-        for i := 0; i != int(reply.replyDocs); i++ {
-            conn.Read(b[:5])
-            l := int(getInt32(b, 0))
-            if cap(b) < l {
-                newb := make([]byte, l)
-                copy(newb, b[:5])
-                b = newb
-            } else {
-                b = b[:l]
-            }
+        if replyFunc != nil && reply.replyDocs == 0 {
+            replyFunc(&reply, -1, nil)
+        } else {
+            for i := 0; i != int(reply.replyDocs); i++ {
+                _, err := conn.Read(s)
+                if err != nil {
+                    // XXX Check error
+                    panic(err.String())
+                }
 
-            _, err = conn.Read(b[5:])
-            if err != nil {
-                panic(err.String()) // XXX Do something here.
-            }
+                b := make([]byte, int(getInt32(s, 0)))
 
-            if replyFunc != nil {
-                replyFunc(&reply, i, b)
-            }
+                // copy(b, s) in an efficient way.
+                b[0] = s[0]
+                b[1] = s[1]
+                b[2] = s[2]
+                b[3] = s[3]
 
-            // XXX Do bound checking against totalLen.
+                _, err = conn.Read(b[4:])
+                if err != nil {
+                    panic(err.String()) // XXX Do something here.
+                }
+
+                if replyFunc != nil {
+                    replyFunc(&reply, i, b)
+                }
+
+                // XXX Do bound checking against totalLen.
+            }
         }
 
         // XXX Do bound checking against totalLen.
@@ -259,6 +290,11 @@ func addHeader(b []byte, opcode int) []byte {
 
 func addInt32(b []byte, i int32) []byte {
     return append(b, byte(i), byte(i>>8), byte(i>>16), byte(i>>24))
+}
+
+func addInt64(b []byte, i int64) []byte {
+    return append(b, byte(i), byte(i>>8), byte(i>>16), byte(i>>24),
+                  byte(i>>32), byte(i>>40), byte(i>>48), byte(i>>56))
 }
 
 func addCString(b []byte, s string) []byte {
