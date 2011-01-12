@@ -17,6 +17,7 @@ import (
 func Mongo(servers string) (session *Session, err os.Error) {
     userSeeds := strings.Split(servers, ",", -1)
     cluster := &mongoCluster{userSeeds:userSeeds}
+    cluster.masterSynced.M = (*rlocker)(&cluster.RWMutex)
     go cluster.syncServers()
     session = newSession(Strong, cluster, nil)
     return session, nil
@@ -32,11 +33,11 @@ func Mongo(servers string) (session *Session, err os.Error) {
 
 type mongoCluster struct {
     sync.RWMutex
+    masterSynced cond
     userSeeds, dynaSeeds []string
     servers mongoServers
     masters mongoServers
     slaves mongoServers
-    masterSynced cond
 }
 
 func (cluster *mongoCluster) removeServer(server *mongoServer) {
@@ -253,16 +254,15 @@ func (cluster *mongoCluster) syncServers() {
 // a socket to a server which will accept writes.  If it is false, the socket
 // will be to an arbitrary server, preferably a slave.
 func (cluster *mongoCluster) AcquireSocket(write bool) (s *mongoSocket, err os.Error) {
-    cluster.masterSynced.Wait(func() bool {
-        cluster.RLock()
+    cluster.RLock()
+    for {
         debugf("Cluster has %d known masters.", cluster.masters.Len())
         if !cluster.masters.Empty() {
-            return true
+            break
         }
-        cluster.RUnlock()
         log("Waiting for masters to synchronize.")
-        return false
-    })
+        cluster.masterSynced.Wait()
+    }
 
     var server *mongoServer
     if write || cluster.slaves.Empty() {

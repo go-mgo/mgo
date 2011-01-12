@@ -53,10 +53,10 @@ type getLastError struct {
 
 type Iter struct {
     m sync.Mutex
+    gotReply cond
     session *Session
     docData queue
     err os.Error
-    gotReply cond
     op getMoreOp
     prefetch float
     pendingDocs int
@@ -387,6 +387,7 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
     defer socket.Release()
 
     iter = &Iter{session:session, prefetch:prefetch}
+    iter.gotReply.M = &iter.m
     iter.op.collection = op.collection
     iter.op.limit = op.limit
 
@@ -406,14 +407,11 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
 // necessary, this method will also retrieve another batch of documents from
 // the server, potentially in background (see Prefetch()).
 func (iter *Iter) Next(result interface{}) (err os.Error) {
-    iter.gotReply.Wait(func() bool {
-        iter.m.Lock()
-        if iter.err == nil && iter.pendingDocs > 0 && iter.docData.Len() == 0 {
-            iter.m.Unlock()
-            return false
-        }
-        return true
-    })
+    iter.m.Lock()
+
+    for iter.err == nil && iter.pendingDocs > 0 && iter.docData.Len() == 0 {
+        iter.gotReply.Wait()
+    }
 
     // Exhaust available data before returning any errors.
     if docData, ok := iter.docData.Pop().([]byte); ok {
@@ -518,8 +516,8 @@ func (iter *Iter) replyFunc() replyFunc {
             debugf("Iter %p received reply document %d/%d", iter, docNum, rdocs)
             iter.docData.Push(docData)
         }
-        iter.m.Unlock()
         iter.gotReply.Broadcast()
+        iter.m.Unlock()
     }
 }
 
