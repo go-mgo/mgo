@@ -18,7 +18,7 @@ func Mongo(servers string) (session *Session, err os.Error) {
     userSeeds := strings.Split(servers, ",", -1)
     cluster := &mongoCluster{userSeeds:userSeeds}
     go cluster.syncServers()
-    session = newSession(StrongConsistency, cluster, nil)
+    session = newSession(Strong, cluster, nil)
     return session, nil
 }
 
@@ -77,8 +77,9 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (
         log("[sync] Failed to get socket to ", addr, ": ", err.String())
         return
     }
+    defer socket.Release()
 
-    session := newSession(StrongConsistency, cluster, socket)
+    session := newSession(Strong, cluster, socket)
 
     result := isMasterResult{}
     err = session.Run("ismaster", &result)
@@ -108,7 +109,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (
     hosts = append(hosts, result.Hosts...)
     hosts = append(hosts, result.Passives...)
 
-    session.Reset() // Recycle the socket.
+    session.Restart() // Release the socket.
     cluster.mergeServer(server)
 
     debugf("[sync] %s knows about the following peers: %#v", addr, hosts)

@@ -17,7 +17,7 @@ type mongoSocket struct {
     conn *net.TCPConn
     nextRequestId uint32
     replyFuncs map[uint32]replyFunc
-    reserved bool
+    reserved int
 }
 
 type queryOp struct {
@@ -70,38 +70,38 @@ func (socket *mongoSocket) Acquired(server *mongoServer) {
         panic("Attempting to reacquire an owned socket.")
     }
     socket.server = server
+    socket.reserved++
+    stats.socketRefs(+1)
     socket.Unlock()
 }
 
-// Reserve the socket so that calling ImDone() will not put it back
-// in its server's cache.
-func (socket *mongoSocket) Reserve() {
+// Acquire the socket again, increasing its refcount.  The socket
+// will only be recycled when it's released as many times as it's
+// acquired.
+func (socket *mongoSocket) Acquire() {
     socket.Lock()
-    socket.reserved = true
+    socket.reserved++
+    stats.socketRefs(+1)
     socket.Unlock()
 }
 
-// Recycle the socket if it's not reserved.
-func (socket *mongoSocket) ImDone() {
+// Decrement the socket refcount. The socket will be recycled once its
+// released as many times as it's acquired.
+func (socket *mongoSocket) Release() {
     socket.Lock()
-    defer socket.Unlock()
-    if !socket.reserved {
-        socket.unlockedRecycle()
+    socket.reserved--
+    stats.socketRefs(-1)
+    if socket.reserved <= 0 {
+        if socket.reserved < 0 {
+            panic("Internal error: socket reservation refcount < 0")
+        }
+        server := socket.server
+        socket.server = nil
+        socket.Unlock()
+        server.RecycleSocket(socket)
+    } else {
+        socket.Unlock()
     }
-}
-
-// Recycle socket, putting it back into its server's cache.
-func (socket *mongoSocket) Recycle() {
-    socket.Lock()
-    defer socket.Unlock()
-    socket.unlockedRecycle()
-}
-
-func (socket *mongoSocket) unlockedRecycle() {
-    server := socket.server
-    socket.reserved = false
-    socket.server = nil
-    server.RecycleSocket(socket)
 }
 
 func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
@@ -192,7 +192,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
     // XXX Must check if server is set before doing this.
     debug("Sending ", len(ops), " op(s) (", len(buf), " bytes) to ",
           socket.server.Addr)
-    stats.sentOps(+1)
+    stats.sentOps(len(ops))
 
     _, err = socket.conn.Write(buf)
     socket.Unlock()

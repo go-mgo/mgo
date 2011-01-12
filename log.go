@@ -25,7 +25,7 @@ func SetLogger(logger log_Logger) {
 
 // Enable the delivery of debug messages to the logger.  Only meaningful
 // if a logger is also set.
-func SetDebug(debug bool) {
+func Debug(debug bool) {
     globalDebug = debug
 }
 

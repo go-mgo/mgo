@@ -8,7 +8,7 @@ import (
 var stats *Stats
 var statsMutex sync.Mutex
 
-func SetCollectStats(enabled bool) {
+func CollectStats(enabled bool) {
     statsMutex.Lock()
     if enabled {
         if stats == nil {
@@ -40,6 +40,7 @@ type Stats struct {
     SentOps int
     ReceivedOps int
     ReceivedDocs int
+    SocketRefs int
 }
 
 func (stats *Stats) conn(delta int, master bool) {
@@ -74,6 +75,14 @@ func (stats *Stats) receivedDocs(delta int) {
     if stats != nil {
         statsMutex.Lock()
         stats.ReceivedDocs += delta
+        statsMutex.Unlock()
+    }
+}
+
+func (stats *Stats) socketRefs(delta int) {
+    if stats != nil {
+        statsMutex.Lock()
+        stats.SocketRefs += delta
         statsMutex.Unlock()
     }
 }

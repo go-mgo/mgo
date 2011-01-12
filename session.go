@@ -9,9 +9,9 @@ import (
 
 
 const (
-    StrongConsistency = iota
-    MonotonicConsistency
-    EventualConsistency
+    Strong = iota
+    Monotonic
+    Eventual
 )
 
 type Session struct {
@@ -20,6 +20,7 @@ type Session struct {
     cluster *mongoCluster
     socket *mongoSocket
     queryConfig query
+    safe *queryOp
 }
 
 type Database struct {
@@ -41,6 +42,13 @@ type Query struct {
 type query struct {
     op queryOp
     prefetch float
+}
+
+type getLastError struct {
+    CmdName int "getLastError"
+    W int "w/c"
+    WTimeout int "wtimeout/c"
+    FSync bool "fsync/c"
 }
 
 type Iter struct {
@@ -79,12 +87,42 @@ func (database Database) C(name string) Collection {
     return Collection{database.Session, database.Name + "." + name}
 }
 
-// Put the session back in its initial state, recycling any sockets in use.
-// This method will not reset default query settings, though.
-func (session *Session) Reset() {
+// Put back any reserved sockets in use and restart the consistency
+// guarantees according to the existing consistency setting.
+func (session *Session) Restart() {
     session.m.Lock()
     session.setSocket(nil)
     session.m.Unlock()
+}
+
+// Create a new session with the same parameters as the original session,
+// including batch size, prefetching, safety mode, etc. Unlike Clone(),
+// this will not share any sockets between the two sessions.
+func (session *Session) New() *Session {
+    session.m.Lock()
+    clone := &Session{consistency: session.consistency,
+                      cluster: session.cluster,
+                      safe: session.safe,
+                      queryConfig: session.queryConfig}
+    session.m.Unlock()
+    return clone
+}
+
+// Clone the session and return a new session with the same parameters as the
+// original one, including batch size, prefetching, safety mode, etc. Unlike
+// Unlike New(), in case a socket has already been reserved by the original
+// session to preserve consistency requirements, the same socket will be shared
+// with the new session before either session is garbage collected or
+// Restart()ed.
+func (session *Session) Clone() *Session {
+    session.m.Lock()
+    clone := &Session{consistency: session.consistency,
+                      cluster: session.cluster,
+                      safe: session.safe,
+                      queryConfig: session.queryConfig}
+    clone.setSocket(session.socket)
+    session.m.Unlock()
+    return clone
 }
 
 // Set the default batch size used when fetching documents from the database.
@@ -118,6 +156,26 @@ func (session *Session) Prefetch(p float) {
     session.m.Unlock()
 }
 
+// Put the session in unsafe mode. Writes will become fire-and-forget, without
+// error checking.  The unsafe mode is faster since operations won't hold on
+// waiting for a confirmation.  It's also unsafe, though! ;-)  In addition to
+// disabling it entirely, the parameters of safety can also be tweaked via the
+// Safe() method.  It's also possible to modify the safety settings on a
+// per-query basis, using the respective Safe() and Unsafe() methods.
+func (session *Session) Unsafe() {
+    session.m.Lock()
+    session.safe = nil
+    session.m.Unlock()
+}
+
+// Put the session into safe mode.  Once in safe mode, This will 
+func (session *Session) Safe(w, wtimeout int, fsync bool) {
+    session.m.Lock()
+    session.safe = &queryOp{query: &getLastError{1, w, wtimeout, fsync},
+                            collection: "admin.$cmd", limit: -1}
+    session.m.Unlock()
+}
+
 // Run the provided command and unmarshal its result in the respective
 // argument. The cmd argument may be either a string with the command name
 // itself, in which case an empty document of the form M{cmd: 1} will be
@@ -143,13 +201,53 @@ func (collection Collection) Find(query interface{}) *Query {
     return q
 }
 
-// Insert one or more documents in the respective collection.
+type LastError struct {
+    Err string
+    Code, N, Waited int
+    WTimeout bool
+    FSyncFiles int "fsyncFiles"
+}
+
+func (err *LastError) String() string {
+    return err.Err
+}
+
+
+// Insert one or more documents in the respective collection.  In case
+// the session is in safe mode (see Safe()) and an error happens while
+// inserting the provided documents, the returned error will be of type
+// (*mongogo.LastError).
 func (collection Collection) Insert(docs ...interface{}) os.Error {
-    socket, err := collection.Session.getSocket(true)
+    socket, err := collection.Session.acquireSocket(true)
     if err != nil {
         return err
     }
-    err = socket.Query(&insertOp{collection.Name, docs})
+    defer socket.Release()
+    insert := &insertOp{collection.Name, docs}
+    // XXX Lock session, or better: implement getSafe().
+    if collection.Session.safe != nil {
+        var mutex sync.Mutex
+        var docData []byte
+        mutex.Lock()
+        query := *collection.Session.safe // Copy
+        query.replyFunc = func(reply *replyOp, docNum int, _docData []byte) {
+            docData = _docData
+            mutex.Unlock()
+        }
+        err = socket.Query(insert, &query)
+        if err != nil {
+            return err
+        }
+        mutex.Lock() // Wait.
+        result := &LastError{}
+        gobson.Unmarshal(docData, &result)
+        debugf("result: %#v", result)
+        if result.Err != "" {
+            err = result
+        }
+    } else {
+        err = socket.Query(insert)
+    }
     return err
 }
 
@@ -233,10 +331,11 @@ func (query *Query) One(result interface{}) (err os.Error) {
     op := query.op // Copy.
     query.m.Unlock()
 
-    socket, err := session.getSocket(false)
+    socket, err := session.acquireSocket(false)
     if err != nil {
         return err
     }
+    defer socket.Release()
 
     var mutex sync.Mutex
     var docData []byte
@@ -260,7 +359,7 @@ func (query *Query) One(result interface{}) (err os.Error) {
         return NotFound
     }
 
-    err = gobson.UnmarshalTo(result, docData)
+    err = gobson.Unmarshal(docData, result)
     if err == nil {
         debugf("Query %p document unmarshaled: %#v", query, result)
     } else {
@@ -281,10 +380,11 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
     prefetch := query.prefetch
     query.m.Unlock()
 
-    socket, err := session.getSocket(false)
+    socket, err := session.acquireSocket(false)
     if err != nil {
         return nil, err
     }
+    defer socket.Release()
 
     iter = &Iter{session:session, prefetch:prefetch}
     iter.op.collection = op.collection
@@ -302,10 +402,9 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
     return iter, nil
 }
 
-// Retrieve the next document from the result set.  If the returned batch
-// was already fully consumed and pre-fetching is disabled (see Prefetch()),
-// this operation will cause a new batch to be requested and will wait until
-// the first result document is available.
+// Retrieve the next document from the result set, blocking if necessary.  If
+// necessary, this method will also retrieve another batch of documents from
+// the server, potentially in background (see Prefetch()).
 func (iter *Iter) Next(result interface{}) (err os.Error) {
     iter.gotReply.Wait(func() bool {
         iter.m.Lock()
@@ -325,7 +424,7 @@ func (iter *Iter) Next(result interface{}) (err os.Error) {
             }
         }
         iter.m.Unlock()
-        err = gobson.UnmarshalTo(result, docData)
+        err = gobson.Unmarshal(docData, result)
         if err == nil {
             debugf("Iter %p document unmarshaled: %#v", iter, result)
         } else {
@@ -354,16 +453,19 @@ func (iter *Iter) Next(result interface{}) (err os.Error) {
 
 func newSession(consistency int, cluster *mongoCluster, socket *mongoSocket) (
         session *Session) {
-    session = &Session{consistency:consistency, cluster:cluster}
+    session = &Session{consistency: consistency, cluster: cluster}
     session.setSocket(socket)
     session.queryConfig.prefetch = defaultPrefetch
+    session.Safe(0, 0, false)
     return session
 }
 
-func (session *Session) getSocket(write bool) (s *mongoSocket, err os.Error) {
+func (session *Session) acquireSocket(write bool) (
+        s *mongoSocket, err os.Error) {
     // XXX Must take into account consistency setting.
     session.m.RLock()
     s = session.socket
+    // XXX Lock the server here?
     if s == nil || write && !s.server.Master {
         session.m.RUnlock()
         // Try again, with an exclusive lock now.
@@ -378,18 +480,24 @@ func (session *Session) getSocket(write bool) (s *mongoSocket, err os.Error) {
         session.m.Unlock()
     } else {
         session.m.RUnlock()
+        s.Acquire()
     }
-    return
+    return s, nil
 }
 
+// Set the socket bound to this session.  With a bound socket, all operations
+// with this session will use the given socket if possible. When not possible
+// (e.g. attempting to write to a slave) acquireSocket() will replace the
+// current socket.  Note that this method will properly refcount the socket up
+// and down when setting/releasing.
 func (session *Session) setSocket(socket *mongoSocket) {
     if session.socket != nil {
-        session.socket.Recycle()
+        session.socket.Release()
+    }
+    if socket != nil {
+        socket.Acquire() // Hold a reference while the session is using it.
     }
     session.socket = socket
-    if socket != nil {
-        socket.Reserve()
-    }
 }
 
 func (iter *Iter) replyFunc() replyFunc {
@@ -416,11 +524,12 @@ func (iter *Iter) replyFunc() replyFunc {
 }
 
 func (iter *Iter) getMore() {
-    socket, err := iter.session.getSocket(false)
+    socket, err := iter.session.acquireSocket(false)
     if err != nil {
         iter.err = err
         return
     }
+    defer socket.Release()
     debugf("Iter %p requesting more documents", iter)
     iter.pendingDocs++
     err = socket.Query(&iter.op)

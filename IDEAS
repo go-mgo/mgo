@@ -1,5 +1,7 @@
-col.Find(...).All() // With exhaust
-col.Find(...).Chan() // With channel
+Limit(n) == Batch(n).Prefetch(0) + NotFound when reaching (n)
+
+
+
 col.Find(...).ForEach(...)
 col.Find(...).Select(...).Skip(i).Limit(j).All()
 col.Sort(...)
@@ -14,12 +16,21 @@ Delete()
 Query(foo).Update(document)
 Find(foo).Update(doc)
 ...or...
+session.Insert(value)
 session.UpdateOne(query, update)
 session.UpdateAll(query, update)
-session.Insert(value)
 session.UpdateOne(query, update, nil)
 session.UpdateAll(query, update, &Safe{W:3})
 session.Upsert(query, value)
 session.SafeUpdateOne(query, update, nil)
 session.SafeUpdateAll(query, update, nil)
 session.SafeInsert(value)
+
+
+session.Safe(&mongodb.Safe{W:1})
+session.Safe(0, 0, false) + session.Unsafe()
++
+query.Safe(0, 0, false)
+
+session.PushSafe(0, 0, false)
+session.PopSafe()

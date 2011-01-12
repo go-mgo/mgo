@@ -36,8 +36,8 @@ func (s *S) SetUpTest(c *C) {
 }
 
 func (s *S) SetUpSuite(c *C) {
-    mongogo.SetDebug(true)
-    mongogo.SetCollectStats(true)
+    mongogo.Debug(true)
+    mongogo.CollectStats(true)
 }
 
 
