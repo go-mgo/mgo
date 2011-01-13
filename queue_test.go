@@ -31,8 +31,8 @@ var queueTestLists = [][]int{
 
     // {0, 1, 2, 3, 4, 5, 6, 7, 8}
     {0, 1, 2, 3, 4, 5, 6, 7, 8,
-     -1, -1, -1, -1, -1, -1, -1, -1, -1,
-     0, 1, 2, 3, 4, 5, 6, 7, 8},
+        -1, -1, -1, -1, -1, -1, -1, -1, -1,
+        0, 1, 2, 3, 4, 5, 6, 7, 8},
 }
 
 
@@ -47,7 +47,9 @@ func (s *QS) TestQueueTestLists(c *gocheck.C) {
         test = append(test, i)
     }
     pop := func() (i int) {
-        if testi == len(test) { return -1 }
+        if testi == len(test) {
+            return -1
+        }
         i = test[testi]
         testi++
         return
@@ -59,7 +61,7 @@ func (s *QS) TestQueueTestLists(c *gocheck.C) {
         for _, n := range list {
             if n == -1 {
                 c.Assert(q.Pop(), gocheck.Equals, pop(),
-                         gocheck.Bug("With list %#v", list))
+                    gocheck.Bug("With list %#v", list))
             } else {
                 q.Push(n)
                 push(n)
@@ -68,10 +70,10 @@ func (s *QS) TestQueueTestLists(c *gocheck.C) {
 
         for n := pop(); n != -1; n = pop() {
             c.Assert(q.Pop(), gocheck.Equals, n,
-                     gocheck.Bug("With list %#v", list))
+                gocheck.Bug("With list %#v", list))
         }
 
         c.Assert(q.Pop(), gocheck.Equals, nil,
-                 gocheck.Bug("With list %#v", list))
+            gocheck.Bug("With list %#v", list))
     }
 }

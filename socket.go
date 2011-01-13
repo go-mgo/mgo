@@ -13,40 +13,40 @@ type replyFunc func(reply *replyOp, docNum int, docData []byte)
 
 type mongoSocket struct {
     sync.Mutex
-    server *mongoServer // nil when cached
-    conn *net.TCPConn
+    server        *mongoServer // nil when cached
+    conn          *net.TCPConn
     nextRequestId uint32
-    replyFuncs map[uint32]replyFunc
-    reserved int
+    replyFuncs    map[uint32]replyFunc
+    reserved      int
 }
 
 type queryOp struct {
     collection string
-    query interface{}
-    skip int32
-    limit int32
-    selector interface{}
-    flags uint32
-    replyFunc replyFunc
+    query      interface{}
+    skip       int32
+    limit      int32
+    selector   interface{}
+    flags      uint32
+    replyFunc  replyFunc
 }
 
 type getMoreOp struct {
     collection string
-    limit int32
-    cursorId int64
-    replyFunc replyFunc
+    limit      int32
+    cursorId   int64
+    replyFunc  replyFunc
 }
 
 type replyOp struct {
-    flags uint32
-    cursorId int64
-    firstDoc int32
+    flags     uint32
+    cursorId  int64
+    firstDoc  int32
     replyDocs int32
 }
 
 type insertOp struct {
-    collection string       // "database.collection"
-    documents []interface{} // One or more documents to insert
+    collection string        // "database.collection"
+    documents  []interface{} // One or more documents to insert
 }
 
 type requestInfo struct {
@@ -55,7 +55,7 @@ type requestInfo struct {
 }
 
 func newSocket(server *mongoServer, conn *net.TCPConn) *mongoSocket {
-    socket := &mongoSocket{conn:conn}
+    socket := &mongoSocket{conn: conn}
     socket.replyFuncs = make(map[uint32]replyFunc)
     socket.Acquired(server)
     go socket.readLoop()
@@ -162,7 +162,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
             panic("Internal error: unknown operation type")
         }
 
-        setInt32(buf, start, int32(len(buf) - start))
+        setInt32(buf, start, int32(len(buf)-start))
 
         if replyFunc != nil {
             request := &requests[requestCount]
@@ -184,14 +184,14 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
     socket.nextRequestId = requestId + uint32(requestCount)
     for i := 0; i != requestCount; i++ {
         request := &requests[i]
-        setInt32(buf, request.bufferPos + 4, int32(requestId))
+        setInt32(buf, request.bufferPos+4, int32(requestId))
         socket.replyFuncs[requestId] = request.replyFunc
         requestId++
     }
 
     // XXX Must check if server is set before doing this.
     debug("Sending ", len(ops), " op(s) (", len(buf), " bytes) to ",
-          socket.server.Addr)
+        socket.server.Addr)
     stats.sentOps(len(ops))
 
     _, err = socket.conn.Write(buf)
@@ -227,10 +227,10 @@ func (socket *mongoSocket) readLoop() {
             panic("Got a reply opcode != 1 from server. Corrupted data?")
         }
 
-        reply := replyOp{flags:     uint32(getInt32(p, 16)),
-                         cursorId:  getInt64(p, 20),
-                         firstDoc:  getInt32(p, 28),
-                         replyDocs: getInt32(p, 32)}
+        reply := replyOp{flags: uint32(getInt32(p, 16)),
+            cursorId:  getInt64(p, 20),
+            firstDoc:  getInt32(p, 28),
+            replyDocs: getInt32(p, 32)}
 
         stats.receivedOps(+1)
         stats.receivedDocs(int(reply.replyDocs))
@@ -277,7 +277,7 @@ func (socket *mongoSocket) readLoop() {
     }
 }
 
-var emptyHeader = []byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+var emptyHeader = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 
 func addHeader(b []byte, opcode int) []byte {
     i := len(b)
@@ -294,7 +294,7 @@ func addInt32(b []byte, i int32) []byte {
 
 func addInt64(b []byte, i int64) []byte {
     return append(b, byte(i), byte(i>>8), byte(i>>16), byte(i>>24),
-                  byte(i>>32), byte(i>>40), byte(i>>48), byte(i>>56))
+        byte(i>>32), byte(i>>40), byte(i>>48), byte(i>>56))
 }
 
 func addCString(b []byte, s string) []byte {
@@ -312,27 +312,26 @@ func addBSON(b []byte, doc interface{}) ([]byte, os.Error) {
 }
 
 func setInt32(b []byte, pos int, i int32) {
-    b[pos]   = byte(i)
-    b[pos+1] = byte(i>>8)
-    b[pos+2] = byte(i>>16)
-    b[pos+3] = byte(i>>24)
+    b[pos] = byte(i)
+    b[pos+1] = byte(i >> 8)
+    b[pos+2] = byte(i >> 16)
+    b[pos+3] = byte(i >> 24)
 }
 
 func getInt32(b []byte, pos int) int32 {
     return (int32(b[pos+0])) |
-           (int32(b[pos+1]) << 8) |
-           (int32(b[pos+2]) << 16) |
-           (int32(b[pos+3]) << 24)
+        (int32(b[pos+1]) << 8) |
+        (int32(b[pos+2]) << 16) |
+        (int32(b[pos+3]) << 24)
 }
 
 func getInt64(b []byte, pos int) int64 {
     return (int64(b[pos+0])) |
-           (int64(b[pos+1]) << 8) |
-           (int64(b[pos+2]) << 16) |
-           (int64(b[pos+3]) << 24) |
-           (int64(b[pos+4]) << 32) |
-           (int64(b[pos+5]) << 40) |
-           (int64(b[pos+6]) << 48) |
-           (int64(b[pos+7]) << 56)
+        (int64(b[pos+1]) << 8) |
+        (int64(b[pos+2]) << 16) |
+        (int64(b[pos+3]) << 24) |
+        (int64(b[pos+4]) << 32) |
+        (int64(b[pos+5]) << 40) |
+        (int64(b[pos+6]) << 48) |
+        (int64(b[pos+7]) << 56)
 }
-

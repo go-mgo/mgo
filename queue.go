@@ -2,7 +2,7 @@ package mongogo
 
 
 type queue struct {
-    elems []interface{}
+    elems               []interface{}
     nelems, popi, pushi int
 }
 

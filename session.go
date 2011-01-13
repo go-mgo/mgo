@@ -15,51 +15,51 @@ const (
 )
 
 type Session struct {
-    m sync.RWMutex
+    m           sync.RWMutex
     consistency int
-    cluster *mongoCluster
-    socket *mongoSocket
+    cluster     *mongoCluster
+    socket      *mongoSocket
     queryConfig query
-    safe *queryOp
+    safe        *queryOp
 }
 
 type Database struct {
     Session *Session
-    Name string
+    Name    string
 }
 
 type Collection struct {
     Session *Session
-    Name string
+    Name    string
 }
 
 type Query struct {
-    m sync.Mutex
+    m       sync.Mutex
     session *Session
-    query // Enables default settings in session.
+    query   // Enables default settings in session.
 }
 
 type query struct {
-    op queryOp
+    op       queryOp
     prefetch float
 }
 
 type getLastError struct {
-    CmdName int "getLastError"
-    W int "w/c"
-    WTimeout int "wtimeout/c"
-    FSync bool "fsync/c"
+    CmdName  int  "getLastError"
+    W        int  "w/c"
+    WTimeout int  "wtimeout/c"
+    FSync    bool "fsync/c"
 }
 
 type Iter struct {
-    m sync.Mutex
-    gotReply cond
-    session *Session
-    docData queue
-    err os.Error
-    op getMoreOp
-    prefetch float
-    pendingDocs int
+    m              sync.Mutex
+    gotReply       cond
+    session        *Session
+    docData        queue
+    err            os.Error
+    op             getMoreOp
+    prefetch       float
+    pendingDocs    int
     docsBeforeMore int
 }
 
@@ -101,9 +101,9 @@ func (session *Session) Restart() {
 func (session *Session) New() *Session {
     session.m.Lock()
     clone := &Session{consistency: session.consistency,
-                      cluster: session.cluster,
-                      safe: session.safe,
-                      queryConfig: session.queryConfig}
+        cluster:     session.cluster,
+        safe:        session.safe,
+        queryConfig: session.queryConfig}
     session.m.Unlock()
     return clone
 }
@@ -117,9 +117,9 @@ func (session *Session) New() *Session {
 func (session *Session) Clone() *Session {
     session.m.Lock()
     clone := &Session{consistency: session.consistency,
-                      cluster: session.cluster,
-                      safe: session.safe,
-                      queryConfig: session.queryConfig}
+        cluster:     session.cluster,
+        safe:        session.safe,
+        queryConfig: session.queryConfig}
     clone.setSocket(session.socket)
     session.m.Unlock()
     return clone
@@ -172,7 +172,7 @@ func (session *Session) Unsafe() {
 func (session *Session) Safe(w, wtimeout int, fsync bool) {
     session.m.Lock()
     session.safe = &queryOp{query: &getLastError{1, w, wtimeout, fsync},
-                            collection: "admin.$cmd", limit: -1}
+        collection: "admin.$cmd", limit: -1}
     session.m.Unlock()
 }
 
@@ -195,17 +195,17 @@ func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
 // Query value, and then executed using One() or Iter().
 func (collection Collection) Find(query interface{}) *Query {
     session := collection.Session
-    q := &Query{session:session, query:session.queryConfig}
+    q := &Query{session: session, query: session.queryConfig}
     q.op.query = query
     q.op.collection = collection.Name
     return q
 }
 
 type LastError struct {
-    Err string
+    Err             string
     Code, N, Waited int
-    WTimeout bool
-    FSyncFiles int "fsyncFiles"
+    WTimeout        bool
+    FSyncFiles      int "fsyncFiles"
 }
 
 func (err *LastError) String() string {
@@ -295,7 +295,7 @@ func (query *Query) Skip(n int) *Query {
 
 
 type queryWrapper struct {
-    Query interface{} "$query"
+    Query   interface{} "$query"
     OrderBy interface{} "$orderby/c"
 }
 
@@ -386,7 +386,7 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
     }
     defer socket.Release()
 
-    iter = &Iter{session:session, prefetch:prefetch}
+    iter = &Iter{session: session, prefetch: prefetch}
     iter.gotReply.M = &iter.m
     iter.op.collection = op.collection
     iter.op.limit = op.limit
@@ -445,12 +445,10 @@ func (iter *Iter) Next(result interface{}) (err os.Error) {
 }
 
 
-
 // ---------------------------------------------------------------------------
 // Internal session handling helpers.
 
-func newSession(consistency int, cluster *mongoCluster, socket *mongoSocket) (
-        session *Session) {
+func newSession(consistency int, cluster *mongoCluster, socket *mongoSocket) (session *Session) {
     session = &Session{consistency: consistency, cluster: cluster}
     session.setSocket(socket)
     session.queryConfig.prefetch = defaultPrefetch
@@ -458,8 +456,7 @@ func newSession(consistency int, cluster *mongoCluster, socket *mongoSocket) (
     return session
 }
 
-func (session *Session) acquireSocket(write bool) (
-        s *mongoSocket, err os.Error) {
+func (session *Session) acquireSocket(write bool) (s *mongoSocket, err os.Error) {
     // XXX Must take into account consistency setting.
     session.m.RLock()
     s = session.socket
@@ -508,8 +505,8 @@ func (iter *Iter) replyFunc() replyFunc {
         } else {
             rdocs := int(op.replyDocs)
             if docNum == 0 {
-                iter.pendingDocs += rdocs-1
-                iter.docsBeforeMore = rdocs-int(iter.prefetch*float(rdocs))
+                iter.pendingDocs += rdocs - 1
+                iter.docsBeforeMore = rdocs - int(iter.prefetch*float(rdocs))
                 iter.op.cursorId = op.cursorId
             }
             // XXX Handle errors and flags.

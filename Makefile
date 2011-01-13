@@ -15,15 +15,6 @@ GOFILES=\
 
 include $(GOROOT)/src/Make.pkg
 
-format:
-	${GOFMT} -w session.go
-	${GOFMT} -w cluster.go
-	${GOFMT} -w server.go
-	${GOFMT} -w socket.go
-	${GOFMT} -w stats.go
-	${GOFMT} -w log.go
-	${GOFMT} -w mongogo_test.go
-
 testpackage: _testdb
 
 _testdb:
@@ -36,3 +27,16 @@ stopdb:
 	@testdb/setup.sh stop
 
 clean: stopdb
+
+GOFMT=gofmt -spaces=true -tabwidth=4 -tabindent=false
+
+BADFMT=$(shell $(GOFMT) -l $(GOFILES) $(wildcard *_test.go))
+
+gofmt: $(BADFMT)
+	@for F in $(BADFMT); do $(GOFMT) -w $$F && echo $$F; done
+
+ifneq ($(BADFMT),)
+ifneq ($(MAKECMDGOALS),gofmt)
+$(warning WARNING: make gofmt: $(BADFMT))
+endif
+endif

@@ -1,7 +1,7 @@
 package mongogo_test
 
 import (
-    . "gocheck"
+    .   "gocheck"
     "testing"
     "mongogo"
     "time"
@@ -13,7 +13,7 @@ type cLogger C
 
 func (c *cLogger) Output(calldepth int, s string) os.Error {
     ns := time.Nanoseconds()
-    t := float64(ns % 100e9)/1e9
+    t := float64(ns%100e9) / 1e9
     ((*C)(c)).Logf("[LOG] %.05f %s", t, s)
     return nil
 }

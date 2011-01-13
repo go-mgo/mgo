@@ -2,8 +2,8 @@ package mongogo_test
 
 
 import (
-    . "gocheck"
-    B "gobson"
+    .   "gocheck"
+    B   "gobson"
     "mongogo"
 )
 
@@ -42,7 +42,7 @@ func (s *S) TestTopologySyncWithSlaveSeed(c *C) {
     coll := session.DB("mydb").C("mycollection")
     coll.Insert(B.M{"a": 1, "b": 2})
 
-    result := struct{Ok bool}{}
+    result := struct{ Ok bool }{}
     err = session.Run("getLastError", &result)
     c.Assert(err, IsNil)
     c.Assert(result.Ok, Equals, true)
@@ -67,7 +67,7 @@ func (s *S) TestRunString(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
 
-    result := struct{Ok int}{}
+    result := struct{ Ok int }{}
     err = session.Run("ping", &result)
     c.Assert(err, IsNil)
     c.Assert(result.Ok, Equals, 1)
@@ -77,7 +77,7 @@ func (s *S) TestRunValue(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
 
-    result := struct{Ok int}{}
+    result := struct{ Ok int }{}
     err = session.Run(B.M{"ping": 1}, &result)
     c.Assert(err, IsNil)
     c.Assert(result.Ok, Equals, 1)
@@ -90,7 +90,7 @@ func (s *S) TestInsertFindOne(c *C) {
     coll := session.DB("mydb").C("mycollection")
     coll.Insert(B.M{"a": 1, "b": 2})
 
-    result := struct{A, B int}{}
+    result := struct{ A, B int }{}
 
     err = coll.Find(B.M{"a": 1}).One(&result)
     c.Assert(err, IsNil)
@@ -117,7 +117,7 @@ func (s *S) TestInsertFindOneNotFound(c *C) {
 
     coll := session.DB("mydb").C("mycollection")
 
-    result := struct{A, B int}{}
+    result := struct{ A, B int }{}
     err = coll.Find(B.M{"a": 1}).One(&result)
     c.Assert(err, Equals, mongogo.NotFound)
     c.Assert(err, Matches, "Document not found")
@@ -150,7 +150,7 @@ func (s *S) TestInsertFindIter(c *C) {
     }
 
     n := len(m)
-    result := struct{N int}{}
+    result := struct{ N int }{}
     for i := 0; i != n; i++ {
         err = iter.Next(&result)
         c.Assert(err, IsNil)
@@ -206,7 +206,7 @@ func (s *S) TestSort(c *C) {
     c.Assert(err, IsNil)
 
     l := make([]int, 18)
-    r := struct{A, B int}{}
+    r := struct{ A, B int }{}
     for i := 0; i != len(l); i += 2 {
         err := iter.Next(&r)
         c.Assert(err, IsNil)
@@ -215,7 +215,7 @@ func (s *S) TestSort(c *C) {
     }
 
     c.Assert(l, Equals,
-             []int{0, 2, 1, 2, 2, 2, 0, 1, 1, 1, 2, 1, 0, 0, 1, 0, 2, 0})
+        []int{0, 2, 1, 2, 2, 2, 0, 1, 1, 1, 2, 1, 0, 0, 1, 0, 2, 0})
 }
 
 func (s *S) TestBadSortWithMap(c *C) {
@@ -226,7 +226,7 @@ func (s *S) TestBadSortWithMap(c *C) {
     defer func() {
         error := recover()
         c.Assert(error, Matches,
-                 "Can't sort using map of len > 1. Use gobson.D instead.")
+            "Can't sort using map of len > 1. Use gobson.D instead.")
     }()
     coll.Find(B.M{}).Sort(B.M{"a": 1, "b": 2})
 }
@@ -248,7 +248,7 @@ func (s *S) TestInsertFindIterTwiceWithSameQuery(c *C) {
     result2, err := query.Skip(2).Iter()
     c.Assert(err, IsNil)
 
-    result := struct{N int}{}
+    result := struct{ N int }{}
     err = result2.Next(&result)
     c.Assert(err, IsNil)
     c.Assert(result.N, Equals, 42)
@@ -267,7 +267,7 @@ func (s *S) TestInsertFindIterWithoutResults(c *C) {
     iter, err := coll.Find(B.M{"n": 0}).Iter()
     c.Assert(err, IsNil)
 
-    result := struct{N int}{}
+    result := struct{ N int }{}
     err = iter.Next(&result)
     c.Assert(result.N, Equals, 0)
     c.Assert(err == mongogo.NotFound, Equals, true)
@@ -314,7 +314,7 @@ func (s *S) TestPrefetching(c *C) {
             nextn = 73
         }
 
-        result := struct{N int}{}
+        result := struct{ N int }{}
         for i := 0; i != nextn; i++ {
             iter.Next(&result)
         }

@@ -14,11 +14,11 @@ import (
 
 type mongoServer struct {
     sync.RWMutex
-    Master bool
-    Addr string
+    Master       bool
+    Addr         string
     ResolvedAddr string
-    tcpaddr *net.TCPAddr
-    sockets []*mongoSocket
+    tcpaddr      *net.TCPAddr
+    sockets      []*mongoSocket
 }
 
 
@@ -33,7 +33,7 @@ func newServer(addr string) (server *mongoServer, err os.Error) {
     if resolvedAddr != addr {
         debug("Address ", addr, " resolved as ", resolvedAddr)
     }
-    server = &mongoServer{Addr:addr, ResolvedAddr:resolvedAddr, tcpaddr:tcpaddr}
+    server = &mongoServer{Addr: addr, ResolvedAddr: resolvedAddr, tcpaddr: tcpaddr}
     return
 }
 

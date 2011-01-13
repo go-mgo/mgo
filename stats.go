@@ -35,12 +35,12 @@ func ResetStats() {
 }
 
 type Stats struct {
-    MasterConns int
-    SlaveConns int
-    SentOps int
-    ReceivedOps int
+    MasterConns  int
+    SlaveConns   int
+    SentOps      int
+    ReceivedOps  int
     ReceivedDocs int
-    SocketRefs int
+    SocketRefs   int
 }
 
 func (stats *Stats) conn(delta int, master bool) {
@@ -86,4 +86,3 @@ func (stats *Stats) socketRefs(delta int) {
         statsMutex.Unlock()
     }
 }
-

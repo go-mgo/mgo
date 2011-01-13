@@ -7,7 +7,6 @@ import (
 )
 
 
-
 // ---------------------------------------------------------------------------
 // Entry point function to the cluster/session/server/socket hierarchy.
 
@@ -16,7 +15,7 @@ import (
 // so the seed servers are used only to find out about the cluster topology.
 func Mongo(servers string) (session *Session, err os.Error) {
     userSeeds := strings.Split(servers, ",", -1)
-    cluster := &mongoCluster{userSeeds:userSeeds}
+    cluster := &mongoCluster{userSeeds: userSeeds}
     cluster.masterSynced.M = (*rlocker)(&cluster.RWMutex)
     go cluster.syncServers()
     session = newSession(Strong, cluster, nil)
@@ -33,18 +32,18 @@ func Mongo(servers string) (session *Session, err os.Error) {
 
 type mongoCluster struct {
     sync.RWMutex
-    masterSynced cond
+    masterSynced         cond
     userSeeds, dynaSeeds []string
-    servers mongoServers
-    masters mongoServers
-    slaves mongoServers
+    servers              mongoServers
+    masters              mongoServers
+    slaves               mongoServers
 }
 
 func (cluster *mongoCluster) removeServer(server *mongoServer) {
     cluster.Lock()
     removed := cluster.servers.Remove(server) ||
-               cluster.masters.Remove(server) ||
-               cluster.slaves.Remove(server)
+        cluster.masters.Remove(server) ||
+        cluster.slaves.Remove(server)
     if removed {
         log("Removing server ", server.Addr, " from cluster.")
     }
@@ -52,15 +51,14 @@ func (cluster *mongoCluster) removeServer(server *mongoServer) {
 }
 
 type isMasterResult struct {
-    IsMaster bool
+    IsMaster  bool
     Secondary bool
-    Primary string
-    Hosts []string
-    Passives []string
+    Primary   string
+    Hosts     []string
+    Passives  []string
 }
 
-func (cluster *mongoCluster) syncServer(server *mongoServer) (
-        hosts []string, err os.Error) {
+func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, err os.Error) {
 
     addr := server.Addr
 
@@ -152,7 +150,7 @@ func (cluster *mongoCluster) mergeServer(server *mongoServer) {
 
 func (cluster *mongoCluster) getKnownAddrs() []string {
     cluster.RLock()
-    max := len(cluster.userSeeds)+len(cluster.dynaSeeds)+cluster.servers.Len()
+    max := len(cluster.userSeeds) + len(cluster.dynaSeeds) + cluster.servers.Len()
     seen := make(map[string]bool, max)
     known := make([]string, 0, max)
 
@@ -163,9 +161,15 @@ func (cluster *mongoCluster) getKnownAddrs() []string {
         }
     }
 
-    for _, addr := range cluster.userSeeds { add(addr) }
-    for _, addr := range cluster.dynaSeeds { add(addr) }
-    for _, serv := range cluster.servers.Slice() { add(serv.Addr) }
+    for _, addr := range cluster.userSeeds {
+        add(addr)
+    }
+    for _, addr := range cluster.dynaSeeds {
+        add(addr)
+    }
+    for _, serv := range cluster.servers.Slice() {
+        add(serv.Addr)
+    }
     cluster.RUnlock()
 
     return known
