@@ -100,10 +100,12 @@ func (session *Session) Restart() {
 // this will not share any sockets between the two sessions.
 func (session *Session) New() *Session {
     session.m.Lock()
-    clone := &Session{consistency: session.consistency,
+    clone := &Session{
+        consistency: session.consistency,
         cluster:     session.cluster,
         safe:        session.safe,
-        queryConfig: session.queryConfig}
+        queryConfig: session.queryConfig,
+    }
     session.m.Unlock()
     return clone
 }
@@ -116,10 +118,12 @@ func (session *Session) New() *Session {
 // Restart()ed.
 func (session *Session) Clone() *Session {
     session.m.Lock()
-    clone := &Session{consistency: session.consistency,
+    clone := &Session{
+        consistency: session.consistency,
         cluster:     session.cluster,
         safe:        session.safe,
-        queryConfig: session.queryConfig}
+        queryConfig: session.queryConfig,
+    }
     clone.setSocket(session.socket)
     session.m.Unlock()
     return clone
@@ -171,8 +175,11 @@ func (session *Session) Unsafe() {
 // Put the session into safe mode.  Once in safe mode, This will 
 func (session *Session) Safe(w, wtimeout int, fsync bool) {
     session.m.Lock()
-    session.safe = &queryOp{query: &getLastError{1, w, wtimeout, fsync},
-        collection: "admin.$cmd", limit: -1}
+    session.safe = &queryOp{
+        query:      &getLastError{1, w, wtimeout, fsync},
+        collection: "admin.$cmd",
+        limit:      -1,
+    }
     session.m.Unlock()
 }
 

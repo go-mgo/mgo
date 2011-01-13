@@ -32,11 +32,12 @@ func Mongo(servers string) (session *Session, err os.Error) {
 
 type mongoCluster struct {
     sync.RWMutex
-    masterSynced         cond
-    userSeeds, dynaSeeds []string
-    servers              mongoServers
-    masters              mongoServers
-    slaves               mongoServers
+    masterSynced cond
+    userSeeds    []string
+    dynaSeeds    []string
+    servers      mongoServers
+    masters      mongoServers
+    slaves       mongoServers
 }
 
 func (cluster *mongoCluster) removeServer(server *mongoServer) {
@@ -102,7 +103,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 
     hosts = make([]string, 0, 1+len(result.Hosts)+len(result.Passives))
     if result.Primary != "" {
-        // In front to speed up master discovery.
+        // First in the list to speed up master discovery.
         hosts = append(hosts, result.Primary)
     }
     hosts = append(hosts, result.Hosts...)

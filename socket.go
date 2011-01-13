@@ -202,7 +202,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
 // Estimated minimum cost per socket: 1 goroutine + memory for the largest
 // document ever seen.
 func (socket *mongoSocket) readLoop() {
-    // XXX How to handle locking on this method!?
+    // XXX How to handle locking in this method!?
     p := [36]byte{}[:] // 16 from header + 20 from OP_REPLY fixed fields
     s := [4]byte{}[:]
     conn := socket.conn
@@ -282,7 +282,7 @@ var emptyHeader = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 func addHeader(b []byte, opcode int) []byte {
     i := len(b)
     b = append(b, emptyHeader...)
-    // This has to be changed for larger opcodes.
+    // Enough for current opcodes.
     b[i+12] = byte(opcode)
     b[i+13] = byte(opcode >> 8)
     return b
