@@ -129,6 +129,24 @@ func (session *Session) Clone() *Session {
     return clone
 }
 
+func (session *Session) Strong() *Session {
+    s := session.New()
+    s.consistency = Strong
+    return s
+}
+
+func (session *Session) Monotonic() *Session {
+    s := session.New()
+    s.consistency = Monotonic
+    return s
+}
+
+func (session *Session) Eventual() *Session {
+    s := session.New()
+    s.consistency = Eventual
+    return s
+}
+
 // Set the default batch size used when fetching documents from the database.
 // It's possible to change this setting on a per-query basis as well, using
 // the respective Batch() method.
@@ -317,11 +335,6 @@ func (query *Query) wrap() *queryWrapper {
 
 // Sort documents according to the rules provided in the given document.
 func (query *Query) Sort(order interface{}) *Query {
-    // Could check other maps here too, but would need reflection and be
-    // too expensive. Just prevent the most obvious problem instead.
-    if m, ok := order.(gobson.M); ok && len(m) > 1 {
-        panic("Can't sort using map of len > 1. Use gobson.D instead.")
-    }
     query.m.Lock()
     w := query.wrap()
     w.OrderBy = order
@@ -474,8 +487,11 @@ func (session *Session) acquireSocket(write bool) (s *mongoSocket, err os.Error)
         session.m.Lock()
         s = session.socket
         if s == nil || write && !s.server.Master {
+            if session.consistency == Strong {
+                write = true
+            }
             s, err = session.cluster.AcquireSocket(write)
-            if err == nil {
+            if err == nil && session.consistency != Eventual {
                 session.setSocket(s)
             }
         }
