@@ -69,7 +69,7 @@ func (server *mongoServer) Connect() (*mongoSocket, os.Error) {
     log("Establishing new connection to ", addr, "...")
     conn, err := net.DialTCP("tcp", nil, tcpaddr)
     if err != nil {
-        log("Connection to ", addr, "failed: ", err.String())
+        log("Connection to ", addr, " failed: ", err.String())
         return nil, err
     }
     log("Connection to ", addr, " established.")

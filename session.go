@@ -252,11 +252,13 @@ func (collection Collection) Insert(docs ...interface{}) os.Error {
     // XXX Lock session, or better: implement getSafe().
     if collection.Session.safe != nil {
         var mutex sync.Mutex
-        var docData []byte
+        var replyData []byte
+        var replyErr os.Error
         mutex.Lock()
         query := *collection.Session.safe // Copy
-        query.replyFunc = func(reply *replyOp, docNum int, _docData []byte) {
-            docData = _docData
+        query.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
+            replyData = docData
+            replyErr = err
             mutex.Unlock()
         }
         err = socket.Query(insert, &query)
@@ -264,9 +266,12 @@ func (collection Collection) Insert(docs ...interface{}) os.Error {
             return err
         }
         mutex.Lock() // Wait.
+        if replyErr != nil {
+            return replyErr // XXX TESTME
+        }
         result := &LastError{}
-        gobson.Unmarshal(docData, &result)
-        debugf("result: %#v", result)
+        gobson.Unmarshal(replyData, &result)
+        debugf("Insert result: %#v", result)
         if result.Err != "" {
             err = result
         }
@@ -358,13 +363,15 @@ func (query *Query) One(result interface{}) (err os.Error) {
     defer socket.Release()
 
     var mutex sync.Mutex
-    var docData []byte
+    var replyData []byte
+    var replyErr os.Error
 
     mutex.Lock()
 
     op.limit = -1
-    op.replyFunc = func(reply *replyOp, docNum int, _docData []byte) {
-        docData = _docData
+    op.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
+        replyErr = err
+        replyData = docData
         mutex.Unlock()
     }
 
@@ -373,13 +380,16 @@ func (query *Query) One(result interface{}) (err os.Error) {
         return err
     }
 
-    // Unmarshal outside of the read goroutine to avoid blocking it.
     mutex.Lock()
-    if docData == nil {
+    if replyErr != nil {
+        return replyErr
+    }
+    if replyData == nil {
         return NotFound
     }
 
-    err = gobson.Unmarshal(docData, result)
+    // Unmarshal outside of the read goroutine (replyFunc) to avoid blocking it.
+    err = gobson.Unmarshal(replyData, result)
     if err == nil {
         debugf("Query %p document unmarshaled: %#v", query, result)
     } else {
@@ -519,12 +529,15 @@ func (session *Session) setSocket(socket *mongoSocket) {
 }
 
 func (iter *Iter) replyFunc() replyFunc {
-    return func(op *replyOp, docNum int, docData []byte) {
+    return func(err os.Error, op *replyOp, docNum int, docData []byte) {
         iter.m.Lock()
         iter.pendingDocs--
-        if docNum == -1 {
+        if err != nil {
+            iter.err = err
+            debugf("Iter %p received an error: %s", iter, err.String())
+        } else if docNum == -1 {
             iter.err = NotFound
-            debugf("Iter %p has no documents.", iter)
+            debugf("Iter %p received no documents.", iter)
         } else {
             rdocs := int(op.replyDocs)
             if docNum == 0 {

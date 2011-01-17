@@ -5,6 +5,7 @@ import (
     "testing"
     "mongogo"
     "time"
+    "fmt"
     "os"
 )
 
@@ -30,7 +31,10 @@ type S struct {
 var _ = Suite(&S{})
 
 func (s *S) SetUpTest(c *C) {
-    exec(c, "mongo --nodb testdb/dropall.js")
+    err := exec("mongo --nodb testdb/dropall.js")
+    if err != nil {
+        panic(err.String())
+    }
     mongogo.SetLogger((*cLogger)(c))
     mongogo.ResetStats()
 }
@@ -40,24 +44,41 @@ func (s *S) SetUpSuite(c *C) {
     mongogo.CollectStats(true)
 }
 
+func (s *S) StartAll() {
+    // Restart any stopped nodes.
+    exec("cd _testdb && supervisorctl start all")
+    err := exec("cd testdb && mongo --nodb wait.js")
+    if err != nil {
+        panic(err.String())
+    }
+}
 
-func exec(c *C, command string) {
+func exec(command string) os.Error {
     name := "/bin/sh"
     argv := []string{name, "-c", command}
     envv := os.Environ()
-    fdv := []*os.File{os.Stdin, nil, os.Stderr}
 
-    pid, err := os.ForkExec(name, argv, envv, "", fdv)
+    devNull, err := os.Open("/dev/null", os.O_WRONLY, 0)
     if err != nil {
-        c.Fatalf("Failed to execute: %s: %s", command, err.String())
+        msg := fmt.Sprintf("Failed opening /dev/null: %s", err.String())
+        return os.ErrorString(msg)
     }
 
+    fdv := []*os.File{os.Stdin, devNull, os.Stderr}
+    pid, err := os.ForkExec(name, argv, envv, "", fdv)
+    devNull.Close()
+    if err != nil {
+        msg := fmt.Sprintf("Failed to execute: %s: %s", command, err.String())
+        return os.ErrorString(msg)
+    }
     w, err := os.Wait(pid, 0)
     if err != nil {
-        c.Fatalf("Error waiting for: %s: %s", command)
+        return os.ErrorString(fmt.Sprintf("Error waiting for: %s: %s", command))
     }
     rc := w.ExitStatus()
     if rc != 0 {
-        c.Fatalf("Process %s returned non-zero exit code (%d)", name, rc)
+        msg := fmt.Sprintf("%s returned non-zero exit code (%d)", command, rc)
+        return os.ErrorString(msg)
     }
+    return nil
 }

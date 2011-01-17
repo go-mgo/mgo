@@ -5,6 +5,8 @@ import (
     .   "gocheck"
     "gobson"
     "mongogo"
+    "strings"
+    "os"
 )
 
 
@@ -554,4 +556,45 @@ func (s *S) TestEventualSession(c *C) {
     c.Assert(stats.MasterConns, Equals, 1)
     c.Assert(stats.SlaveConns, Equals, 2)
     c.Assert(stats.SocketRefs, Equals, 0)
+}
+
+func (s *S) TestPrimaryShutdownWithStrongConsistency(c *C) {
+    session, err := mongogo.Mongo("localhost:40021")
+    c.Assert(err, IsNil)
+
+    result := &struct{ Host string }{}
+
+    err = session.Run("serverStatus", result)
+    c.Assert(err, IsNil)
+
+    host := result.Host
+    var name string
+    if strings.HasSuffix(host, ":40021") {
+        name = "rs2a"
+    } else if strings.HasSuffix(host, ":40022") {
+        name = "rs2b"
+    } else {
+        c.Fatal("Neither rs2a nor rs2b is the master: " + result.Host)
+    }
+
+    err = exec("cd _testdb && supervisorctl stop " + name)
+    if err != nil {
+        c.Fatal(err.String())
+    }
+    defer s.StartAll()
+
+    // This must fail, since the connection was broken.
+    err = session.Run("serverStatus", result)
+    c.Assert(err, Equals, os.EOF)
+
+    // With strong consistency, it must fail again until reset.
+    err = session.Run("serverStatus", result)
+    c.Assert(err, Equals, os.EOF)
+
+    session.Restart()
+
+    // Now we should be able to talk to the new master.
+    err = session.Run("serverStatus", result)
+    c.Assert(err, Equals, nil)
+    c.Assert(result.Host, Not(Equals), host)
 }

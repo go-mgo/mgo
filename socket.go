@@ -9,15 +9,17 @@ import (
 )
 
 
-type replyFunc func(reply *replyOp, docNum int, docData []byte)
+type replyFunc func(err os.Error, reply *replyOp, docNum int, docData []byte)
 
 type mongoSocket struct {
     sync.Mutex
     server        *mongoServer // nil when cached
     conn          *net.TCPConn
+    addr          string // For debugging only.
     nextRequestId uint32
     replyFuncs    map[uint32]replyFunc
     reserved      int
+    dead          os.Error
 }
 
 type queryOp struct {
@@ -55,7 +57,7 @@ type requestInfo struct {
 }
 
 func newSocket(server *mongoServer, conn *net.TCPConn) *mongoSocket {
-    socket := &mongoSocket{conn: conn}
+    socket := &mongoSocket{conn: conn, addr: server.Addr}
     socket.replyFuncs = make(map[uint32]replyFunc)
     socket.Acquired(server)
     go socket.readLoop()
@@ -175,6 +177,17 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
     // Buffer is ready for the pipe.  Lock, allocate ids, and enqueue.
 
     socket.Lock()
+    if socket.dead != nil {
+        socket.Unlock()
+        debug("Socket to ", socket.addr, " already closed: ", socket.dead.String())
+        //for i := 0; i != requestCount; i++ {
+        //    request := &requests[i]
+        //    if request.replyFunc != nil {
+        //        request.replyFunc(socket.dead, nil, -1, nil)
+        //    }
+        //}
+        return socket.dead
+    }
 
     // Reserve id 0 for requests which should have no responses.
     requestId := socket.nextRequestId + 1
@@ -189,9 +202,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
         requestId++
     }
 
-    // XXX Must check if server is set before doing this.
-    debug("Sending ", len(ops), " op(s) (", len(buf), " bytes) to ",
-        socket.server.Addr)
+    debug("Sending ", len(ops), " op(s) (", len(buf), " bytes) to ", socket.addr)
     stats.sentOps(len(ops))
 
     _, err = socket.conn.Write(buf)
@@ -199,57 +210,74 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
     return err
 }
 
+func (socket *mongoSocket) kill(err os.Error) {
+    socket.Lock()
+    if socket.dead != nil {
+        debugf("Socket to %s killed again: %s (previously: %s)", socket.addr, err.String(), socket.dead.String())
+        socket.Unlock()
+        return
+    }
+    log("Closing socket to " + socket.addr + ": " + err.String())
+    socket.dead = err
+    socket.conn.Close()
+    replyFuncs := socket.replyFuncs
+    socket.replyFuncs = make(map[uint32]replyFunc)
+    socket.Unlock()
+    for _, f := range replyFuncs {
+        f(err, nil, -1, nil)
+    }
+}
+
 // Estimated minimum cost per socket: 1 goroutine + memory for the largest
 // document ever seen.
 func (socket *mongoSocket) readLoop() {
-    // XXX How to handle locking in this method!?
     p := [36]byte{}[:] // 16 from header + 20 from OP_REPLY fixed fields
     s := [4]byte{}[:]
-    conn := socket.conn
+    conn := socket.conn // No locking, conn never changes.
     for {
         // XXX Handle timeouts, EOFs, stopping, etc
         _, err := conn.Read(p)
         if err != nil {
-            panic("Read error: " + err.String()) // XXX Do something here.
+            socket.kill(err)
+            return
         }
 
         totalLen := getInt32(p, 0)
         responseTo := getInt32(p, 8)
         opCode := getInt32(p, 12)
 
-        // XXX Must check if server is set before doing this.
-        debug("Got reply (", totalLen, " bytes) from ", socket.server.Addr)
+        // Don't use socket.server.Addr here.  socket is not locked.
+        debug("Got reply (", totalLen, " bytes) from ", socket.addr)
 
         _ = totalLen
 
         if opCode != 1 {
-            // XXX Close the socket, rather than panicking.
-            panic("Got a reply opcode != 1 from server. Corrupted data?")
+            socket.kill(os.ErrorString("opcode != 1, corrupted data?"))
+            return
         }
 
-        reply := replyOp{flags: uint32(getInt32(p, 16)),
+        reply := replyOp{
+            flags:     uint32(getInt32(p, 16)),
             cursorId:  getInt64(p, 20),
             firstDoc:  getInt32(p, 28),
-            replyDocs: getInt32(p, 32)}
+            replyDocs: getInt32(p, 32),
+        }
 
         stats.receivedOps(+1)
         stats.receivedDocs(int(reply.replyDocs))
 
         socket.Lock()
-        replyFunc, found := socket.replyFuncs[uint32(responseTo)]
-        if found {
-            socket.replyFuncs[uint32(responseTo)] = replyFunc, false
-        }
+        replyFunc, replyFuncFound := socket.replyFuncs[uint32(responseTo)]
         socket.Unlock()
 
         if replyFunc != nil && reply.replyDocs == 0 {
-            replyFunc(&reply, -1, nil)
+            replyFunc(nil, &reply, -1, nil)
         } else {
             for i := 0; i != int(reply.replyDocs); i++ {
                 _, err := conn.Read(s)
                 if err != nil {
-                    // XXX Check error
-                    panic(err.String())
+                    socket.kill(err)
+                    return
                 }
 
                 b := make([]byte, int(getInt32(s, 0)))
@@ -262,16 +290,25 @@ func (socket *mongoSocket) readLoop() {
 
                 _, err = conn.Read(b[4:])
                 if err != nil {
-                    panic(err.String()) // XXX Do something here.
+                    socket.kill(err)
+                    return
                 }
 
                 if replyFunc != nil {
-                    replyFunc(&reply, i, b)
+                    replyFunc(nil, &reply, i, b)
                 }
 
                 // XXX Do bound checking against totalLen.
             }
         }
+
+        // Only remove replyFunc after iteration, so that kill() will see it.
+        socket.Lock()
+        if replyFuncFound {
+            socket.replyFuncs[uint32(responseTo)] = replyFunc, false
+        }
+        socket.Unlock()
+
 
         // XXX Do bound checking against totalLen.
     }

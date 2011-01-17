@@ -30,7 +30,7 @@ clean: stopdb
 
 GOFMT=gofmt -spaces=true -tabwidth=4 -tabindent=false
 
-BADFMT=$(shell $(GOFMT) -l $(GOFILES) $(wildcard *_test.go))
+BADFMT=$(shell $(GOFMT) -l $(GOFILES) $(wildcard *_test.go) 2> /dev/null)
 
 gofmt: $(BADFMT)
 	@for F in $(BADFMT); do $(GOFMT) -w $$F && echo $$F; done

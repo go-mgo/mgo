@@ -60,9 +60,7 @@ type isMasterResult struct {
 }
 
 func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, err os.Error) {
-
     addr := server.Addr
-
     log("[sync] Processing ", addr, "...")
 
     defer func() {
