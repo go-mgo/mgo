@@ -43,19 +43,25 @@ func newServer(addr string) (server *mongoServer, err os.Error) {
 // a new one. The returned socket is owned by the call site, and will return
 // to the cache if explicitly done.
 func (server *mongoServer) AcquireSocket() (socket *mongoSocket, err os.Error) {
-    server.Lock()
-    n := len(server.sockets)
-    if n > 0 {
-        socket = server.sockets[n-1]
-        server.sockets[n-1] = nil // Help GC.
-        server.sockets = server.sockets[:n-1]
-        server.Unlock()
-        socket.Acquired(server)
-    } else {
-        server.Unlock()
-        socket, err = server.Connect()
+    for {
+        server.Lock()
+        n := len(server.sockets)
+        if n > 0 {
+            socket = server.sockets[n-1]
+            server.sockets[n-1] = nil // Help GC.
+            server.sockets = server.sockets[:n-1]
+            server.Unlock()
+            err = socket.Acquired(server)
+            if err != nil {
+                continue
+            }
+        } else {
+            server.Unlock()
+            socket, err = server.Connect()
+        }
+        return
     }
-    return
+    panic("unreached")
 }
 
 // Establish a new connection to the server. This should generally be done

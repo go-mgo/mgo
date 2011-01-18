@@ -3,6 +3,7 @@ package mongogo
 import (
     "strings"
     "sync"
+    "time"
     "os"
 )
 
@@ -38,6 +39,7 @@ type mongoCluster struct {
     servers      mongoServers
     masters      mongoServers
     slaves       mongoServers
+    syncing      bool
 }
 
 func (cluster *mongoCluster) removeServer(server *mongoServer) {
@@ -180,9 +182,20 @@ func (cluster *mongoCluster) getKnownAddrs() []string {
 // and then attempt to do the same with all the peers retrieved.  This function
 // will only return once the full synchronization is done.
 func (cluster *mongoCluster) syncServers() {
+
+restart:
+
     log("[sync] Starting full topology synchronization...")
 
     known := cluster.getKnownAddrs()
+
+    cluster.Lock()
+    if cluster.syncing {
+        cluster.Unlock()
+        return
+    }
+    cluster.syncing = true
+    cluster.Unlock()
 
     // Note that the logic below is lock free.  The locks below are
     // just to avoid race conditions internally and to wait for the
@@ -236,19 +249,30 @@ func (cluster *mongoCluster) syncServers() {
     }
 
     done.Lock()
+
+    cluster.Lock()
+    cluster.syncing = false
+
     log("[sync] Synchronization completed: ", cluster.masters.Len(),
         " master(s) and, ", cluster.slaves.Len(), " slave(s) alive.")
 
     // Update dynamic seeds, but only if we have any good servers. Otherwise,
     // leave them alone for better chances of a successful sync in the future.
-    cluster.Lock()
     if !cluster.servers.Empty() {
         dynaSeeds := make([]string, cluster.servers.Len())
         for i, server := range cluster.servers.Slice() {
             dynaSeeds[i] = server.Addr
         }
         cluster.dynaSeeds = dynaSeeds
-        debugf("New dynamic seeds: %#v\n", dynaSeeds)
+        debugf("[sync] New dynamic seeds: %#v\n", dynaSeeds)
+    }
+
+    if cluster.masters.Len() == 0 {
+        log("[sync] No masters found. Synchronize again.")
+        cluster.Unlock()
+        time.Sleep(5e8)
+        // XXX Must stop at some point and/or back off
+        goto restart
     }
     cluster.Unlock()
 }
@@ -257,28 +281,32 @@ func (cluster *mongoCluster) syncServers() {
 // a socket to a server which will accept writes.  If it is false, the socket
 // will be to an arbitrary server, preferably a slave.
 func (cluster *mongoCluster) AcquireSocket(write bool) (s *mongoSocket, err os.Error) {
-    cluster.RLock()
     for {
-        debugf("Cluster has %d known masters.", cluster.masters.Len())
-        if !cluster.masters.Empty() {
-            break
+        cluster.RLock()
+        for {
+            debugf("Cluster has %d known masters.", cluster.masters.Len())
+            if !cluster.masters.Empty() {
+                break
+            }
+            log("Waiting for masters to synchronize.")
+            cluster.masterSynced.Wait()
         }
-        log("Waiting for masters to synchronize.")
-        cluster.masterSynced.Wait()
-    }
 
-    var server *mongoServer
-    if write || cluster.slaves.Empty() {
-        server = cluster.masters.Get(0) // XXX Pick random.
-    } else {
-        server = cluster.slaves.Get(0) // XXX Pick random.
-    }
-    cluster.RUnlock()
+        var server *mongoServer
+        if write || cluster.slaves.Empty() {
+            server = cluster.masters.Get(0) // XXX Pick random.
+        } else {
+            server = cluster.slaves.Get(0) // XXX Pick random.
+        }
+        cluster.RUnlock()
 
-    s, err = server.AcquireSocket()
-    if err != nil {
-        // XXX Switch server on connection errors.
-        return nil, err
+        s, err = server.AcquireSocket()
+        if err != nil {
+            cluster.removeServer(server)
+            go cluster.syncServers()
+            continue
+        }
+        return s, nil
     }
-    return s, err
+    panic("unreached")
 }

@@ -66,15 +66,20 @@ func newSocket(server *mongoServer, conn *net.TCPConn) *mongoSocket {
 
 // Inform the socket it's being put in use, either right after a
 // connection or after being recycled.
-func (socket *mongoSocket) Acquired(server *mongoServer) {
+func (socket *mongoSocket) Acquired(server *mongoServer) os.Error {
     socket.Lock()
     if socket.server != nil {
         panic("Attempting to reacquire an owned socket.")
+    }
+    if socket.dead != nil {
+        socket.Unlock()
+        return socket.dead
     }
     socket.server = server
     socket.reserved++
     stats.socketRefs(+1)
     socket.Unlock()
+    return nil
 }
 
 // Acquire the socket again, increasing its refcount.  The socket

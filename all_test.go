@@ -1,17 +1,17 @@
 package mongogo_test
 
-
 import (
     .   "gocheck"
     "gobson"
     "mongogo"
     "strings"
+    "flag"
     "os"
 )
 
+var fast = flag.Bool("fast", false, "Skip slow tests")
 
 type M gobson.M
-
 
 // Connect to the master of a deployment with a single server,
 // run an insert, and then ensure the insert worked and that a
@@ -559,6 +559,10 @@ func (s *S) TestEventualSession(c *C) {
 }
 
 func (s *S) TestPrimaryShutdownWithStrongConsistency(c *C) {
+    if *fast {
+        c.Skip("-fast")
+    }
+
     session, err := mongogo.Mongo("localhost:40021")
     c.Assert(err, IsNil)
 
@@ -595,6 +599,6 @@ func (s *S) TestPrimaryShutdownWithStrongConsistency(c *C) {
 
     // Now we should be able to talk to the new master.
     err = session.Run("serverStatus", result)
-    c.Assert(err, Equals, nil)
+    c.Assert(err, IsNil)
     c.Assert(result.Host, Not(Equals), host)
 }
