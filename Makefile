@@ -13,7 +13,7 @@ GOFILES=\
 	cond.go\
 	log.go\
 
-include $(GOROOT)/src/Make.pkg
+all: package
 
 testpackage: _testdb
 
@@ -29,8 +29,7 @@ stopdb:
 clean: stopdb
 
 GOFMT=gofmt -spaces=true -tabwidth=4 -tabindent=false
-
-BADFMT=$(shell $(GOFMT) -l $(GOFILES) $(wildcard *_test.go) 2> /dev/null)
+BADFMT:=$(shell $(GOFMT) -l $(GOFILES) $(CGOFILES) $(wildcard *_test.go) 2> /dev/null)
 
 gofmt: $(BADFMT)
 	@for F in $(BADFMT); do $(GOFMT) -w $$F && echo $$F; done
@@ -40,3 +39,6 @@ ifneq ($(MAKECMDGOALS),gofmt)
 $(warning WARNING: make gofmt: $(BADFMT))
 endif
 endif
+
+include $(GOROOT)/src/Make.pkg
+

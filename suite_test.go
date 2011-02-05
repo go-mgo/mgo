@@ -7,6 +7,7 @@ import (
     "time"
     "fmt"
     "os"
+    "strings"
 )
 
 
@@ -26,9 +27,15 @@ func TestAll(t *testing.T) {
 
 type S struct {
     session *mongogo.Session
+    stopped bool
 }
 
 var _ = Suite(&S{})
+
+func (s *S) SetUpSuite(c *C) {
+    mongogo.Debug(true)
+    mongogo.CollectStats(true)
+}
 
 func (s *S) SetUpTest(c *C) {
     err := exec("mongo --nodb testdb/dropall.js")
@@ -39,9 +46,18 @@ func (s *S) SetUpTest(c *C) {
     mongogo.ResetStats()
 }
 
-func (s *S) SetUpSuite(c *C) {
-    mongogo.Debug(true)
-    mongogo.CollectStats(true)
+func (s *S) TearDownTest(c *C) {
+    if s.stopped {
+        s.StartAll()
+    }
+}
+
+func (s *S) Stop(host string) {
+    err := exec("cd _testdb && supervisorctl stop " + supvName(host))
+    if err != nil {
+        panic(err.String())
+    }
+    s.stopped = true
 }
 
 func (s *S) StartAll() {
@@ -51,6 +67,7 @@ func (s *S) StartAll() {
     if err != nil {
         panic(err.String())
     }
+    s.stopped = false
 }
 
 func exec(command string) os.Error {
@@ -81,4 +98,31 @@ func exec(command string) os.Error {
         return os.ErrorString(msg)
     }
     return nil
+}
+
+// supvName returns the supervisord name for the given host address.
+func supvName(host string) string {
+    switch {
+    case strings.HasSuffix(host, ":40001"):
+        return "db1"
+    case strings.HasSuffix(host, ":40011"):
+        return "rs1a"
+    case strings.HasSuffix(host, ":40012"):
+        return "rs1b"
+    case strings.HasSuffix(host, ":40013"):
+        return "rs1c"
+    case strings.HasSuffix(host, ":40021"):
+        return "rs2a"
+    case strings.HasSuffix(host, ":40022"):
+        return "rs2b"
+    case strings.HasSuffix(host, ":40023"):
+        return "rs2c"
+    case strings.HasSuffix(host, ":40101"):
+        return "cfg1"
+    case strings.HasSuffix(host, ":40201"):
+        return "s1"
+    case strings.HasSuffix(host, ":40202"):
+        return "s2"
+    }
+    panic("Unknown host: " + host)
 }

@@ -41,7 +41,7 @@ type Query struct {
 
 type query struct {
     op       queryOp
-    prefetch float
+    prefetch float64
 }
 
 type getLastError struct {
@@ -58,7 +58,7 @@ type Iter struct {
     docData        queue
     err            os.Error
     op             getMoreOp
-    prefetch       float
+    prefetch       float64
     pendingDocs    int
     docsBeforeMore int
 }
@@ -172,7 +172,7 @@ func (session *Session) Batch(size int) {
 // a per-query basis as well, using the respective Prefetch() method.
 //
 // The default prefetch value is 0.25.
-func (session *Session) Prefetch(p float) {
+func (session *Session) Prefetch(p float64) {
     session.m.Lock()
     session.queryConfig.prefetch = p
     session.m.Unlock()
@@ -306,7 +306,7 @@ func (query *Query) Batch(size int) *Query {
 // a per-session basis as well, using the respective Prefetch() method.
 //
 // The default prefetch value is 0.25.
-func (query *Query) Prefetch(p float) *Query {
+func (query *Query) Prefetch(p float64) *Query {
     query.m.Lock()
     query.prefetch = p
     query.m.Unlock()
@@ -487,19 +487,18 @@ func newSession(consistency int, cluster *mongoCluster, socket *mongoSocket) (se
 }
 
 func (session *Session) acquireSocket(write bool) (s *mongoSocket, err os.Error) {
-    // XXX Must take into account consistency setting.
     session.m.RLock()
     s = session.socket
     // XXX Lock the server here?
+    if session.consistency == Strong {
+        write = true
+    }
     if s == nil || write && !s.server.Master {
         session.m.RUnlock()
         // Try again, with an exclusive lock now.
         session.m.Lock()
         s = session.socket
         if s == nil || write && !s.server.Master {
-            if session.consistency == Strong {
-                write = true
-            }
             s, err = session.cluster.AcquireSocket(write)
             if err == nil && session.consistency != Eventual {
                 session.setSocket(s)
@@ -542,7 +541,7 @@ func (iter *Iter) replyFunc() replyFunc {
             rdocs := int(op.replyDocs)
             if docNum == 0 {
                 iter.pendingDocs += rdocs - 1
-                iter.docsBeforeMore = rdocs - int(iter.prefetch*float(rdocs))
+                iter.docsBeforeMore = rdocs - int(iter.prefetch*float64(rdocs))
                 iter.op.cursorId = op.cursorId
             }
             // XXX Handle errors and flags.

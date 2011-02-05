@@ -314,7 +314,6 @@ func (socket *mongoSocket) readLoop() {
         }
         socket.Unlock()
 
-
         // XXX Do bound checking against totalLen.
     }
 }

@@ -79,7 +79,8 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
     }
     defer socket.Release()
 
-    session := newSession(Strong, cluster, socket)
+    // Monotonic will let us talk to a slave, while holding the socket.
+    session := newSession(Monotonic, cluster, socket)
 
     result := isMasterResult{}
     err = session.Run("ismaster", &result)

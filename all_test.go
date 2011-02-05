@@ -4,7 +4,6 @@ import (
     .   "gocheck"
     "gobson"
     "mongogo"
-    "strings"
     "flag"
     "os"
 )
@@ -558,7 +557,7 @@ func (s *S) TestEventualSession(c *C) {
     c.Assert(stats.SocketRefs, Equals, 0)
 }
 
-func (s *S) TestPrimaryShutdownWithStrongConsistency(c *C) {
+func (s *S) TestPrimaryShutdownStrong(c *C) {
     if *fast {
         c.Skip("-fast")
     }
@@ -566,32 +565,20 @@ func (s *S) TestPrimaryShutdownWithStrongConsistency(c *C) {
     session, err := mongogo.Mongo("localhost:40021")
     c.Assert(err, IsNil)
 
+    // With strong consistency, this will open a socket to the master.
     result := &struct{ Host string }{}
-
     err = session.Run("serverStatus", result)
     c.Assert(err, IsNil)
 
+    // Kill the master.
     host := result.Host
-    var name string
-    if strings.HasSuffix(host, ":40021") {
-        name = "rs2a"
-    } else if strings.HasSuffix(host, ":40022") {
-        name = "rs2b"
-    } else {
-        c.Fatal("Neither rs2a nor rs2b is the master: " + result.Host)
-    }
-
-    err = exec("cd _testdb && supervisorctl stop " + name)
-    if err != nil {
-        c.Fatal(err.String())
-    }
-    defer s.StartAll()
+    s.Stop(host)
 
     // This must fail, since the connection was broken.
     err = session.Run("serverStatus", result)
     c.Assert(err, Equals, os.EOF)
 
-    // With strong consistency, it must fail again until reset.
+    // With strong consistency, it fails again until reset.
     err = session.Run("serverStatus", result)
     c.Assert(err, Equals, os.EOF)
 
@@ -601,4 +588,134 @@ func (s *S) TestPrimaryShutdownWithStrongConsistency(c *C) {
     err = session.Run("serverStatus", result)
     c.Assert(err, IsNil)
     c.Assert(result.Host, Not(Equals), host)
+}
+
+func (s *S) TestPrimaryShutdownMonotonic(c *C) {
+    if *fast {
+        c.Skip("-fast")
+    }
+
+    session, err := mongogo.Mongo("localhost:40021")
+    c.Assert(err, IsNil)
+
+    session = session.Monotonic()
+
+    // Insert something to force a switch to the master.
+    coll := session.DB("mydb").C("mycollection")
+    err = coll.Insert(M{"a": 1})
+    c.Assert(err, IsNil)
+
+    result := &struct{ Host string }{}
+    err = session.Run("serverStatus", result)
+    c.Assert(err, IsNil)
+
+    // Kill the master.
+    host := result.Host
+    s.Stop(host)
+
+    // This must fail, since the connection was broken.
+    err = session.Run("serverStatus", result)
+    c.Assert(err, Equals, os.EOF)
+
+    // With monotonic consistency, it fails again until reset.
+    err = session.Run("serverStatus", result)
+    c.Assert(err, Equals, os.EOF)
+
+    session.Restart()
+
+    // Now we should be able to talk to the new master.
+    err = session.Run("serverStatus", result)
+    c.Assert(err, IsNil)
+    c.Assert(result.Host, Not(Equals), host)
+}
+
+func (s *S) TestPrimaryShutdownMonotonicWithSlave(c *C) {
+    if *fast {
+        c.Skip("-fast")
+    }
+
+    session, err := mongogo.Mongo("localhost:40021")
+    c.Assert(err, IsNil)
+
+    ssresult := &struct{ Host string }{}
+    imresult := &struct{ IsMaster bool }{}
+
+    // Figure the master while still using the strong session.
+    err = session.Run("serverStatus", ssresult)
+    c.Assert(err, IsNil)
+    err = session.Run("isMaster", imresult)
+    c.Assert(err, IsNil)
+    master := ssresult.Host
+    c.Assert(imresult.IsMaster, Equals, true, Bug("%s is not the master", master))
+
+    session = session.Monotonic()
+
+    // Now, get the address of the slave the monotonic session is talking to.
+    err = session.Run("serverStatus", ssresult)
+    c.Assert(err, IsNil)
+    err = session.Run("isMaster", imresult)
+    c.Assert(err, IsNil)
+    slave := ssresult.Host
+    c.Assert(imresult.IsMaster, Equals, false, Bug("%s is not a slave", slave))
+
+    c.Assert(master, Not(Equals), slave)
+
+    // Kill the master.
+    s.Stop(master)
+
+    // Session must still be good, since we were talking to a slave.
+    err = session.Run("serverStatus", ssresult)
+    c.Assert(err, IsNil)
+
+    c.Assert(ssresult.Host, Equals, slave,
+             Bug("Monotonic session moved from %s to %s", slave, ssresult.Host))
+
+    // If we try to insert something, it'll have to hold until the new
+    // master is available to move the connection, and work correctly.
+    coll := session.DB("mydb").C("mycollection")
+    err = coll.Insert(M{"a": 1})
+    c.Assert(err, IsNil)
+
+    // Must now be talking to the new master.
+    err = session.Run("serverStatus", ssresult)
+    c.Assert(err, IsNil)
+    err = session.Run("isMaster", imresult)
+    c.Assert(err, IsNil)
+    c.Assert(imresult.IsMaster, Equals, true, Bug("%s is not the master", master))
+
+    // ... which is not the old one, since it's still dead.
+    c.Assert(ssresult.Host, Not(Equals), master)
+}
+
+func (s *S) TestPrimaryShutdownEventual(c *C) {
+    if *fast {
+        c.Skip("-fast")
+    }
+
+    session, err := mongogo.Mongo("localhost:40021")
+    c.Assert(err, IsNil)
+
+    result := &struct{ Host string }{}
+    err = session.Run("serverStatus", result)
+    c.Assert(err, IsNil)
+    master := result.Host
+
+    session = session.Eventual()
+
+    // Should connect to the master when needed.
+    coll := session.DB("mydb").C("mycollection")
+    err = coll.Insert(M{"a": 1})
+    c.Assert(err, IsNil)
+
+    // Kill the master.
+    s.Stop(master)
+
+    // Should still work, with the new master now.
+    coll = session.DB("mydb").C("mycollection")
+    err = coll.Insert(M{"a": 1})
+    c.Assert(err, IsNil)
+
+    err = session.Run("serverStatus", result)
+    c.Assert(err, IsNil)
+    c.Assert(result.Host, Not(Equals), master)
 }
