@@ -10,7 +10,7 @@ var rs1cfg = {_id: "rs1",
 var rs2cfg = {_id: "rs2",
               members: [{_id: 1, host: "127.0.0.1:40021", priority: 1},
                         {_id: 2, host: "127.0.0.1:40022", priority: 1},
-                        {_id: 3, host: "127.0.0.1:40023", priority: 0}],
+                        {_id: 3, host: "127.0.0.1:40023", priority: 1}],
               settings: settings}
 
 rs1a = new Mongo("127.0.0.1:40011").getDB("admin")

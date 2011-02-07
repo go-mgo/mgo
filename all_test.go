@@ -1,11 +1,12 @@
 package mongogo_test
 
 import (
-    .   "gocheck"
-    "gobson"
-    "mongogo"
     "flag"
+    "gobson"
+    .   "gocheck"
+    "mongogo"
     "os"
+    "strings"
 )
 
 var fast = flag.Bool("fast", false, "Skip slow tests")
@@ -359,14 +360,13 @@ func (s *S) TestSafeInsert(c *C) {
 
 
 func (s *S) TestSafeParameters(c *C) {
-    session, err := mongogo.Mongo("localhost:40001")
+    session, err := mongogo.Mongo("localhost:40011")
     c.Assert(err, IsNil)
 
     coll := session.DB("mydb").C("mycollection")
 
-    // Tweak the safety parameters to something unachievable,
-    // since we're talking to a single master.
-    session.Safe(2, 100, false)
+    // Tweak the safety parameters to something unachievable.
+    session.Safe(4, 100, false)
     err = coll.Insert(M{"_id": 1})
     c.Assert(err, Matches, "timeout")
     c.Assert(err.(*mongogo.LastError).WTimeout, Equals, true)
@@ -648,9 +648,28 @@ func (s *S) TestPrimaryShutdownMonotonicWithSlave(c *C) {
     master := ssresult.Host
     c.Assert(imresult.IsMaster, Equals, true, Bug("%s is not the master", master))
 
+    // Create new monotonic session with an explicit address to ensure
+    // a slave is synchronized before the master, otherwise a connection
+    // with the master may be used below for lack of other options.
+    var addr string
+    switch {
+    case strings.HasSuffix(ssresult.Host, ":40021"):
+        addr = "localhost:40022"
+    case strings.HasSuffix(ssresult.Host, ":40022"):
+        addr = "localhost:40021"
+    case strings.HasSuffix(ssresult.Host, ":40023"):
+        addr = "localhost:40021"
+    default:
+        c.Fatal("Unknown host: ", ssresult.Host)
+    }
+
+    session, err = mongogo.Mongo(addr)
+    c.Assert(err, IsNil)
+
     session = session.Monotonic()
 
-    // Now, get the address of the slave the monotonic session is talking to.
+    // Check the address of the socket associated with the monotonic session.
+    c.Log("Running serverStatus and isMaster with monotonic session")
     err = session.Run("serverStatus", ssresult)
     c.Assert(err, IsNil)
     err = session.Run("isMaster", imresult)

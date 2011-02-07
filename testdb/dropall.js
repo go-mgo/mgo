@@ -1,12 +1,26 @@
 
-var mongo = new Mongo("localhost:40201")
-var admin = mongo.getDB("admin")
-var dbs = admin.runCommand({"listDatabases": 1}).databases
+var ports = [40001, 40011, 40012, 40013, 40021, 40022, 40023, 40101, 40201, 40202]
 
-for (var i = 0; i != dbs.length; i++) {
-    var db = dbs[i]
-    if (db.name != "admin" && db.name != "local") {
-        mongo.getDB(db.name).dropDatabase()
+for (var i = 0; i != ports.length; i++) {
+    var mongo = new Mongo("localhost:" + ports[i])
+    var admin = mongo.getDB("admin")
+    var result = admin.runCommand({"listDatabases": 1})
+    // Why is the command returning undefined!?
+    while (typeof result.databases == "undefined") {
+        print("dropall.js: listing databases got:", result)
+        result = admin.runCommand({"listDatabases": 1})
+    }
+    var dbs = result.databases
+    for (var j = 0; j != dbs.length; j++) {
+        var db = dbs[j]
+        switch (db.name) {
+        case "admin":
+        case "local":
+        case "config":
+            break
+        default:
+            mongo.getDB(db.name).dropDatabase()
+        }
     }
 }
 

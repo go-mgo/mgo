@@ -1,11 +1,13 @@
 package mongogo_test
 
 import (
+    "exec"
     .   "gocheck"
     "testing"
     "mongogo"
     "time"
     "fmt"
+    "io/ioutil"
     "os"
     "strings"
 )
@@ -35,10 +37,11 @@ var _ = Suite(&S{})
 func (s *S) SetUpSuite(c *C) {
     mongogo.Debug(true)
     mongogo.CollectStats(true)
+    s.StartAll()
 }
 
 func (s *S) SetUpTest(c *C) {
-    err := exec("mongo --nodb testdb/dropall.js")
+    err := run("mongo --nodb testdb/dropall.js")
     if err != nil {
         panic(err.String())
     }
@@ -53,7 +56,7 @@ func (s *S) TearDownTest(c *C) {
 }
 
 func (s *S) Stop(host string) {
-    err := exec("cd _testdb && supervisorctl stop " + supvName(host))
+    err := run("cd _testdb && supervisorctl stop " + supvName(host))
     if err != nil {
         panic(err.String())
     }
@@ -62,39 +65,33 @@ func (s *S) Stop(host string) {
 
 func (s *S) StartAll() {
     // Restart any stopped nodes.
-    exec("cd _testdb && supervisorctl start all")
-    err := exec("cd testdb && mongo --nodb wait.js")
+    run("cd _testdb && supervisorctl start all")
+    err := run("cd testdb && mongo --nodb wait.js")
     if err != nil {
         panic(err.String())
     }
     s.stopped = false
 }
 
-func exec(command string) os.Error {
+func run(command string) os.Error {
     name := "/bin/sh"
     argv := []string{name, "-c", command}
     envv := os.Environ()
 
-    devNull, err := os.Open("/dev/null", os.O_WRONLY, 0)
-    if err != nil {
-        msg := fmt.Sprintf("Failed opening /dev/null: %s", err.String())
-        return os.ErrorString(msg)
-    }
-
-    fdv := []*os.File{os.Stdin, devNull, os.Stderr}
-    pid, err := os.ForkExec(name, argv, envv, "", fdv)
-    devNull.Close()
+    p, err := exec.Run(name, argv, envv, "", exec.PassThrough, exec.Pipe, exec.PassThrough)
     if err != nil {
         msg := fmt.Sprintf("Failed to execute: %s: %s", command, err.String())
         return os.ErrorString(msg)
     }
-    w, err := os.Wait(pid, 0)
+    output, _ := ioutil.ReadAll(p.Stdout)
+    p.Stdout.Close()
+    w, err := p.Wait(0)
     if err != nil {
         return os.ErrorString(fmt.Sprintf("Error waiting for: %s: %s", command))
     }
     rc := w.ExitStatus()
     if rc != 0 {
-        msg := fmt.Sprintf("%s returned non-zero exit code (%d)", command, rc)
+        msg := fmt.Sprintf("%s returned non-zero exit code (%d):\n%s", command, rc, output)
         return os.ErrorString(msg)
     }
     return nil
