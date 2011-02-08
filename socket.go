@@ -60,6 +60,7 @@ func newSocket(server *mongoServer, conn *net.TCPConn) *mongoSocket {
     socket := &mongoSocket{conn: conn, addr: server.Addr}
     socket.replyFuncs = make(map[uint32]replyFunc)
     socket.Acquired(server)
+    stats.socketsAlive(+1)
     go socket.readLoop()
     return socket
 }
@@ -77,7 +78,7 @@ func (socket *mongoSocket) Acquired(server *mongoServer) os.Error {
     }
     socket.server = server
     socket.reserved++
-    stats.socketRefs(+1)
+    stats.socketsInUse(+1)
     socket.Unlock()
     return nil
 }
@@ -88,7 +89,7 @@ func (socket *mongoSocket) Acquired(server *mongoServer) os.Error {
 func (socket *mongoSocket) Acquire() {
     socket.Lock()
     socket.reserved++
-    stats.socketRefs(+1)
+    stats.socketsInUse(+1)
     socket.Unlock()
 }
 
@@ -97,10 +98,10 @@ func (socket *mongoSocket) Acquire() {
 func (socket *mongoSocket) Release() {
     socket.Lock()
     socket.reserved--
-    stats.socketRefs(-1)
+    stats.socketsInUse(-1)
     if socket.reserved <= 0 {
         if socket.reserved < 0 {
-            panic("Internal error: socket reservation refcount < 0")
+            panic("internal error: socket reservation refcount < 0")
         }
         server := socket.server
         socket.server = nil
@@ -108,6 +109,30 @@ func (socket *mongoSocket) Release() {
         server.RecycleSocket(socket)
     } else {
         socket.Unlock()
+    }
+}
+
+// Close terminates the socket use.
+func (socket *mongoSocket) Close() {
+    socket.kill(os.ErrorString("Closed explicitly"))
+}
+
+func (socket *mongoSocket) kill(err os.Error) {
+    socket.Lock()
+    if socket.dead != nil {
+        debugf("Socket to %s killed again: %s (previously: %s)", socket.addr, err.String(), socket.dead.String())
+        socket.Unlock()
+        return
+    }
+    log("Closing socket to " + socket.addr + ": " + err.String())
+    socket.dead = err
+    socket.conn.Close()
+    stats.socketsAlive(-1)
+    replyFuncs := socket.replyFuncs
+    socket.replyFuncs = make(map[uint32]replyFunc)
+    socket.Unlock()
+    for _, f := range replyFuncs {
+        f(err, nil, -1, nil)
     }
 }
 
@@ -213,24 +238,6 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
     _, err = socket.conn.Write(buf)
     socket.Unlock()
     return err
-}
-
-func (socket *mongoSocket) kill(err os.Error) {
-    socket.Lock()
-    if socket.dead != nil {
-        debugf("Socket to %s killed again: %s (previously: %s)", socket.addr, err.String(), socket.dead.String())
-        socket.Unlock()
-        return
-    }
-    log("Closing socket to " + socket.addr + ": " + err.String())
-    socket.dead = err
-    socket.conn.Close()
-    replyFuncs := socket.replyFuncs
-    socket.replyFuncs = make(map[uint32]replyFunc)
-    socket.Unlock()
-    for _, f := range replyFuncs {
-        f(err, nil, -1, nil)
-    }
 }
 
 // Estimated minimum cost per socket: 1 goroutine + memory for the largest

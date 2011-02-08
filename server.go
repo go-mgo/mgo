@@ -19,6 +19,7 @@ type mongoServer struct {
     ResolvedAddr string
     tcpaddr      *net.TCPAddr
     sockets      []*mongoSocket
+    closed       bool
 }
 
 
@@ -84,16 +85,34 @@ func (server *mongoServer) Connect() (*mongoSocket, os.Error) {
     return newSocket(server, conn), nil
 }
 
+func (server *mongoServer) Close() {
+    server.Lock()
+    server.closed = true
+    for i, s := range server.sockets {
+        s.Close()
+        server.sockets[i] = nil
+    }
+    server.sockets = server.sockets[0:0]
+    server.Unlock()
+}
+
 func (server *mongoServer) RecycleSocket(socket *mongoSocket) {
     server.Lock()
-    server.sockets = append(server.sockets, socket)
+    if server.closed {
+        socket.Close()
+    } else {
+        server.sockets = append(server.sockets, socket)
+    }
     server.Unlock()
 }
 
 func (server *mongoServer) Merge(other *mongoServer) {
     server.Lock()
     server.Master = other.Master
-    // XXX Copy socket cache here.
+    // Sockets of other are ignored for the moment. Merging them
+    // would mean a large number of sockets being cached on longer
+    // recovering situations.
+    other.Close()
     server.Unlock()
 }
 
@@ -102,7 +121,6 @@ func (server *mongoServer) SetMaster(isMaster bool) {
     server.Master = isMaster
     server.Unlock()
 }
-
 
 type mongoServerSlice []*mongoServer
 

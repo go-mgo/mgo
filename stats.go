@@ -40,7 +40,8 @@ type Stats struct {
     SentOps      int
     ReceivedOps  int
     ReceivedDocs int
-    SocketRefs   int
+    SocketsInUse int
+    SocketsAlive int
 }
 
 func (stats *Stats) conn(delta int, master bool) {
@@ -79,10 +80,18 @@ func (stats *Stats) receivedDocs(delta int) {
     }
 }
 
-func (stats *Stats) socketRefs(delta int) {
+func (stats *Stats) socketsInUse(delta int) {
     if stats != nil {
         statsMutex.Lock()
-        stats.SocketRefs += delta
+        stats.SocketsInUse += delta
+        statsMutex.Unlock()
+    }
+}
+
+func (stats *Stats) socketsAlive(delta int) {
+    if stats != nil {
+        statsMutex.Lock()
+        stats.SocketsAlive += delta
         statsMutex.Unlock()
     }
 }

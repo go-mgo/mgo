@@ -7,6 +7,7 @@ import (
     "mongogo"
     "os"
     "strings"
+    "time"
 )
 
 var fast = flag.Bool("fast", false, "Skip slow tests")
@@ -30,12 +31,12 @@ func (s *S) TestTopologySyncWithSingleMaster(c *C) {
     stats := mongogo.GetStats()
     c.Assert(stats.MasterConns, Equals, 1)
     c.Assert(stats.SlaveConns, Equals, 0)
-    c.Assert(stats.SocketRefs, Equals, 1)
+    c.Assert(stats.SocketsInUse, Equals, 1)
 
     // Restart session and socket must be released.
     session.Restart()
     stats = mongogo.GetStats()
-    c.Assert(stats.SocketRefs, Equals, 0)
+    c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
 func (s *S) TestTopologySyncWithSlaveSeed(c *C) {
@@ -60,12 +61,12 @@ func (s *S) TestTopologySyncWithSlaveSeed(c *C) {
 
     // Only one socket reference alive, in the master socket owned
     // by the above session.
-    c.Assert(stats.SocketRefs, Equals, 1)
+    c.Assert(stats.SocketsInUse, Equals, 1)
 
     // Restart it, and it must be gone.
     session.Restart()
     stats = mongogo.GetStats()
-    c.Assert(stats.SocketRefs, Equals, 0)
+    c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
 func (s *S) TestRunString(c *C) {
@@ -186,7 +187,7 @@ func (s *S) TestInsertFindIter(c *C) {
     c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 2*GET_MORE_OP
     c.Assert(stats.ReceivedOps, Equals, 3) // and their REPLY_OPs.
     c.Assert(stats.ReceivedDocs, Equals, 5)
-    c.Assert(stats.SocketRefs, Equals, 0)
+    c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
 func (s *S) TestSort(c *C) {
@@ -399,7 +400,7 @@ func (s *S) TestNewSession(c *C) {
     // With New(), each session has its own socket now.
     stats := mongogo.GetStats()
     c.Assert(stats.MasterConns, Equals, 2)
-    c.Assert(stats.SocketRefs, Equals, 2)
+    c.Assert(stats.SocketsInUse, Equals, 2)
 
     // Ensure query parameters were cloned.
     err = cloneColl.Insert(M{"_id": 2})
@@ -446,7 +447,7 @@ func (s *S) TestCloneSession(c *C) {
     // With Clone(), same socket is shared between sessions now.
     stats := mongogo.GetStats()
     c.Assert(stats.MasterConns, Equals, 1)
-    c.Assert(stats.SocketRefs, Equals, 2)
+    c.Assert(stats.SocketsInUse, Equals, 2)
 
     // Restarting one of them should let the original socket go,
     // while preserving the safety settings.
@@ -457,7 +458,7 @@ func (s *S) TestCloneSession(c *C) {
     // Must have used another connection now.
     stats = mongogo.GetStats()
     c.Assert(stats.MasterConns, Equals, 2)
-    c.Assert(stats.SocketRefs, Equals, 2)
+    c.Assert(stats.SocketsInUse, Equals, 2)
 
     // Ensure query parameters were cloned.
     err = cloneColl.Insert(M{"_id": 2})
@@ -496,7 +497,7 @@ func (s *S) TestStrongSession(c *C) {
     stats := mongogo.GetStats()
     c.Assert(stats.MasterConns, Equals, 1)
     c.Assert(stats.SlaveConns, Equals, 2)
-    c.Assert(stats.SocketRefs, Equals, 1)
+    c.Assert(stats.SocketsInUse, Equals, 1)
 }
 
 func (s *S) TestMonotonicSession(c *C) {
@@ -525,7 +526,7 @@ func (s *S) TestMonotonicSession(c *C) {
     stats := mongogo.GetStats()
     c.Assert(stats.MasterConns, Equals, 1)
     c.Assert(stats.SlaveConns, Equals, 2)
-    c.Assert(stats.SocketRefs, Equals, 1)
+    c.Assert(stats.SocketsInUse, Equals, 1)
 }
 
 func (s *S) TestEventualSession(c *C) {
@@ -554,7 +555,7 @@ func (s *S) TestEventualSession(c *C) {
     stats := mongogo.GetStats()
     c.Assert(stats.MasterConns, Equals, 1)
     c.Assert(stats.SlaveConns, Equals, 2)
-    c.Assert(stats.SocketRefs, Equals, 0)
+    c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
 func (s *S) TestPrimaryShutdownStrong(c *C) {
@@ -738,3 +739,48 @@ func (s *S) TestPrimaryShutdownEventual(c *C) {
     c.Assert(err, IsNil)
     c.Assert(result.Host, Not(Equals), master)
 }
+
+func (s *S) TestPreserveSocketCountOnSync(c *C) {
+    if *fast {
+        c.Skip("-fast")
+    }
+
+    // Ensure no previous sockets are hanging around.
+    // XXX Why is this necessary? Cleanup other tests.
+    s.Stop("localhost:40011")
+    s.StartAll()
+    mongogo.ResetStats()
+
+    session, err := mongogo.Mongo("localhost:40011")
+    c.Assert(err, IsNil)
+
+    stats := mongogo.GetStats()
+    for stats.MasterConns+stats.SlaveConns != 3 {
+        stats = mongogo.GetStats()
+        c.Log("Waiting for all connections to be established...")
+        time.Sleep(5e8)
+    }
+
+    c.Assert(stats.SocketsAlive, Equals, 3)
+
+    // Kill the master (with rs1, 'a' is always the master).
+    s.Stop("localhost:40011")
+
+    // Wait for the logic to run for a bit and bring it back.
+    go func() {
+        time.Sleep(5e9)
+        s.StartAll()
+    }()
+
+    // Do an action to kick the resync logic in, and also to
+    // wait until the cluster recognizes the server is back.
+    result := struct{ Ok bool }{}
+    err = session.Run("getLastError", &result)
+    c.Assert(err, IsNil)
+    c.Assert(result.Ok, Equals, true)
+
+    // Ensure the number of sockets is preserved after syncing.
+    stats = mongogo.GetStats()
+    c.Assert(stats.SocketsAlive, Equals, 3)
+}
+
