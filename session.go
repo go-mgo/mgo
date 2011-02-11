@@ -5,6 +5,8 @@ import (
     "gobson"
     "sync"
     "os"
+    "runtime"
+    "strings"
 )
 
 
@@ -69,6 +71,21 @@ const defaultPrefetch = 0.25
 
 
 // ---------------------------------------------------------------------------
+// Entry point function to the cluster/session/server/socket hierarchy.
+
+// Establish a session to the cluster identified by the given seed server(s).
+// The session will enable communication with all of the servers in the cluster,
+// so the seed servers are used only to find out about the cluster topology.
+func Mongo(servers string) (session *Session, err os.Error) {
+    userSeeds := strings.Split(servers, ",", -1)
+    cluster := newCluster(userSeeds)
+    session = newSession(Strong, cluster, nil)
+    cluster.Release()
+    return session, nil
+}
+
+
+// ---------------------------------------------------------------------------
 // Public session methods.
 
 // Return a database object, which allows further accessing any collections
@@ -87,17 +104,10 @@ func (database Database) C(name string) Collection {
     return Collection{database.Session, database.Name + "." + name}
 }
 
-// Put back any reserved sockets in use and restart the consistency
-// guarantees according to the existing consistency setting.
-func (session *Session) Restart() {
-    session.m.Lock()
-    session.setSocket(nil)
-    session.m.Unlock()
-}
-
-// Create a new session with the same parameters as the original session,
-// including batch size, prefetching, safety mode, etc. Unlike Clone(),
-// this will not share any sockets between the two sessions.
+// New creates a new session with the same parameters as the original
+// session, including consistency, batch size, prefetching, safety mode,
+// etc. Unlike Clone(), the new session will not share any sockets with
+// the old session.
 func (session *Session) New() *Session {
     session.m.Lock()
     clone := &Session{
@@ -106,16 +116,16 @@ func (session *Session) New() *Session {
         safe:        session.safe,
         queryConfig: session.queryConfig,
     }
+    session.cluster.Acquire()
     session.m.Unlock()
     return clone
 }
 
-// Clone the session and return a new session with the same parameters as the
-// original one, including batch size, prefetching, safety mode, etc. Unlike
-// Unlike New(), in case a socket has already been reserved by the original
-// session to preserve consistency requirements, the same socket will be shared
-// with the new session before either session is garbage collected or
-// Restart()ed.
+// Clone creates a new session with the same parameters as the current one,
+// including consistency, batch size, prefetching, safety mode, etc. Unlike
+// New(), in case a socket has already been reserved by the original session
+// to preserve consistency requirements, the same socket will be shared
+// with the new session.
 func (session *Session) Clone() *Session {
     session.m.Lock()
     clone := &Session{
@@ -124,27 +134,49 @@ func (session *Session) Clone() *Session {
         safe:        session.safe,
         queryConfig: session.queryConfig,
     }
+    session.cluster.Acquire()
     clone.setSocket(session.socket)
     session.m.Unlock()
     return clone
 }
 
-func (session *Session) Strong() *Session {
-    s := session.New()
-    s.consistency = Strong
-    return s
+// Restart puts back any reserved sockets in use and restarts the consistency
+// guarantees according to the existing consistency setting.
+func (session *Session) Restart() {
+    session.m.Lock()
+    session.setSocket(nil)
+    session.m.Unlock()
 }
 
-func (session *Session) Monotonic() *Session {
-    s := session.New()
-    s.consistency = Monotonic
-    return s
+// Close terminates the session.  It's a runtime error to use a session
+// after it has been closed.
+func (session *Session) Close() {
+    session.m.Lock()
+    if session.cluster != nil {
+        session.setSocket(nil)
+        session.cluster.Release()
+        session.cluster = nil
+    }
+    session.m.Unlock()
 }
 
-func (session *Session) Eventual() *Session {
-    s := session.New()
-    s.consistency = Eventual
-    return s
+func (session *Session) Strong() {
+    session.m.Lock()
+    session.consistency = Strong
+    session.m.Unlock()
+}
+
+func (session *Session) Monotonic() {
+    session.m.Lock()
+    session.consistency = Monotonic
+    session.m.Unlock()
+}
+
+func (session *Session) Eventual() {
+    session.m.Lock()
+    session.consistency = Eventual
+    session.setSocket(nil)
+    session.m.Unlock()
 }
 
 // Set the default batch size used when fetching documents from the database.
@@ -479,11 +511,17 @@ func (iter *Iter) Next(result interface{}) (err os.Error) {
 // Internal session handling helpers.
 
 func newSession(consistency int, cluster *mongoCluster, socket *mongoSocket) (session *Session) {
+    cluster.Acquire()
     session = &Session{consistency: consistency, cluster: cluster}
     session.setSocket(socket)
     session.queryConfig.prefetch = defaultPrefetch
     session.Safe(0, 0, false)
+    runtime.SetFinalizer(session, finalizeSession)
     return session
+}
+
+func finalizeSession(session *Session) {
+    session.Close()
 }
 
 func (session *Session) acquireSocket(write bool) (s *mongoSocket, err os.Error) {

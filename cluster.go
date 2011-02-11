@@ -1,27 +1,10 @@
 package mongogo
 
 import (
-    "strings"
     "sync"
     "time"
     "os"
 )
-
-
-// ---------------------------------------------------------------------------
-// Entry point function to the cluster/session/server/socket hierarchy.
-
-// Establish a session to the cluster identified by the given seed server(s).
-// The session will enable communication with all of the servers in the cluster,
-// so the seed servers are used only to find out about the cluster topology.
-func Mongo(servers string) (session *Session, err os.Error) {
-    userSeeds := strings.Split(servers, ",", -1)
-    cluster := &mongoCluster{userSeeds: userSeeds}
-    cluster.masterSynced.M = (*rlocker)(&cluster.RWMutex)
-    go cluster.syncServers()
-    session = newSession(Strong, cluster, nil)
-    return session, nil
-}
 
 
 // ---------------------------------------------------------------------------
@@ -40,6 +23,37 @@ type mongoCluster struct {
     masters      mongoServers
     slaves       mongoServers
     syncing      bool
+    references   int
+}
+
+func newCluster(userSeeds []string) *mongoCluster {
+    cluster := &mongoCluster{userSeeds: userSeeds, references: 1}
+    cluster.masterSynced.M = (*rlocker)(&cluster.RWMutex)
+    go cluster.syncServers()
+    return cluster
+}
+
+// Acquire increases the reference count for the cluster.
+func (cluster *mongoCluster) Acquire() {
+    cluster.Lock()
+    cluster.references++
+    cluster.Unlock()
+}
+
+// Release decreases the reference count for the cluster. Once
+// it reaches zero, all servers will be closed.
+func (cluster *mongoCluster) Release() {
+    cluster.Lock()
+    if cluster.references == 0 {
+        panic("cluster.Release() with references == 0")
+    }
+    cluster.references--
+    if cluster.references == 0 {
+        for _, server := range cluster.servers.Slice() {
+            server.Close()
+        }
+    }
+    cluster.Unlock()
 }
 
 func (cluster *mongoCluster) removeServer(server *mongoServer) {
@@ -77,10 +91,12 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
         log("[sync] Failed to get socket to ", addr, ": ", err.String())
         return
     }
-    defer socket.Release()
 
     // Monotonic will let us talk to a slave, while holding the socket.
     session := newSession(Monotonic, cluster, socket)
+    defer session.Close()
+
+    socket.Release()
 
     result := isMasterResult{}
     err = session.Run("ismaster", &result)
@@ -110,7 +126,10 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
     hosts = append(hosts, result.Hosts...)
     hosts = append(hosts, result.Passives...)
 
-    session.Restart() // Release the socket.
+    // Close the session ahead of time. This will release the socket being
+    // used for synchronization so that it may be reused as soon as the
+    // server is merged.
+    session.Close()
     cluster.mergeServer(server)
 
     debugf("[sync] %s knows about the following peers: %#v", addr, hosts)
@@ -191,10 +210,11 @@ restart:
     known := cluster.getKnownAddrs()
 
     cluster.Lock()
-    if cluster.syncing {
+    if cluster.syncing || cluster.references == 0 {
         cluster.Unlock()
         return
     }
+    cluster.references++ // Keep alive while syncing.
     cluster.syncing = true
     cluster.Unlock()
 
@@ -252,6 +272,7 @@ restart:
     done.Lock()
 
     cluster.Lock()
+    // Reference is decreased after unlocking, so that refs-1 == 0 is taken care of.
     cluster.syncing = false
 
     log("[sync] Synchronization completed: ", cluster.masters.Len(),
@@ -271,11 +292,13 @@ restart:
     if cluster.masters.Len() == 0 {
         log("[sync] No masters found. Synchronize again.")
         cluster.Unlock()
+        cluster.Release()
         time.Sleep(5e8)
         // XXX Must stop at some point and/or back off
         goto restart
     }
     cluster.Unlock()
+    cluster.Release()
 }
 
 // Return a socket to a server in the cluster.  If write is true, it will return

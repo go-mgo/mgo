@@ -53,6 +53,17 @@ func (s *S) TearDownTest(c *C) {
     if s.stopped {
         s.StartAll()
     }
+    for i := 0; ; i++ {
+        stats := mongogo.GetStats()
+        if stats.SocketsInUse == 0 && stats.SocketsAlive == 0 {
+            break
+        }
+        if i == 20 {
+            c.Fatal("Test left sockets in a dirty state")
+        }
+        c.Logf("Waiting for sockets to die: %d in use, %d alive", stats.SocketsInUse, stats.SocketsAlive)
+        time.Sleep(5e8)
+    }
 }
 
 func (s *S) Stop(host string) {

@@ -21,6 +21,7 @@ func (s *S) TestTopologySyncWithSingleMaster(c *C) {
     // Use hostname here rather than IP, to make things trickier.
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     coll := session.DB("mydb").C("mycollection")
     err = coll.Insert(M{"a": 1, "b": 2})
@@ -44,6 +45,7 @@ func (s *S) TestTopologySyncWithSlaveSeed(c *C) {
     // and find out master to insert successfully.
     session, err := mongogo.Mongo("localhost:40012")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     coll := session.DB("mydb").C("mycollection")
     coll.Insert(M{"a": 1, "b": 2})
@@ -72,6 +74,7 @@ func (s *S) TestTopologySyncWithSlaveSeed(c *C) {
 func (s *S) TestRunString(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     result := struct{ Ok int }{}
     err = session.Run("ping", &result)
@@ -82,6 +85,7 @@ func (s *S) TestRunString(c *C) {
 func (s *S) TestRunValue(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     result := struct{ Ok int }{}
     err = session.Run(M{"ping": 1}, &result)
@@ -92,6 +96,7 @@ func (s *S) TestRunValue(c *C) {
 func (s *S) TestInsertFindOne(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     coll := session.DB("mydb").C("mycollection")
     coll.Insert(M{"a": 1, "b": 2})
@@ -107,6 +112,7 @@ func (s *S) TestInsertFindOne(c *C) {
 func (s *S) TestInsertFindOneMap(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     coll := session.DB("mydb").C("mycollection")
     coll.Insert(M{"a": 1, "b": 2})
@@ -120,6 +126,7 @@ func (s *S) TestInsertFindOneMap(c *C) {
 func (s *S) TestInsertFindOneNotFound(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     coll := session.DB("mydb").C("mycollection")
 
@@ -133,6 +140,7 @@ func (s *S) TestInsertFindOneNotFound(c *C) {
 func (s *S) TestInsertFindIter(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     coll := session.DB("mydb").C("mycollection")
 
@@ -193,6 +201,7 @@ func (s *S) TestInsertFindIter(c *C) {
 func (s *S) TestSort(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     coll := session.DB("mydb").C("mycollection")
 
@@ -227,6 +236,7 @@ func (s *S) TestSort(c *C) {
 func (s *S) TestInsertFindIterTwiceWithSameQuery(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     coll := session.DB("mydb").C("mycollection")
 
@@ -253,6 +263,7 @@ func (s *S) TestInsertFindIterTwiceWithSameQuery(c *C) {
 func (s *S) TestInsertFindIterWithoutResults(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     coll := session.DB("mydb").C("mycollection")
     coll.Insert(M{"n": 42})
@@ -269,6 +280,7 @@ func (s *S) TestInsertFindIterWithoutResults(c *C) {
 func (s *S) TestPrefetching(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     coll := session.DB("mydb").C("mycollection")
 
@@ -329,6 +341,7 @@ func (s *S) TestPrefetching(c *C) {
 func (s *S) TestSafeInsert(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     coll := session.DB("mydb").C("mycollection")
 
@@ -363,6 +376,7 @@ func (s *S) TestSafeInsert(c *C) {
 func (s *S) TestSafeParameters(c *C) {
     session, err := mongogo.Mongo("localhost:40011")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     coll := session.DB("mydb").C("mycollection")
 
@@ -376,21 +390,23 @@ func (s *S) TestSafeParameters(c *C) {
 func (s *S) TestNewSession(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     // Do a dummy operation to wait for connection.
     coll := session.DB("mydb").C("mycollection")
     err = coll.Insert(M{"_id": 1})
     c.Assert(err, IsNil)
 
-    // Tweak safety and query settings to ensure clone is copying those.
+    // Tweak safety and query settings to ensure other has copied those.
     session.Unsafe()
     session.Batch(-1)
-    clone := session.New()
+    other := session.New()
+    defer other.Close()
     session.Safe(0, 0, false)
 
     // Clone was copied while session was unsafe, so no errors.
-    cloneColl := clone.DB("mydb").C("mycollection")
-    err = cloneColl.Insert(M{"_id": 1})
+    otherColl := other.DB("mydb").C("mycollection")
+    err = otherColl.Insert(M{"_id": 1})
     c.Assert(err, IsNil)
 
     // Original session was made safe again.
@@ -403,12 +419,12 @@ func (s *S) TestNewSession(c *C) {
     c.Assert(stats.SocketsInUse, Equals, 2)
 
     // Ensure query parameters were cloned.
-    err = cloneColl.Insert(M{"_id": 2})
+    err = otherColl.Insert(M{"_id": 2})
     c.Assert(err, IsNil)
 
     mongogo.ResetStats()
 
-    iter, err := cloneColl.Find(M{}).Iter()
+    iter, err := otherColl.Find(M{}).Iter()
     c.Assert(err, IsNil)
 
     m := M{}
@@ -423,6 +439,7 @@ func (s *S) TestNewSession(c *C) {
 func (s *S) TestCloneSession(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     // Do a dummy operation to wait for connection.
     coll := session.DB("mydb").C("mycollection")
@@ -433,6 +450,7 @@ func (s *S) TestCloneSession(c *C) {
     session.Unsafe()
     session.Batch(-1)
     clone := session.Clone()
+    defer clone.Close()
     session.Safe(0, 0, false)
 
     // Clone was copied while session was unsafe, so no errors.
@@ -446,8 +464,8 @@ func (s *S) TestCloneSession(c *C) {
 
     // With Clone(), same socket is shared between sessions now.
     stats := mongogo.GetStats()
-    c.Assert(stats.MasterConns, Equals, 1)
-    c.Assert(stats.SocketsInUse, Equals, 2)
+    c.Assert(stats.SocketsInUse, Equals, 1)
+    c.Assert(stats.SocketRefs, Equals, 2)
 
     // Restarting one of them should let the original socket go,
     // while preserving the safety settings.
@@ -457,8 +475,8 @@ func (s *S) TestCloneSession(c *C) {
 
     // Must have used another connection now.
     stats = mongogo.GetStats()
-    c.Assert(stats.MasterConns, Equals, 2)
     c.Assert(stats.SocketsInUse, Equals, 2)
+    c.Assert(stats.SocketRefs, Equals, 2)
 
     // Ensure query parameters were cloned.
     err = cloneColl.Insert(M{"_id": 2})
@@ -481,16 +499,18 @@ func (s *S) TestCloneSession(c *C) {
 func (s *S) TestStrongSession(c *C) {
     session, err := mongogo.Mongo("localhost:40012")
     c.Assert(err, IsNil)
+    defer session.Close()
 
-    ssession := session.Monotonic().Strong()
+    session.Monotonic()
+    session.Strong()
 
     result := M{}
-    cmd := ssession.DB("admin").C("$cmd")
+    cmd := session.DB("admin").C("$cmd")
     err = cmd.Find(M{"ismaster": 1}).One(&result)
     c.Assert(err, IsNil)
     c.Assert(result["ismaster"], Equals, true)
 
-    coll := ssession.DB("mydb").C("mycollection")
+    coll := session.DB("mydb").C("mycollection")
     err = coll.Insert(M{"a": 1})
     c.Assert(err, IsNil)
 
@@ -505,16 +525,17 @@ func (s *S) TestMonotonicSession(c *C) {
     // master connection will be available first.
     session, err := mongogo.Mongo("localhost:40012")
     c.Assert(err, IsNil)
+    defer session.Close()
 
-    msession := session.Monotonic()
+    session.Monotonic()
 
     result := M{}
-    cmd := msession.DB("admin").C("$cmd")
+    cmd := session.DB("admin").C("$cmd")
     err = cmd.Find(M{"ismaster": 1}).One(&result)
     c.Assert(err, IsNil)
     c.Assert(result["ismaster"], Equals, false)
 
-    coll := msession.DB("mydb").C("mycollection")
+    coll := session.DB("mydb").C("mycollection")
     err = coll.Insert(M{"a": 1})
     c.Assert(err, IsNil)
 
@@ -534,16 +555,17 @@ func (s *S) TestEventualSession(c *C) {
     // master connection will be available first.
     session, err := mongogo.Mongo("localhost:40012")
     c.Assert(err, IsNil)
+    defer session.Close()
 
-    esession := session.Eventual()
+    session.Eventual()
 
     result := M{}
-    cmd := esession.DB("admin").C("$cmd")
+    cmd := session.DB("admin").C("$cmd")
     err = cmd.Find(M{"ismaster": 1}).One(&result)
     c.Assert(err, IsNil)
     c.Assert(result["ismaster"], Equals, false)
 
-    coll := esession.DB("mydb").C("mycollection")
+    coll := session.DB("mydb").C("mycollection")
     err = coll.Insert(M{"a": 1})
     c.Assert(err, IsNil)
 
@@ -565,6 +587,7 @@ func (s *S) TestPrimaryShutdownStrong(c *C) {
 
     session, err := mongogo.Mongo("localhost:40021")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     // With strong consistency, this will open a socket to the master.
     result := &struct{ Host string }{}
@@ -598,8 +621,9 @@ func (s *S) TestPrimaryShutdownMonotonic(c *C) {
 
     session, err := mongogo.Mongo("localhost:40021")
     c.Assert(err, IsNil)
+    defer session.Close()
 
-    session = session.Monotonic()
+    session.Monotonic()
 
     // Insert something to force a switch to the master.
     coll := session.DB("mydb").C("mycollection")
@@ -637,6 +661,7 @@ func (s *S) TestPrimaryShutdownMonotonicWithSlave(c *C) {
 
     session, err := mongogo.Mongo("localhost:40021")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     ssresult := &struct{ Host string }{}
     imresult := &struct{ IsMaster bool }{}
@@ -666,8 +691,9 @@ func (s *S) TestPrimaryShutdownMonotonicWithSlave(c *C) {
 
     session, err = mongogo.Mongo(addr)
     c.Assert(err, IsNil)
+    defer session.Close()
 
-    session = session.Monotonic()
+    session.Monotonic()
 
     // Check the address of the socket associated with the monotonic session.
     c.Log("Running serverStatus and isMaster with monotonic session")
@@ -714,13 +740,14 @@ func (s *S) TestPrimaryShutdownEventual(c *C) {
 
     session, err := mongogo.Mongo("localhost:40021")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     result := &struct{ Host string }{}
     err = session.Run("serverStatus", result)
     c.Assert(err, IsNil)
     master := result.Host
 
-    session = session.Eventual()
+    session.Eventual()
 
     // Should connect to the master when needed.
     coll := session.DB("mydb").C("mycollection")
@@ -745,14 +772,9 @@ func (s *S) TestPreserveSocketCountOnSync(c *C) {
         c.Skip("-fast")
     }
 
-    // Ensure no previous sockets are hanging around.
-    // XXX Why is this necessary? Cleanup other tests.
-    s.Stop("localhost:40011")
-    s.StartAll()
-    mongogo.ResetStats()
-
     session, err := mongogo.Mongo("localhost:40011")
     c.Assert(err, IsNil)
+    defer session.Close()
 
     stats := mongogo.GetStats()
     for stats.MasterConns+stats.SlaveConns != 3 {
@@ -778,6 +800,15 @@ func (s *S) TestPreserveSocketCountOnSync(c *C) {
     err = session.Run("getLastError", &result)
     c.Assert(err, IsNil)
     c.Assert(result.Ok, Equals, true)
+
+    for i := 0; i != 20; i++ {
+        stats = mongogo.GetStats()
+        if stats.SocketsAlive == 3 {
+            break
+        }
+        c.Logf("Waiting for 3 sockets alive, have %d", stats.SocketsAlive)
+        time.Sleep(5e8)
+    }
 
     // Ensure the number of sockets is preserved after syncing.
     stats = mongogo.GetStats()

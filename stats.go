@@ -29,7 +29,12 @@ func GetStats() (snapshot Stats) {
 
 func ResetStats() {
     statsMutex.Lock()
+    old := stats
     stats = &Stats{}
+    // These are absolute values:
+    stats.SocketsInUse = old.SocketsInUse
+    stats.SocketsAlive = old.SocketsAlive
+    stats.SocketRefs = old.SocketRefs
     statsMutex.Unlock()
     return
 }
@@ -40,8 +45,9 @@ type Stats struct {
     SentOps      int
     ReceivedOps  int
     ReceivedDocs int
-    SocketsInUse int
     SocketsAlive int
+    SocketsInUse int
+    SocketRefs   int
 }
 
 func (stats *Stats) conn(delta int, master bool) {
@@ -92,6 +98,14 @@ func (stats *Stats) socketsAlive(delta int) {
     if stats != nil {
         statsMutex.Lock()
         stats.SocketsAlive += delta
+        statsMutex.Unlock()
+    }
+}
+
+func (stats *Stats) socketRefs(delta int) {
+    if stats != nil {
+        statsMutex.Lock()
+        stats.SocketRefs += delta
         statsMutex.Unlock()
     }
 }

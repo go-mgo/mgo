@@ -1,13 +1,11 @@
 package mongogo
 
-
 import (
     "gobson"
     "sync"
     "net"
     "os"
 )
-
 
 type replyFunc func(err os.Error, reply *replyOp, docNum int, docData []byte)
 
@@ -18,7 +16,7 @@ type mongoSocket struct {
     addr          string // For debugging only.
     nextRequestId uint32
     replyFuncs    map[uint32]replyFunc
-    reserved      int
+    references    int
     dead          os.Error
 }
 
@@ -61,6 +59,7 @@ func newSocket(server *mongoServer, conn *net.TCPConn) *mongoSocket {
     socket.replyFuncs = make(map[uint32]replyFunc)
     socket.Acquired(server)
     stats.socketsAlive(+1)
+    debugf("Socket %p to %s: initialized", socket, socket.addr)
     go socket.readLoop()
     return socket
 }
@@ -76,9 +75,13 @@ func (socket *mongoSocket) Acquired(server *mongoServer) os.Error {
         socket.Unlock()
         return socket.dead
     }
+    if socket.references > 0 {
+        panic("Socket acquired out of cache with references")
+    }
     socket.server = server
-    socket.reserved++
+    socket.references++
     stats.socketsInUse(+1)
+    stats.socketRefs(+1)
     socket.Unlock()
     return nil
 }
@@ -88,8 +91,11 @@ func (socket *mongoSocket) Acquired(server *mongoServer) os.Error {
 // acquired.
 func (socket *mongoSocket) Acquire() {
     socket.Lock()
-    socket.reserved++
-    stats.socketsInUse(+1)
+    if socket.references == 0 {
+        panic("socket.Acquire() with references == 0")
+    }
+    socket.references++
+    stats.socketRefs(+1)
     socket.Unlock()
 }
 
@@ -97,12 +103,13 @@ func (socket *mongoSocket) Acquire() {
 // released as many times as it's acquired.
 func (socket *mongoSocket) Release() {
     socket.Lock()
-    socket.reserved--
-    stats.socketsInUse(-1)
-    if socket.reserved <= 0 {
-        if socket.reserved < 0 {
-            panic("internal error: socket reservation refcount < 0")
-        }
+    if socket.references == 0 {
+        panic("socket.Release() with references == 0")
+    }
+    socket.references--
+    stats.socketRefs(-1)
+    if socket.references == 0 {
+        stats.socketsInUse(-1)
         server := socket.server
         socket.server = nil
         socket.Unlock()
@@ -120,11 +127,11 @@ func (socket *mongoSocket) Close() {
 func (socket *mongoSocket) kill(err os.Error) {
     socket.Lock()
     if socket.dead != nil {
-        debugf("Socket to %s killed again: %s (previously: %s)", socket.addr, err.String(), socket.dead.String())
+        debugf("Socket %p to %s: killed again: %s (previously: %s)", socket, socket.addr, err.String(), socket.dead.String())
         socket.Unlock()
         return
     }
-    log("Closing socket to " + socket.addr + ": " + err.String())
+    logf("Socket %p to %s: closing: %s", socket, socket.addr, err.String())
     socket.dead = err
     socket.conn.Close()
     stats.socketsAlive(-1)
@@ -148,7 +155,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
     requestCount := 0
 
     for _, op := range ops {
-        debugf("Serializing op: %#v", op)
+        debugf("Socket %p to %s: serializing op: %#v", socket, socket.addr, op)
         start := len(buf)
         var replyFunc replyFunc
         switch op := op.(type) {
@@ -157,7 +164,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
             buf = addInt32(buf, 0) // Reserved
             buf = addCString(buf, op.collection)
             for _, doc := range op.documents {
-                debugf("Serializing document for insertion: %#v", doc)
+                debugf("Socket %p to %s: serializing document for insertion: %#v", socket, socket.addr, doc)
                 buf, err = addBSON(buf, doc)
                 if err != nil {
                     return err
@@ -209,7 +216,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
     socket.Lock()
     if socket.dead != nil {
         socket.Unlock()
-        debug("Socket to ", socket.addr, " already closed: ", socket.dead.String())
+        debug("Socket %p to %s: failing query, already closed: %s", socket, socket.addr, socket.dead.String())
         //for i := 0; i != requestCount; i++ {
         //    request := &requests[i]
         //    if request.replyFunc != nil {
@@ -232,7 +239,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
         requestId++
     }
 
-    debug("Sending ", len(ops), " op(s) (", len(buf), " bytes) to ", socket.addr)
+    debugf("Socket %p to %s: sending %d op(s) (%d bytes)", socket, socket.addr, len(ops), len(buf))
     stats.sentOps(len(ops))
 
     _, err = socket.conn.Write(buf)
@@ -259,7 +266,7 @@ func (socket *mongoSocket) readLoop() {
         opCode := getInt32(p, 12)
 
         // Don't use socket.server.Addr here.  socket is not locked.
-        debug("Got reply (", totalLen, " bytes) from ", socket.addr)
+        debug("Socket %p to %s: got reply (%d bytes)", socket, socket.addr, totalLen)
 
         _ = totalLen
 
