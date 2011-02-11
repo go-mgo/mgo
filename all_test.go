@@ -813,5 +813,7 @@ func (s *S) TestPreserveSocketCountOnSync(c *C) {
     // Ensure the number of sockets is preserved after syncing.
     stats = mongogo.GetStats()
     c.Assert(stats.SocketsAlive, Equals, 3)
+    c.Assert(stats.SocketsInUse, Equals, 1)
+    c.Assert(stats.SocketRefs, Equals, 1)
 }
 
