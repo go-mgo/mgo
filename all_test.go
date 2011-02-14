@@ -817,3 +817,26 @@ func (s *S) TestPreserveSocketCountOnSync(c *C) {
     c.Assert(stats.SocketRefs, Equals, 1)
 }
 
+func (s *S) TestSyncTimeout(c *C) {
+    if *fast {
+        c.Skip("-fast")
+    }
+
+    // 40002 isn't used by the test servers.
+    session, err := mongogo.Mongo("localhost:40002")
+    c.Assert(err, IsNil)
+    defer session.Close()
+
+    timeout := int64(3e9)
+
+    session.SetSyncTimeout(timeout)
+
+    started := time.Nanoseconds()
+
+    // Do something.
+    result := struct{ Ok bool }{}
+    err = session.Run("getLastError", &result)
+    c.Assert(err, Matches, "no reachable servers")
+    c.Assert(time.Nanoseconds() - started > timeout, Equals, true)
+    c.Assert(time.Nanoseconds() - started < timeout * 2, Equals, true)
+}

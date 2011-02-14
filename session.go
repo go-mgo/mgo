@@ -23,6 +23,7 @@ type Session struct {
     socket      *mongoSocket
     queryConfig query
     safe        *queryOp
+    syncTimeout int64
 }
 
 type Database struct {
@@ -176,6 +177,16 @@ func (session *Session) Eventual() {
     session.m.Lock()
     session.consistency = Eventual
     session.setSocket(nil)
+    session.m.Unlock()
+}
+
+// SetSyncTimeout sets the amount of time an operation with this session
+// will wait before returning an error in case a connection to a usable
+// server can't be established. Set it to zero to wait forever. This is
+// the default.
+func (session *Session) SetSyncTimeout(nsec int64) {
+    session.m.Lock()
+    session.syncTimeout = nsec
     session.m.Unlock()
 }
 
@@ -537,7 +548,7 @@ func (session *Session) acquireSocket(write bool) (s *mongoSocket, err os.Error)
         session.m.Lock()
         s = session.socket
         if s == nil || write && !s.server.Master {
-            s, err = session.cluster.AcquireSocket(write)
+            s, err = session.cluster.AcquireSocket(write, session.syncTimeout)
             if err == nil && session.consistency != Eventual {
                 session.setSocket(s)
             }
@@ -547,7 +558,7 @@ func (session *Session) acquireSocket(write bool) (s *mongoSocket, err os.Error)
         session.m.RUnlock()
         s.Acquire()
     }
-    return s, nil
+    return
 }
 
 // Set the socket bound to this session.  With a bound socket, all operations

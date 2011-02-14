@@ -16,7 +16,7 @@ import (
 
 type mongoCluster struct {
     sync.RWMutex
-    masterSynced cond
+    serverSynced cond
     userSeeds    []string
     dynaSeeds    []string
     servers      mongoServers
@@ -28,7 +28,7 @@ type mongoCluster struct {
 
 func newCluster(userSeeds []string) *mongoCluster {
     cluster := &mongoCluster{userSeeds: userSeeds, references: 1}
-    cluster.masterSynced.M = (*rlocker)(&cluster.RWMutex)
+    cluster.serverSynced.M = (*rlocker)(&cluster.RWMutex)
     go cluster.syncServers()
     return cluster
 }
@@ -162,10 +162,8 @@ func (cluster *mongoCluster) mergeServer(server *mongoServer) {
         }
         previous.Merge(server)
     }
-    if server.Master {
-        debug("[sync] Broadcasting availability of master.")
-        cluster.masterSynced.Broadcast()
-    }
+    debug("[sync] Broadcasting availability of server.")
+    cluster.serverSynced.Broadcast()
     cluster.Unlock()
 }
 
@@ -291,6 +289,8 @@ restart:
 
     if cluster.masters.Len() == 0 {
         log("[sync] No masters found. Synchronize again.")
+        // Poke all waiters so they have a chance to timeout if they wish to.
+        cluster.serverSynced.Broadcast()
         cluster.Unlock()
         cluster.Release()
         time.Sleep(5e8)
@@ -301,19 +301,24 @@ restart:
     cluster.Release()
 }
 
-// Return a socket to a server in the cluster.  If write is true, it will return
-// a socket to a server which will accept writes.  If it is false, the socket
-// will be to an arbitrary server, preferably a slave.
-func (cluster *mongoCluster) AcquireSocket(write bool) (s *mongoSocket, err os.Error) {
+// AcquireSocket returns a socket to a server in the cluster.  If write is
+// true, it will return a socket to a server which will accept writes.  If
+// it is false, the socket will be to an arbitrary server, preferably a slave.
+func (cluster *mongoCluster) AcquireSocket(write bool, syncTimeout int64) (s *mongoSocket, err os.Error) {
+    started := time.Nanoseconds()
     for {
         cluster.RLock()
         for {
-            debugf("Cluster has %d known masters.", cluster.masters.Len())
-            if !cluster.masters.Empty() {
+            debugf("Cluster has %d known masters and %d known slaves.", cluster.masters.Len(), cluster.slaves.Len())
+            if !cluster.masters.Empty() || !write && !cluster.slaves.Empty() {
                 break
             }
+            if syncTimeout > 0 && time.Nanoseconds() - started > syncTimeout {
+                cluster.RUnlock()
+                return nil, os.ErrorString("no reachable servers")
+            }
             log("Waiting for masters to synchronize.")
-            cluster.masterSynced.Wait()
+            cluster.serverSynced.Wait()
         }
 
         var server *mongoServer
