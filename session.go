@@ -107,8 +107,8 @@ func (database Database) C(name string) Collection {
 
 // New creates a new session with the same parameters as the original
 // session, including consistency, batch size, prefetching, safety mode,
-// etc. Unlike Clone(), the new session will not share any sockets with
-// the old session.
+// etc. The new session will not share any sockets with the old session
+// (see the Clone method for a different behavior).
 func (session *Session) New() *Session {
     session.m.Lock()
     clone := &Session{
@@ -123,10 +123,10 @@ func (session *Session) New() *Session {
 }
 
 // Clone creates a new session with the same parameters as the current one,
-// including consistency, batch size, prefetching, safety mode, etc. Unlike
-// New(), in case a socket has already been reserved by the original session
-// to preserve consistency requirements, the same socket will be shared
-// with the new session.
+// including consistency, batch size, prefetching, safety mode, etc. In case
+// a socket has already been reserved by the original session to preserve
+// consistency requirements, the same socket will be shared with the new
+// session (for a different behavior see the New method).
 func (session *Session) Clone() *Session {
     session.m.Lock()
     clone := &Session{
@@ -192,7 +192,7 @@ func (session *Session) SetSyncTimeout(nsec int64) {
 
 // Set the default batch size used when fetching documents from the database.
 // It's possible to change this setting on a per-query basis as well, using
-// the respective Batch() method.
+// the Batch method of Query.
 //
 // The default batch size is defined by the database itself.  As of this
 // writing, MongoDB will use an initial size of min(100 docs, 4MB) on the
@@ -212,7 +212,7 @@ func (session *Session) Batch(size int) {
 //
 // and there are only 50 documents cached in the Iter to be processed, the
 // next batch of 200 will be requested. It's possible to change this setting on
-// a per-query basis as well, using the respective Prefetch() method.
+// a per-query basis as well, using the Prefetch method of Query.
 //
 // The default prefetch value is 0.25.
 func (session *Session) Prefetch(p float64) {
@@ -226,7 +226,7 @@ func (session *Session) Prefetch(p float64) {
 // waiting for a confirmation.  It's also unsafe, though! ;-)  In addition to
 // disabling it entirely, the parameters of safety can also be tweaked via the
 // Safe() method.  It's also possible to modify the safety settings on a
-// per-query basis, using the respective Safe() and Unsafe() methods.
+// per-query basis, using the Safe and Unsafe methods of Query.
 func (session *Session) Unsafe() {
     session.m.Lock()
     session.safe = nil
@@ -260,7 +260,7 @@ func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
 // a struct value capable of being marshalled with gobson.  The map may be a
 // generic one using interface{}, such as gobson.M, or it may be a properly
 // typed map. Further details of the query may be tweaked using the resulting
-// Query value, and then executed using One() or Iter().
+// Query value, and then executed using One or Iter.
 func (collection Collection) Find(query interface{}) *Query {
     session := collection.Session
     q := &Query{session: session, query: session.queryConfig}
@@ -282,9 +282,9 @@ func (err *LastError) String() string {
 
 
 // Insert one or more documents in the respective collection.  In case
-// the session is in safe mode (see Safe()) and an error happens while
-// inserting the provided documents, the returned error will be of type
-// (*mongogo.LastError).
+// the session is in safe mode (see the Safe method) and an error happens
+// while inserting the provided documents, the returned error will be of
+// type (*mongogo.LastError).
 func (collection Collection) Insert(docs ...interface{}) os.Error {
     socket, err := collection.Session.acquireSocket(true)
     if err != nil {
@@ -326,7 +326,7 @@ func (collection Collection) Insert(docs ...interface{}) os.Error {
 
 // Set the batch size used when fetching documents from the database. It's
 // possible to change this setting on a per-session basis as well, using
-// the respective Batch() method.
+// the Batch method of Session.
 //
 // The default batch size is defined by the database itself.  As of this
 // writing, MongoDB will use an initial size of min(100 docs, 4MB) on the
@@ -346,7 +346,7 @@ func (query *Query) Batch(size int) *Query {
 //
 // and there are only 50 documents cached in the Iter to be processed, the
 // next batch of 200 will be requested. It's possible to change this setting on
-// a per-session basis as well, using the respective Prefetch() method.
+// a per-session basis as well, using the Prefetch method of Session.
 //
 // The default prefetch value is 0.25.
 func (query *Query) Prefetch(p float64) *Query {
@@ -444,8 +444,8 @@ func (query *Query) One(result interface{}) (err os.Error) {
 // Execute the query and return an iterator capable of going over all the
 // results. This function will block until either a result is available or
 // an error happened. Results will be returned in batches of configurable
-// size (see Batch()) and more documents will be requested when a
-// configurable threshold is reached (see Prefetch()).
+// size (see the Batch method) and more documents will be requested when a
+// configurable threshold is reached (see the Prefetch method).
 func (query *Query) Iter() (iter *Iter, err os.Error) {
     query.m.Lock()
     session := query.session
@@ -478,7 +478,7 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
 
 // Retrieve the next document from the result set, blocking if necessary.  If
 // necessary, this method will also retrieve another batch of documents from
-// the server, potentially in background (see Prefetch()).
+// the server, potentially in background (see the Prefetch method).
 func (iter *Iter) Next(result interface{}) (err os.Error) {
     iter.m.Lock()
 
@@ -563,7 +563,7 @@ func (session *Session) acquireSocket(write bool) (s *mongoSocket, err os.Error)
 
 // Set the socket bound to this session.  With a bound socket, all operations
 // with this session will use the given socket if possible. When not possible
-// (e.g. attempting to write to a slave) acquireSocket() will replace the
+// (e.g. attempting to write to a slave) acquireSocket will replace the
 // current socket.  Note that this method will properly refcount the socket up
 // and down when setting/releasing.
 func (session *Session) setSocket(socket *mongoSocket) {
