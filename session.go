@@ -74,9 +74,10 @@ const defaultPrefetch = 0.25
 // ---------------------------------------------------------------------------
 // Entry point function to the cluster/session/server/socket hierarchy.
 
-// Establish a session to the cluster identified by the given seed server(s).
-// The session will enable communication with all of the servers in the cluster,
-// so the seed servers are used only to find out about the cluster topology.
+// Mongo establishes a new session to the cluster identified by the given seed
+// server(s).  The session will enable communication with all of the servers in
+// the cluster, so the seed servers are used only to find out about the cluster
+// topology.
 func Mongo(servers string) (session *Session, err os.Error) {
     userSeeds := strings.Split(servers, ",", -1)
     cluster := newCluster(userSeeds)
@@ -89,15 +90,15 @@ func Mongo(servers string) (session *Session, err os.Error) {
 // ---------------------------------------------------------------------------
 // Public session methods.
 
-// Return a database object, which allows further accessing any collections
-// within it, or performing any database-level operations.  Creating this
-// object is a very lightweight operation, and involves no network
-// communication.
+// DB returns a database object, which allows further accessing any
+// collections within it, or performing any database-level operations.
+// Creating this object is a very lightweight operation, and involves
+// no network communication.
 func (session *Session) DB(name string) Database {
     return Database{session, name}
 }
 
-// Return a collection object for the given database, which enables querying
+// C returns a collection object for the given database, which enables querying
 // and modifying the content contained in the given collection. Creating this
 // object is a very lightweight operation, and involves no network
 // communication.
@@ -161,18 +162,54 @@ func (session *Session) Close() {
     session.m.Unlock()
 }
 
+// Strong puts the session into strong consistency mode.
+//
+// In this mode, reads and writes will always be made to the master server
+// using a unique connection so that reads and writes are fully consistent,
+// ordered, and observing the most up-to-date data.
+//
+// This offers the least benefits in terms of distributing load, but the
+// most guarantees.  See also Monotonic and Eventual.
 func (session *Session) Strong() {
     session.m.Lock()
     session.consistency = Strong
     session.m.Unlock()
 }
 
+// Monotonic puts the session into monotonic consistency mode.
+//
+// In this mode, reads may not be entirely up-to-date, but they will always
+// see the history of changes moving forward, the data read will be consistent
+// across sequential queries in the same session, and modifications made within
+// the session will be observed in following queries (read-your-writes).
+//
+// In practice, this consistency level is obtained by performing initial reads
+// against a unique connection to an arbitrary slave, if one is available, and
+// once the first write happens, the session connection is switched over
+// to the master server.
+//
+// This manages to distribute some of the reading load with slaves, while
+// maintaining some useful guarantees.  See also Strong and Eventual.
 func (session *Session) Monotonic() {
     session.m.Lock()
     session.consistency = Monotonic
     session.m.Unlock()
 }
 
+// Eventual puts the session into eventual consistency mode.
+//
+// In this mode, reads will be made to any slave in the cluster, if one is
+// available, and sequential reads will not necessarily be made with the same
+// connection.  This means that data may be observed out of order.
+//
+// Writes will of course be issued to the master, but independent writes in
+// the same session may also be made with independent connections, so there
+// are also no guarantees in terms of write ordering, let alone reading your
+// own writes.
+//
+// This mode is the fastest and most resource-friendly, but is also the one
+// offering the least guarantees about ordering of the data read and written.
+// See also Strong and Monotonic.
 func (session *Session) Eventual() {
     session.m.Lock()
     session.consistency = Eventual
@@ -190,9 +227,9 @@ func (session *Session) SetSyncTimeout(nsec int64) {
     session.m.Unlock()
 }
 
-// Set the default batch size used when fetching documents from the database.
-// It's possible to change this setting on a per-query basis as well, using
-// the Batch method of Query.
+// Batch sets the default batch size used when fetching documents from the
+// database. It's possible to change this setting on a per-query basis as
+// well, using the Batch method of Query.
 //
 // The default batch size is defined by the database itself.  As of this
 // writing, MongoDB will use an initial size of min(100 docs, 4MB) on the
@@ -203,9 +240,10 @@ func (session *Session) Batch(size int) {
     session.m.Unlock()
 }
 
-// Set the default point at which the next batch of results will be requested.
-// When there are p*batch_size remaining documents cached in an Iter, the next
-// batch will be requested in background. For instance, when using this:
+// Prefetch sets the default point at which the next batch of results will be
+// requested.  When there are p*batch_size remaining documents cached in an
+// Iter, the next batch will be requested in background. For instance, when
+// using this:
 //
 //     session.Batch(200)
 //     session.Prefetch(0.25)
@@ -221,19 +259,22 @@ func (session *Session) Prefetch(p float64) {
     session.m.Unlock()
 }
 
-// Put the session in unsafe mode. Writes will become fire-and-forget, without
-// error checking.  The unsafe mode is faster since operations won't hold on
-// waiting for a confirmation.  It's also unsafe, though! ;-)  In addition to
-// disabling it entirely, the parameters of safety can also be tweaked via the
-// Safe() method.  It's also possible to modify the safety settings on a
-// per-query basis, using the Safe and Unsafe methods of Query.
+// Unsafe puts the session in unsafe mode. Writes will become fire-and-forget,
+// without error checking.  The unsafe mode is faster since operations won't
+// hold on waiting for a confirmation.  It's also unsafe, though! ;-)  In
+// addition to disabling it entirely, the parameters of safety can also be
+// tweaked via the Safe() method.  It's also possible to modify the safety
+// settings on a per-query basis, using the Safe and Unsafe methods of Query.
 func (session *Session) Unsafe() {
     session.m.Lock()
     session.safe = nil
     session.m.Unlock()
 }
 
-// Put the session into safe mode.  Once in safe mode, This will 
+// Safe puts the session into safe mode.  Once in safe mode, any changing
+// query (insert, update, ...) will be followed by a getLastError command
+// with the specified parameters, to ensure the request was correctly
+// processed.
 func (session *Session) Safe(w, wtimeout int, fsync bool) {
     session.m.Lock()
     session.safe = &queryOp{
@@ -244,10 +285,10 @@ func (session *Session) Safe(w, wtimeout int, fsync bool) {
     session.m.Unlock()
 }
 
-// Run the provided command and unmarshal its result in the respective
-// argument. The cmd argument may be either a string with the command name
-// itself, in which case an empty document of the form M{cmd: 1} will be
-// used, or it may be a full command document.
+// Run issues the provided command and unmarshals its result in the
+// respective argument. The cmd argument may be either a string with the
+// command name itself, in which case an empty document of the form
+// M{cmd: 1} will be used, or it may be a full command document.
 func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
     if name, ok := cmd.(string); ok {
         cmd = gobson.M{name: 1}
@@ -256,11 +297,11 @@ func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
     return c.Find(cmd).One(result)
 }
 
-// Prepare a query using the provided document.  The document may be a map or
-// a struct value capable of being marshalled with gobson.  The map may be a
-// generic one using interface{}, such as gobson.M, or it may be a properly
-// typed map. Further details of the query may be tweaked using the resulting
-// Query value, and then executed using One or Iter.
+// Find prepares a query using the provided document.  The document may be a
+// map or a struct value capable of being marshalled with gobson.  The map
+// may be a generic one using interface{}, such as gobson.M, or it may be a
+// properly typed map. Further details of the query may be tweaked using the
+// resulting Query value, and then executed using One or Iter.
 func (collection Collection) Find(query interface{}) *Query {
     session := collection.Session
     q := &Query{session: session, query: session.queryConfig}
@@ -281,10 +322,10 @@ func (err *LastError) String() string {
 }
 
 
-// Insert one or more documents in the respective collection.  In case
-// the session is in safe mode (see the Safe method) and an error happens
-// while inserting the provided documents, the returned error will be of
-// type (*mongogo.LastError).
+// Insert inserts one or more documents in the respective collection.  In
+// case the session is in safe mode (see the Safe method) and an error
+// happens while inserting the provided documents, the returned error will
+// be of type (*mongogo.LastError).
 func (collection Collection) Insert(docs ...interface{}) os.Error {
     socket, err := collection.Session.acquireSocket(true)
     if err != nil {
@@ -324,8 +365,8 @@ func (collection Collection) Insert(docs ...interface{}) os.Error {
     return err
 }
 
-// Set the batch size used when fetching documents from the database. It's
-// possible to change this setting on a per-session basis as well, using
+// Batch sets the batch size used when fetching documents from the database.
+// It's possible to change this setting on a per-session basis as well, using
 // the Batch method of Session.
 //
 // The default batch size is defined by the database itself.  As of this
@@ -338,8 +379,8 @@ func (query *Query) Batch(size int) *Query {
     return query
 }
 
-// Set the point at which the next batch of results will be requested. When
-// there are p*batch_size remaining documents cached in an Iter, the next
+// Prefetch sets the point at which the next batch of results will be requested.
+// When there are p*batch_size remaining documents cached in an Iter, the next
 // batch will be requested in background. For instance, when using this:
 //
 //     query.Batch(200).Prefetch(0.25)
@@ -356,9 +397,9 @@ func (query *Query) Prefetch(p float64) *Query {
     return query
 }
 
-// Skip the n initial documents from the query results.  Note that this only
-// makes sense with capped collections where documents are naturally ordered
-// by insertion time, or with sorted results.
+// Skip skips over the n initial documents from the query results.  Note that
+// this only makes sense with capped collections where documents are naturally
+// ordered by insertion time, or with sorted results.
 func (query *Query) Skip(n int) *Query {
     query.m.Lock()
     query.op.skip = int32(n)
@@ -381,7 +422,8 @@ func (query *Query) wrap() *queryWrapper {
     return w
 }
 
-// Sort documents according to the rules provided in the given document.
+// Sort asks the database to order returned documents according to the rules
+// provided in the given document.
 func (query *Query) Sort(order interface{}) *Query {
     query.m.Lock()
     w := query.wrap()
@@ -390,9 +432,10 @@ func (query *Query) Sort(order interface{}) *Query {
     return query
 }
 
-// Execute the query and unmarshal the first obtained document into the result
-// argument.  The result must be a struct or map value capable of being
-// unmarshalled into by gobson.
+// One executes the query and unmarshals the first obtained document into the
+// result argument.  The result must be a struct or map value capable of being
+// unmarshalled into by gobson.  This function blocks until either a result
+// is available or an error happened. 
 func (query *Query) One(result interface{}) (err os.Error) {
     query.m.Lock()
     session := query.session
@@ -441,9 +484,8 @@ func (query *Query) One(result interface{}) (err os.Error) {
     return err
 }
 
-// Execute the query and return an iterator capable of going over all the
-// results. This function will block until either a result is available or
-// an error happened. Results will be returned in batches of configurable
+// Iter executes the query and returns an iterator capable of going over all
+// the results. Results will be returned in batches of configurable
 // size (see the Batch method) and more documents will be requested when a
 // configurable threshold is reached (see the Prefetch method).
 func (query *Query) Iter() (iter *Iter, err os.Error) {
@@ -476,8 +518,8 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
     return iter, nil
 }
 
-// Retrieve the next document from the result set, blocking if necessary.  If
-// necessary, this method will also retrieve another batch of documents from
+// Next retrieves the next document from the result set, blocking if necessary.
+// If necessary, this method will also retrieve another batch of documents from
 // the server, potentially in background (see the Prefetch method).
 func (iter *Iter) Next(result interface{}) (err os.Error) {
     iter.m.Lock()
