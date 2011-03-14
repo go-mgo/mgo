@@ -1,7 +1,5 @@
 Limit(n) == Batch(n).Prefetch(0) + NotFound when reaching (n)
 
-
-
 col.Find(...).ForEach(...)
 col.Find(...).Select(...).Skip(i).Limit(j).All()
 col.Sort(...)

@@ -56,7 +56,7 @@ type getLastError struct {
 
 type Iter struct {
     m              sync.Mutex
-    gotReply       cond
+    gotReply       sync.Cond
     session        *Session
     docData        queue
     err            os.Error
@@ -460,7 +460,7 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
     defer socket.Release()
 
     iter = &Iter{session: session, prefetch: prefetch}
-    iter.gotReply.M = &iter.m
+    iter.gotReply.L = &iter.m
     iter.op.collection = op.collection
     iter.op.limit = op.limit
 

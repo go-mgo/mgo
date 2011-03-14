@@ -16,7 +16,7 @@ import (
 
 type mongoCluster struct {
     sync.RWMutex
-    serverSynced cond
+    serverSynced sync.Cond
     userSeeds    []string
     dynaSeeds    []string
     servers      mongoServers
@@ -28,7 +28,7 @@ type mongoCluster struct {
 
 func newCluster(userSeeds []string) *mongoCluster {
     cluster := &mongoCluster{userSeeds: userSeeds, references: 1}
-    cluster.serverSynced.M = (*rlocker)(&cluster.RWMutex)
+    cluster.serverSynced.L = &cluster.RWMutex
     go cluster.syncServers()
     return cluster
 }

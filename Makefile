@@ -10,7 +10,6 @@ GOFILES=\
 	socket.go\
 	stats.go\
 	queue.go\
-	cond.go\
 	log.go\
 
 all: package
