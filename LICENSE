@@ -1,6 +1,6 @@
-gobson - BSON library for Go.
+mgo - MongoDB driver for Go
 
-Copyright (c) 2010, Gustavo Niemeyer <gustavo@niemeyer.net>
+Copyright (c) 2010-2011 - Gustavo Niemeyer <gustavo@niemeyer.net>
 
 All rights reserved.
 

@@ -32,3 +32,5 @@ query.Safe(0, 0, false)
 
 session.PushSafe(0, 0, false)
 session.PopSafe()
+
+Find().Tail()
