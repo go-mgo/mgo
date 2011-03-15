@@ -4,7 +4,7 @@ import (
     "flag"
     "gobson"
     .   "gocheck"
-    "mongogo"
+    "launchpad.net/mongogo"
     "os"
     "strings"
     "time"

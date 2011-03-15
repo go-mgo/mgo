@@ -4,7 +4,7 @@ import (
     "exec"
     .   "gocheck"
     "testing"
-    "mongogo"
+    "launchpad.net/mongogo"
     "time"
     "fmt"
     "io/ioutil"

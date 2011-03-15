@@ -1,6 +1,6 @@
 include $(GOROOT)/src/Make.inc
 
-TARG=mongogo
+TARG=launchpad.net/mongogo
 GOFMT=gofmt -spaces=true -tabindent=false -tabwidth=4
 
 GOFILES=\
