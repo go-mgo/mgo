@@ -123,7 +123,29 @@ func (s *S) TestInsertFindOneMap(c *C) {
     c.Assert(result["b"], Equals, int32(2))
 }
 
-func (s *S) TestInsertFindOneNotFound(c *C) {
+func (s *S) TestUpdateOne(c *C) {
+    session, err := mongogo.Mongo("localhost:40001")
+    c.Assert(err, IsNil)
+    defer session.Close()
+
+    coll := session.DB("mydb").C("mycollection")
+
+    ns := []int{40, 41, 42, 43, 44, 45, 46}
+    for _, n := range ns {
+        err := coll.Insert(M{"k": n, "n": n})
+	c.Assert(err, IsNil)
+    }
+
+    err = coll.Update(M{"k": 42}, M{"$inc": M{"n": 1}})
+    c.Assert(err, IsNil)
+
+    result := make(M)
+    err = coll.Find(M{"k": 42}).One(result)
+    c.Assert(err, IsNil)
+    c.Assert(result["n"], Equals, int32(43))
+}
+
+func (s *S) TestFindOneNotFound(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
     defer session.Close()
@@ -137,7 +159,7 @@ func (s *S) TestInsertFindOneNotFound(c *C) {
     c.Assert(err == mongogo.NotFound, Equals, true)
 }
 
-func (s *S) TestInsertFindIter(c *C) {
+func (s *S) TestFindIter(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
     defer session.Close()

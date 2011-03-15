@@ -321,48 +321,20 @@ func (err *LastError) String() string {
     return err.Err
 }
 
-
 // Insert inserts one or more documents in the respective collection.  In
 // case the session is in safe mode (see the Safe method) and an error
 // happens while inserting the provided documents, the returned error will
 // be of type (*mongogo.LastError).
 func (collection Collection) Insert(docs ...interface{}) os.Error {
-    socket, err := collection.Session.acquireSocket(true)
-    if err != nil {
-        return err
-    }
-    defer socket.Release()
-    insert := &insertOp{collection.Name, docs}
-    // XXX Lock session, or better: implement getSafe().
-    if collection.Session.safe != nil {
-        var mutex sync.Mutex
-        var replyData []byte
-        var replyErr os.Error
-        mutex.Lock()
-        query := *collection.Session.safe // Copy
-        query.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
-            replyData = docData
-            replyErr = err
-            mutex.Unlock()
-        }
-        err = socket.Query(insert, &query)
-        if err != nil {
-            return err
-        }
-        mutex.Lock() // Wait.
-        if replyErr != nil {
-            return replyErr // XXX TESTME
-        }
-        result := &LastError{}
-        gobson.Unmarshal(replyData, &result)
-        debugf("Insert result: %#v", result)
-        if result.Err != "" {
-            err = result
-        }
-    } else {
-        err = socket.Query(insert)
-    }
-    return err
+    return collection.Session.writeQuery(&insertOp{collection.Name, docs})
+}
+
+// Update modifies a single document matching the provided selector document
+// according to the given change document.  In case the session is in safe mode
+// (see the Safe method) and an error happens while updating the provided
+// documents, the returned error will be of type (*mongogo.LastError).
+func (collection Collection) Update(selector interface{}, change interface{}) os.Error {
+    return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 0})
 }
 
 // Batch sets the batch size used when fetching documents from the database.
@@ -657,4 +629,45 @@ func (iter *Iter) getMore() {
     if err != nil {
         iter.err = err
     }
+}
+
+// writeQuery runs the given modifying operation, potentially followed up
+// by a getLastError command in case the session is in safe mode.
+func (session *Session) writeQuery(op interface{}) os.Error {
+    socket, err := session.acquireSocket(true)
+    if err != nil {
+        return err
+    }
+    defer socket.Release()
+
+    // Copy safe's address to avoid locking.
+    if safe := session.safe; safe == nil {
+        return socket.Query(op)
+    } else {
+        var mutex sync.Mutex
+        var replyData []byte
+        var replyErr os.Error
+        mutex.Lock()
+        query := *safe // Copy the data.
+        query.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
+            replyData = docData
+            replyErr = err
+            mutex.Unlock()
+        }
+        err = socket.Query(op, &query)
+        if err != nil {
+            return err
+        }
+        mutex.Lock() // Wait.
+        if replyErr != nil {
+            return replyErr // XXX TESTME
+        }
+        result := &LastError{}
+        gobson.Unmarshal(replyData, &result)
+        debugf("Result from writing query: %#v", result)
+        if result.Err != "" {
+            return result
+        }
+    }
+	return nil
 }

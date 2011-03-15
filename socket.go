@@ -49,6 +49,13 @@ type insertOp struct {
     documents  []interface{} // One or more documents to insert
 }
 
+type updateOp struct {
+    collection string        // "database.collection"
+    selector interface{}
+    update interface{}
+    flags uint32
+}
+
 type requestInfo struct {
     bufferPos int
     replyFunc replyFunc
@@ -159,6 +166,23 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
         start := len(buf)
         var replyFunc replyFunc
         switch op := op.(type) {
+
+        case *updateOp:
+            buf = addHeader(buf, 2001)
+            buf = addInt32(buf, 0) // Reserved
+            buf = addCString(buf, op.collection)
+            buf = addInt32(buf, int32(op.flags))
+            debugf("Socket %p to %s: serializing selector document: %#v", socket, socket.addr, op.selector)
+            buf, err = addBSON(buf, op.selector)
+            if err != nil {
+                return err
+            }
+            debugf("Socket %p to %s: serializing update document: %#v", socket, socket.addr, op.update)
+            buf, err = addBSON(buf, op.update)
+            if err != nil {
+                return err
+            }
+
         case *insertOp:
             buf = addHeader(buf, 2002)
             buf = addInt32(buf, 0) // Reserved
