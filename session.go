@@ -78,6 +78,11 @@ const defaultPrefetch = 0.25
 // server(s).  The session will enable communication with all of the servers in
 // the cluster, so the seed servers are used only to find out about the cluster
 // topology.
+//
+// This method is generally called just once for a given cluster.  Further
+// sessions to the same cluster are then established using the New method on
+// the obtained session.  This will make them share the underlying cluster,
+// and manage the pool of connections appropriately.
 func Mongo(servers string) (session *Session, err os.Error) {
     userSeeds := strings.Split(servers, ",", -1)
     cluster := newCluster(userSeeds)
