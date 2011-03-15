@@ -145,6 +145,36 @@ func (s *S) TestUpdateOne(c *C) {
     c.Assert(result["n"], Equals, int32(43))
 }
 
+func (s *S) TestUpdateAll(c *C) {
+    session, err := mongogo.Mongo("localhost:40001")
+    c.Assert(err, IsNil)
+    defer session.Close()
+
+    coll := session.DB("mydb").C("mycollection")
+
+    ns := []int{40, 41, 42, 43, 44, 45, 46}
+    for _, n := range ns {
+        err := coll.Insert(M{"k": n, "n": n})
+	c.Assert(err, IsNil)
+    }
+
+    err = coll.UpdateAll(M{"k": M{"$gt": 42}}, M{"$inc": M{"n": 1}})
+    c.Assert(err, IsNil)
+
+    result := make(M)
+    err = coll.Find(M{"k": 42}).One(result)
+    c.Assert(err, IsNil)
+    c.Assert(result["n"], Equals, int32(42))
+
+    err = coll.Find(M{"k": 43}).One(result)
+    c.Assert(err, IsNil)
+    c.Assert(result["n"], Equals, int32(44))
+
+    err = coll.Find(M{"k": 44}).One(result)
+    c.Assert(err, IsNil)
+    c.Assert(result["n"], Equals, int32(45))
+}
+
 func (s *S) TestFindOneNotFound(c *C) {
     session, err := mongogo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
