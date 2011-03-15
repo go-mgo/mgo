@@ -2,7 +2,7 @@ package mgo_test
 
 import (
     "flag"
-    "gobson"
+    "launchpad.net/gobson"
     .   "launchpad.net/gocheck"
     "launchpad.net/mgo"
     "os"

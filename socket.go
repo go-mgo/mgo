@@ -1,7 +1,7 @@
 package mgo
 
 import (
-    "gobson"
+    "launchpad.net/gobson"
     "sync"
     "net"
     "os"
