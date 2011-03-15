@@ -324,25 +324,33 @@ func (err *LastError) String() string {
 // Insert inserts one or more documents in the respective collection.  In
 // case the session is in safe mode (see the Safe method) and an error
 // happens while inserting the provided documents, the returned error will
-// be of type (*mongogo.LastError).
+// be of type *mongogo.LastError.
 func (collection Collection) Insert(docs ...interface{}) os.Error {
     return collection.Session.writeQuery(&insertOp{collection.Name, docs})
 }
 
 // Update finds a single document matching the provided selector document
 // and modifies it according to the change document.  In case the session
-// is in safe mode (see the Safe method) and an error happens while
-// updating the provided documents, the returned error will be of
-// type (*mongogo.LastError).
+// is in safe mode (see the Safe method) and an error happens when attempting
+// the change, the returned error will be of type *mongogo.LastError.
 func (collection Collection) Update(selector interface{}, change interface{}) os.Error {
     return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 0})
 }
 
+// Upsert finds a single document matching the provided selector document
+// and modifies it according to the change document.  If no document matching
+// the selector is found, the change document is newly inserted instead.
+// In case the session is in safe mode (see the Safe method) and an error
+// happens when attempting the change, the returned error will be of type
+// *mongogo.LastError.
+func (collection Collection) Upsert(selector interface{}, change interface{}) os.Error {
+    return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 1})
+}
+
 // UpdateAll finds all documents matching the provided selector document
 // and modifies them according to the change document.  In case the session
-// is in safe mode (see the Safe method) and an error happens while
-// updating the provided documents, the returned error will be of
-// type (*mongogo.LastError).
+// is in safe mode (see the Safe method) and an error happens when attempting
+// the change, the returned error will be of type *mongogo.LastError.
 func (collection Collection) UpdateAll(selector interface{}, change interface{}) os.Error {
     return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 2})
 }
