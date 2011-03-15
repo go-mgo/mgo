@@ -1,10 +1,10 @@
-package mongogo_test
+package mgo_test
 
 import (
     "exec"
     .   "launchpad.net/gocheck"
     "testing"
-    "launchpad.net/mongogo"
+    "launchpad.net/mgo"
     "time"
     "fmt"
     "io/ioutil"
@@ -28,15 +28,15 @@ func TestAll(t *testing.T) {
 }
 
 type S struct {
-    session *mongogo.Session
+    session *mgo.Session
     stopped bool
 }
 
 var _ = Suite(&S{})
 
 func (s *S) SetUpSuite(c *C) {
-    mongogo.Debug(true)
-    mongogo.CollectStats(true)
+    mgo.Debug(true)
+    mgo.CollectStats(true)
     s.StartAll()
 }
 
@@ -45,8 +45,8 @@ func (s *S) SetUpTest(c *C) {
     if err != nil {
         panic(err.String())
     }
-    mongogo.SetLogger((*cLogger)(c))
-    mongogo.ResetStats()
+    mgo.SetLogger((*cLogger)(c))
+    mgo.ResetStats()
 }
 
 func (s *S) TearDownTest(c *C) {
@@ -54,7 +54,7 @@ func (s *S) TearDownTest(c *C) {
         s.StartAll()
     }
     for i := 0; ; i++ {
-        stats := mongogo.GetStats()
+        stats := mgo.GetStats()
         if stats.SocketsInUse == 0 && stats.SocketsAlive == 0 {
             break
         }

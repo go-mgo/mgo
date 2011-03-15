@@ -1,4 +1,4 @@
-package mongogo
+package mgo
 
 import (
     "fmt"
