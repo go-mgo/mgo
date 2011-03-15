@@ -1,7 +1,7 @@
 package mongogo
 
 import (
-    "gocheck"
+    "launchpad.net/gocheck"
 )
 
 type QS struct{}

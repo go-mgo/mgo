@@ -2,7 +2,7 @@ package mongogo_test
 
 import (
     "exec"
-    .   "gocheck"
+    .   "launchpad.net/gocheck"
     "testing"
     "launchpad.net/mongogo"
     "time"

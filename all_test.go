@@ -3,7 +3,7 @@ package mongogo_test
 import (
     "flag"
     "gobson"
-    .   "gocheck"
+    .   "launchpad.net/gocheck"
     "launchpad.net/mongogo"
     "os"
     "strings"
