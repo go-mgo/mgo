@@ -390,6 +390,22 @@ func (collection Collection) UpdateAll(selector interface{}, change interface{})
     return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 2})
 }
 
+// Remove finds a single document matching the provided selector document
+// and removes it from the database.  In case the session is in safe mode
+// (see the Safe method) and an error happens when attempting the change,
+// the returned error will be of type *mgo.LastError.
+func (collection Collection) Remove(selector interface{}) os.Error {
+    return collection.Session.writeQuery(&deleteOp{collection.Name, selector, 1})
+}
+
+// RemoveAll finds all documents matching the provided selector document
+// and removes them from the database.  In case the session is in safe mode
+// (see the Safe method) and an error happens when attempting the change,
+// the returned error will be of type *mgo.LastError.
+func (collection Collection) RemoveAll(selector interface{}) os.Error {
+    return collection.Session.writeQuery(&deleteOp{collection.Name, selector, 0})
+}
+
 // Batch sets the batch size used when fetching documents from the database.
 // It's possible to change this setting on a per-session basis as well, using
 // the Batch method of Session.

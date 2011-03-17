@@ -88,6 +88,12 @@ type updateOp struct {
     flags uint32
 }
 
+type deleteOp struct {
+    collection string        // "database.collection"
+    selector interface{}
+    flags uint32
+}
+
 type requestInfo struct {
     bufferPos int
     replyFunc replyFunc
@@ -252,6 +258,17 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
             buf = addInt32(buf, op.limit)
             buf = addInt64(buf, op.cursorId)
             replyFunc = op.replyFunc
+
+        case *deleteOp:
+            buf = addHeader(buf, 2006)
+            buf = addInt32(buf, 0) // Reserved
+            buf = addCString(buf, op.collection)
+            buf = addInt32(buf, int32(op.flags))
+            debugf("Socket %p to %s: serializing selector document: %#v", socket, socket.addr, op.selector)
+            buf, err = addBSON(buf, op.selector)
+            if err != nil {
+                return err
+            }
 
         default:
             panic("Internal error: unknown operation type")

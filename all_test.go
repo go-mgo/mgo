@@ -242,6 +242,63 @@ func (s *S) TestUpdateAll(c *C) {
     c.Assert(result["n"], Equals, int32(45))
 }
 
+func (s *S) TestRemove(c *C) {
+    session, err := mgo.Mongo("localhost:40001")
+    c.Assert(err, IsNil)
+    defer session.Close()
+
+    coll := session.DB("mydb").C("mycollection")
+
+    ns := []int{40, 41, 42, 43, 44, 45, 46}
+    for _, n := range ns {
+        err := coll.Insert(M{"n": n})
+	c.Assert(err, IsNil)
+    }
+
+    err = coll.Remove(M{"n": M{"$gt": 42}})
+    c.Assert(err, IsNil)
+
+    result := &struct{ N int }{}
+    err = coll.Find(M{"n": 42}).One(result)
+    c.Assert(err, IsNil)
+    c.Assert(result.N, Equals, 42)
+
+    err = coll.Find(M{"n": 43}).One(result)
+    c.Assert(err, Equals, mgo.NotFound)
+
+    err = coll.Find(M{"n": 44}).One(result)
+    c.Assert(err, IsNil)
+    c.Assert(result.N, Equals, 44)
+}
+
+func (s *S) TestRemoveAll(c *C) {
+    session, err := mgo.Mongo("localhost:40001")
+    c.Assert(err, IsNil)
+    defer session.Close()
+
+    coll := session.DB("mydb").C("mycollection")
+
+    ns := []int{40, 41, 42, 43, 44, 45, 46}
+    for _, n := range ns {
+        err := coll.Insert(M{"n": n})
+	c.Assert(err, IsNil)
+    }
+
+    err = coll.RemoveAll(M{"n": M{"$gt": 42}})
+    c.Assert(err, IsNil)
+
+    result := &struct{ N int }{}
+    err = coll.Find(M{"n": 42}).One(result)
+    c.Assert(err, IsNil)
+    c.Assert(result.N, Equals, 42)
+
+    err = coll.Find(M{"n": 43}).One(result)
+    c.Assert(err, Equals, mgo.NotFound)
+
+    err = coll.Find(M{"n": 44}).One(result)
+    c.Assert(err, Equals, mgo.NotFound)
+}
+
 func (s *S) TestFindOneNotFound(c *C) {
     session, err := mgo.Mongo("localhost:40001")
     c.Assert(err, IsNil)
