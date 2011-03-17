@@ -33,7 +33,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package mgo
 
 import (
-    "launchpad.net/gobson"
+    "launchpad.net/gobson/bson"
     "sync"
     "os"
     "runtime"
@@ -149,13 +149,13 @@ func (database Database) C(name string) Collection {
 // Note that MongoDB considers the first marshalled key as the command
 // name, so when providing a command with options, it's important to
 // use an ordering-preserving document, such as a struct value or an
-// instance of gobson.D.  For instance:
+// instance of bson.D.  For instance:
 //
 //     db.Run(mgo.D{{"create", "mycollection"}, {"size", 1024}})
 //
 func (database Database) Run(cmd interface{}, result interface{}) os.Error {
     if name, ok := cmd.(string); ok {
-        cmd = gobson.M{name: 1}
+        cmd = bson.M{name: 1}
     }
     return database.C("$cmd").Find(cmd).One(result)
 }
@@ -348,7 +348,7 @@ func (session *Session) Safe(w, wtimeout int, fsync bool) {
 // Note that MongoDB considers the first marshalled key as the command
 // name, so when providing a command with options, it's important to
 // use an ordering-preserving document, such as a struct value or an
-// instance of gobson.D.  For instance:
+// instance of bson.D.  For instance:
 //
 //     db.Run(mgo.D{{"create", "mycollection"}, {"size", 1024}})
 //
@@ -357,8 +357,8 @@ func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
 }
 
 // Find prepares a query using the provided document.  The document may be a
-// map or a struct value capable of being marshalled with gobson.  The map
-// may be a generic one using interface{}, such as gobson.M, or it may be a
+// map or a struct value capable of being marshalled with bson.  The map
+// may be a generic one using interface{}, such as bson.M, or it may be a
 // properly typed map. Further details of the query may be tweaked using the
 // resulting Query value, and then executed using One or Iter.
 func (collection Collection) Find(query interface{}) *Query {
@@ -540,7 +540,7 @@ func (query *Query) One(result interface{}) (err os.Error) {
     }
 
     // Unmarshal outside of the read goroutine (replyFunc) to avoid blocking it.
-    err = gobson.Unmarshal(replyData, result)
+    err = bson.Unmarshal(replyData, result)
     if err == nil {
         debugf("Query %p document unmarshaled: %#v", query, result)
     } else {
@@ -602,7 +602,7 @@ func (iter *Iter) Next(result interface{}) (err os.Error) {
             }
         }
         iter.m.Unlock()
-        err = gobson.Unmarshal(docData, result)
+        err = bson.Unmarshal(docData, result)
         if err == nil {
             debugf("Iter %p document unmarshaled: %#v", iter, result)
         } else {
@@ -756,7 +756,7 @@ func (session *Session) writeQuery(op interface{}) os.Error {
             return replyErr // XXX TESTME
         }
         result := &LastError{}
-        gobson.Unmarshal(replyData, &result)
+        bson.Unmarshal(replyData, &result)
         debugf("Result from writing query: %#v", result)
         if result.Err != "" {
             return result
