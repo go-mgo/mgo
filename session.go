@@ -141,10 +141,10 @@ func (database Database) C(name string) Collection {
     return Collection{database.Session, database.Name + "." + name}
 }
 
-// Run issues the provided command and unmarshals its result in the
-// respective argument. The cmd argument may be either a string with the
-// command name itself, in which case an empty document of the form
-// bson.M{cmd: 1} will be used, or it may be a full command document.
+// Run issues the provided command against the database and unmarshals
+// its result in the respective argument. The cmd argument may be either
+// a string with the command name itself, in which case an empty document of
+// the form bson.M{cmd: 1} will be used, or it may be a full command document.
 //
 // Note that MongoDB considers the first marshalled key as the command
 // name, so when providing a command with options, it's important to
@@ -153,6 +153,8 @@ func (database Database) C(name string) Collection {
 //
 //     db.Run(mgo.D{{"create", "mycollection"}, {"size", 1024}})
 //
+// For privilleged commands typically run against the "admin" database, see
+// the Run method in the Session type.
 func (database Database) Run(cmd interface{}, result interface{}) os.Error {
     if name, ok := cmd.(string); ok {
         cmd = bson.M{name: 1}
@@ -352,6 +354,8 @@ func (session *Session) Safe(w, wtimeout int, fsync bool) {
 //
 //     db.Run(mgo.D{{"create", "mycollection"}, {"size", 1024}})
 //
+// For commands against arbitrary databases, see the Run method in
+// the Database type.
 func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
     return session.DB("admin").Run(cmd, result)
 }
