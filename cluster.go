@@ -344,7 +344,7 @@ func (cluster *mongoCluster) AcquireSocket(write bool, syncTimeout int64) (s *mo
             if !cluster.masters.Empty() || !write && !cluster.slaves.Empty() {
                 break
             }
-            if syncTimeout > 0 && time.Nanoseconds() - started > syncTimeout {
+            if syncTimeout > 0 && time.Nanoseconds()-started > syncTimeout {
                 cluster.RUnlock()
                 return nil, os.ErrorString("no reachable servers")
             }

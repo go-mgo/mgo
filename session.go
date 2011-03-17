@@ -141,6 +141,25 @@ func (database Database) C(name string) Collection {
     return Collection{database.Session, database.Name + "." + name}
 }
 
+// Run issues the provided command and unmarshals its result in the
+// respective argument. The cmd argument may be either a string with the
+// command name itself, in which case an empty document of the form
+// bson.M{cmd: 1} will be used, or it may be a full command document.
+//
+// Note that MongoDB considers the first marshalled key as the command
+// name, so when providing a command with options, it's important to
+// use an ordering-preserving document, such as a struct value or an
+// instance of gobson.D.  For instance:
+//
+//     db.Run(mgo.D{{"create", "mycollection"}, {"size", 1024}})
+//
+func (database Database) Run(cmd interface{}, result interface{}) os.Error {
+    if name, ok := cmd.(string); ok {
+        cmd = gobson.M{name: 1}
+    }
+    return database.C("$cmd").Find(cmd).One(result)
+}
+
 // New creates a new session with the same parameters as the original
 // session, including consistency, batch size, prefetching, safety mode,
 // etc. The new session will not share any sockets with the old session
@@ -320,16 +339,21 @@ func (session *Session) Safe(w, wtimeout int, fsync bool) {
     session.m.Unlock()
 }
 
-// Run issues the provided command and unmarshals its result in the
-// respective argument. The cmd argument may be either a string with the
-// command name itself, in which case an empty document of the form
-// M{cmd: 1} will be used, or it may be a full command document.
+// Run issues the provided command against the "admin" database and
+// and unmarshals its result in the respective argument. The cmd
+// argument may be either a string with the command name itself, in
+// which case an empty document of the form bson.M{cmd: 1} will be used,
+// or it may be a full command document.
+//
+// Note that MongoDB considers the first marshalled key as the command
+// name, so when providing a command with options, it's important to
+// use an ordering-preserving document, such as a struct value or an
+// instance of gobson.D.  For instance:
+//
+//     db.Run(mgo.D{{"create", "mycollection"}, {"size", 1024}})
+//
 func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
-    if name, ok := cmd.(string); ok {
-        cmd = gobson.M{name: 1}
-    }
-    c := session.DB("admin").C("$cmd")
-    return c.Find(cmd).One(result)
+    return session.DB("admin").Run(cmd, result)
 }
 
 // Find prepares a query using the provided document.  The document may be a
@@ -587,7 +611,7 @@ func (iter *Iter) Next(result interface{}) (err os.Error) {
         return err
     } else if iter.err != nil {
         err := iter.err
-        debugf("Iter %p returning error: %s", err)
+        debugf("Iter %p returning error: %s", iter, err)
         iter.m.Unlock()
         return err
     } else if iter.op.cursorId == 0 {
@@ -677,7 +701,7 @@ func (iter *Iter) replyFunc() replyFunc {
                 iter.op.cursorId = op.cursorId
             }
             // XXX Handle errors and flags.
-            debugf("Iter %p received reply document %d/%d", iter, docNum, rdocs)
+            debugf("Iter %p received reply document %d/%d", iter, docNum+1, rdocs)
             iter.docData.Push(docData)
         }
         iter.gotReply.Broadcast()
@@ -738,5 +762,5 @@ func (session *Session) writeQuery(op interface{}) os.Error {
             return result
         }
     }
-	return nil
+    return nil
 }

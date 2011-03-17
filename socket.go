@@ -33,7 +33,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package mgo
 
 import (
-    "launchpad.net/gobson"
+    "launchpad.net/gobson/bson"
     "sync"
     "net"
     "os"
@@ -82,16 +82,16 @@ type insertOp struct {
 }
 
 type updateOp struct {
-    collection string        // "database.collection"
-    selector interface{}
-    update interface{}
-    flags uint32
+    collection string // "database.collection"
+    selector   interface{}
+    update     interface{}
+    flags      uint32
 }
 
 type deleteOp struct {
-    collection string        // "database.collection"
-    selector interface{}
-    flags uint32
+    collection string // "database.collection"
+    selector   interface{}
+    flags      uint32
 }
 
 type requestInfo struct {
@@ -339,7 +339,7 @@ func (socket *mongoSocket) readLoop() {
         opCode := getInt32(p, 12)
 
         // Don't use socket.server.Addr here.  socket is not locked.
-        debug("Socket %p to %s: got reply (%d bytes)", socket, socket.addr, totalLen)
+        debugf("Socket %p to %s: got reply (%d bytes)", socket, socket.addr, totalLen)
 
         _ = totalLen
 
@@ -432,7 +432,7 @@ func addCString(b []byte, s string) []byte {
 }
 
 func addBSON(b []byte, doc interface{}) ([]byte, os.Error) {
-    data, err := gobson.Marshal(doc)
+    data, err := bson.Marshal(doc)
     if err != nil {
         return b, err
     }

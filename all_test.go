@@ -34,7 +34,7 @@ package mgo_test
 
 import (
     "flag"
-    "launchpad.net/gobson"
+    "launchpad.net/gobson/bson"
     .   "launchpad.net/gocheck"
     "launchpad.net/mgo"
     "os"
@@ -44,7 +44,7 @@ import (
 
 var fast = flag.Bool("fast", false, "Skip slow tests")
 
-type M gobson.M
+type M bson.M
 
 // Connect to the master of a deployment with a single server,
 // run an insert, and then ensure the insert worked and that a
@@ -165,7 +165,7 @@ func (s *S) TestUpdate(c *C) {
     ns := []int{40, 41, 42, 43, 44, 45, 46}
     for _, n := range ns {
         err := coll.Insert(M{"k": n, "n": n})
-	c.Assert(err, IsNil)
+        c.Assert(err, IsNil)
     }
 
     err = coll.Update(M{"k": 42}, M{"$inc": M{"n": 1}})
@@ -193,7 +193,7 @@ func (s *S) TestUpsert(c *C) {
     ns := []int{40, 41, 42, 43, 44, 45, 46}
     for _, n := range ns {
         err := coll.Insert(M{"k": n, "n": n})
-	c.Assert(err, IsNil)
+        c.Assert(err, IsNil)
     }
 
     err = coll.Upsert(M{"k": 42}, M{"k": 42, "n": 24})
@@ -222,7 +222,7 @@ func (s *S) TestUpdateAll(c *C) {
     ns := []int{40, 41, 42, 43, 44, 45, 46}
     for _, n := range ns {
         err := coll.Insert(M{"k": n, "n": n})
-	c.Assert(err, IsNil)
+        c.Assert(err, IsNil)
     }
 
     err = coll.UpdateAll(M{"k": M{"$gt": 42}}, M{"$inc": M{"n": 1}})
@@ -252,7 +252,7 @@ func (s *S) TestRemove(c *C) {
     ns := []int{40, 41, 42, 43, 44, 45, 46}
     for _, n := range ns {
         err := coll.Insert(M{"n": n})
-	c.Assert(err, IsNil)
+        c.Assert(err, IsNil)
     }
 
     err = coll.Remove(M{"n": M{"$gt": 42}})
@@ -281,7 +281,7 @@ func (s *S) TestRemoveAll(c *C) {
     ns := []int{40, 41, 42, 43, 44, 45, 46}
     for _, n := range ns {
         err := coll.Insert(M{"n": n})
-	c.Assert(err, IsNil)
+        c.Assert(err, IsNil)
     }
 
     err = coll.RemoveAll(M{"n": M{"$gt": 42}})
@@ -392,8 +392,8 @@ func (s *S) TestSort(c *C) {
     coll.Insert(M{"a": 1, "b": 0})
 
     query := coll.Find(M{})
-    query.Sort(gobson.D{{"a", -1}}) // Should be ignored.
-    iter, err := query.Sort(gobson.D{{"b", -1}, {"a", 1}}).Iter()
+    query.Sort(bson.D{{"a", -1}}) // Should be ignored.
+    iter, err := query.Sort(bson.D{{"b", -1}, {"a", 1}}).Iter()
     c.Assert(err, IsNil)
 
     l := make([]int, 18)
@@ -890,7 +890,7 @@ func (s *S) TestPrimaryShutdownMonotonicWithSlave(c *C) {
     c.Assert(err, IsNil)
 
     c.Assert(ssresult.Host, Equals, slave,
-             Bug("Monotonic session moved from %s to %s", slave, ssresult.Host))
+        Bug("Monotonic session moved from %s to %s", slave, ssresult.Host))
 
     // If we try to insert something, it'll have to hold until the new
     // master is available to move the connection, and work correctly.
@@ -1013,6 +1013,6 @@ func (s *S) TestSyncTimeout(c *C) {
     result := struct{ Ok bool }{}
     err = session.Run("getLastError", &result)
     c.Assert(err, Matches, "no reachable servers")
-    c.Assert(time.Nanoseconds() - started > timeout, Equals, true)
-    c.Assert(time.Nanoseconds() - started < timeout * 2, Equals, true)
+    c.Assert(time.Nanoseconds()-started > timeout, Equals, true)
+    c.Assert(time.Nanoseconds()-started < timeout*2, Equals, true)
 }
