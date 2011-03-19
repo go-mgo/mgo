@@ -370,7 +370,10 @@ func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
 // is equivalent to providing an empty document such as bson.M{}.
 //
 // Further details of the query may be tweaked using the resulting Query value,
-// and then executed using One or Iter.
+// and then executed using methods such as One, Iter, or Tail.  For example:
+//
+//     err := collection.Find(bson.M{"a", 1}).One(&result)
+//
 func (collection Collection) Find(query interface{}) *Query {
 	if query == nil {
 		query = bson.M{}
