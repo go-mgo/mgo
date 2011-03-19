@@ -33,8 +33,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package mgo
 
 import (
-    "fmt"
-    "os"
+	"fmt"
+	"os"
 )
 
 // ---------------------------------------------------------------------------
@@ -44,7 +44,7 @@ import (
 // associated with using an interface rather than the type.  Depending on how
 // often the logger is plugged in, it would be worth using the type instead.
 type log_Logger interface {
-    Output(calldepth int, s string) os.Error
+	Output(calldepth int, s string) os.Error
 }
 
 var globalLogger log_Logger
@@ -52,47 +52,47 @@ var globalDebug bool
 
 // Specify the *log.Logger object where log messages should be send to.
 func SetLogger(logger log_Logger) {
-    globalLogger = logger
+	globalLogger = logger
 }
 
 // Enable the delivery of debug messages to the logger.  Only meaningful
 // if a logger is also set.
 func Debug(debug bool) {
-    globalDebug = debug
+	globalDebug = debug
 }
 
 func log(v ...interface{}) {
-    if globalLogger != nil {
-        globalLogger.Output(2, fmt.Sprint(v...))
-    }
+	if globalLogger != nil {
+		globalLogger.Output(2, fmt.Sprint(v...))
+	}
 }
 
 func logln(v ...interface{}) {
-    if globalLogger != nil {
-        globalLogger.Output(2, fmt.Sprintln(v...))
-    }
+	if globalLogger != nil {
+		globalLogger.Output(2, fmt.Sprintln(v...))
+	}
 }
 
 func logf(format string, v ...interface{}) {
-    if globalLogger != nil {
-        globalLogger.Output(2, fmt.Sprintf(format, v...))
-    }
+	if globalLogger != nil {
+		globalLogger.Output(2, fmt.Sprintf(format, v...))
+	}
 }
 
 func debug(v ...interface{}) {
-    if globalDebug && globalLogger != nil {
-        globalLogger.Output(2, fmt.Sprint(v...))
-    }
+	if globalDebug && globalLogger != nil {
+		globalLogger.Output(2, fmt.Sprint(v...))
+	}
 }
 
 func debugln(v ...interface{}) {
-    if globalDebug && globalLogger != nil {
-        globalLogger.Output(2, fmt.Sprintln(v...))
-    }
+	if globalDebug && globalLogger != nil {
+		globalLogger.Output(2, fmt.Sprintln(v...))
+	}
 }
 
 func debugf(format string, v ...interface{}) {
-    if globalDebug && globalLogger != nil {
-        globalLogger.Output(2, fmt.Sprintf(format, v...))
-    }
+	if globalDebug && globalLogger != nil {
+		globalLogger.Output(2, fmt.Sprintf(format, v...))
+	}
 }

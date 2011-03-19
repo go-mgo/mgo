@@ -33,69 +33,69 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package mgo
 
 import (
-    "launchpad.net/gobson/bson"
-    "sync"
-    "os"
-    "runtime"
-    "strings"
-    "time"
+	"launchpad.net/gobson/bson"
+	"sync"
+	"os"
+	"runtime"
+	"strings"
+	"time"
 )
 
 const (
-    Strong = iota
-    Monotonic
-    Eventual
+	Strong = iota
+	Monotonic
+	Eventual
 )
 
 type Session struct {
-    m           sync.RWMutex
-    consistency int
-    cluster     *mongoCluster
-    socket      *mongoSocket
-    queryConfig query
-    safe        *queryOp
-    syncTimeout int64
+	m           sync.RWMutex
+	consistency int
+	cluster     *mongoCluster
+	socket      *mongoSocket
+	queryConfig query
+	safe        *queryOp
+	syncTimeout int64
 }
 
 type Database struct {
-    Session *Session
-    Name    string
+	Session *Session
+	Name    string
 }
 
 type Collection struct {
-    Session *Session
-    Name    string
+	Session *Session
+	Name    string
 }
 
 type Query struct {
-    m       sync.Mutex
-    session *Session
-    query   // Enables default settings in session.
+	m       sync.Mutex
+	session *Session
+	query   // Enables default settings in session.
 }
 
 type query struct {
-    op       queryOp
-    prefetch float64
+	op       queryOp
+	prefetch float64
 }
 
 type getLastError struct {
-    CmdName  int  "getLastError"
-    W        int  "w/c"
-    WTimeout int  "wtimeout/c"
-    FSync    bool "fsync/c"
+	CmdName  int  "getLastError"
+	W        int  "w/c"
+	WTimeout int  "wtimeout/c"
+	FSync    bool "fsync/c"
 }
 
 type Iter struct {
-    m              sync.Mutex
-    gotReply       sync.Cond
-    session        *Session
-    docData        queue
-    err            os.Error
-    op             getMoreOp
-    prefetch       float64
-    pendingDocs    int
-    docsBeforeMore int
-    timeout        int
+	m              sync.Mutex
+	gotReply       sync.Cond
+	session        *Session
+	docData        queue
+	err            os.Error
+	op             getMoreOp
+	prefetch       float64
+	pendingDocs    int
+	docsBeforeMore int
+	timeout        int
 }
 
 var NotFound = os.ErrorString("Document not found")
@@ -117,11 +117,11 @@ const defaultPrefetch = 0.25
 // the obtained session.  This will make them share the underlying cluster,
 // and manage the pool of connections appropriately.
 func Mongo(servers string) (session *Session, err os.Error) {
-    userSeeds := strings.Split(servers, ",", -1)
-    cluster := newCluster(userSeeds)
-    session = newSession(Strong, cluster, nil)
-    cluster.Release()
-    return session, nil
+	userSeeds := strings.Split(servers, ",", -1)
+	cluster := newCluster(userSeeds)
+	session = newSession(Strong, cluster, nil)
+	cluster.Release()
+	return session, nil
 }
 
 
@@ -133,7 +133,7 @@ func Mongo(servers string) (session *Session, err os.Error) {
 // Creating this object is a very lightweight operation, and involves
 // no network communication.
 func (session *Session) DB(name string) Database {
-    return Database{session, name}
+	return Database{session, name}
 }
 
 // C returns a collection object for the given database, which enables querying
@@ -141,7 +141,7 @@ func (session *Session) DB(name string) Database {
 // object is a very lightweight operation, and involves no network
 // communication.
 func (database Database) C(name string) Collection {
-    return Collection{database.Session, database.Name + "." + name}
+	return Collection{database.Session, database.Name + "." + name}
 }
 
 // Run issues the provided command against the database and unmarshals
@@ -159,10 +159,10 @@ func (database Database) C(name string) Collection {
 // For privilleged commands typically run against the "admin" database, see
 // the Run method in the Session type.
 func (database Database) Run(cmd interface{}, result interface{}) os.Error {
-    if name, ok := cmd.(string); ok {
-        cmd = bson.M{name: 1}
-    }
-    return database.C("$cmd").Find(cmd).One(result)
+	if name, ok := cmd.(string); ok {
+		cmd = bson.M{name: 1}
+	}
+	return database.C("$cmd").Find(cmd).One(result)
 }
 
 // New creates a new session with the same parameters as the original
@@ -170,16 +170,16 @@ func (database Database) Run(cmd interface{}, result interface{}) os.Error {
 // etc. The new session will not share any sockets with the old session
 // (see the Clone method for a different behavior).
 func (session *Session) New() *Session {
-    session.m.Lock()
-    clone := &Session{
-        consistency: session.consistency,
-        cluster:     session.cluster,
-        safe:        session.safe,
-        queryConfig: session.queryConfig,
-    }
-    session.cluster.Acquire()
-    session.m.Unlock()
-    return clone
+	session.m.Lock()
+	clone := &Session{
+		consistency: session.consistency,
+		cluster:     session.cluster,
+		safe:        session.safe,
+		queryConfig: session.queryConfig,
+	}
+	session.cluster.Acquire()
+	session.m.Unlock()
+	return clone
 }
 
 // Clone creates a new session with the same parameters as the current one,
@@ -188,37 +188,37 @@ func (session *Session) New() *Session {
 // consistency requirements, the same socket will be shared with the new
 // session (for a different behavior see the New method).
 func (session *Session) Clone() *Session {
-    session.m.Lock()
-    clone := &Session{
-        consistency: session.consistency,
-        cluster:     session.cluster,
-        safe:        session.safe,
-        queryConfig: session.queryConfig,
-    }
-    session.cluster.Acquire()
-    clone.setSocket(session.socket)
-    session.m.Unlock()
-    return clone
+	session.m.Lock()
+	clone := &Session{
+		consistency: session.consistency,
+		cluster:     session.cluster,
+		safe:        session.safe,
+		queryConfig: session.queryConfig,
+	}
+	session.cluster.Acquire()
+	clone.setSocket(session.socket)
+	session.m.Unlock()
+	return clone
 }
 
 // Restart puts back any reserved sockets in use and restarts the consistency
 // guarantees according to the existing consistency setting.
 func (session *Session) Restart() {
-    session.m.Lock()
-    session.setSocket(nil)
-    session.m.Unlock()
+	session.m.Lock()
+	session.setSocket(nil)
+	session.m.Unlock()
 }
 
 // Close terminates the session.  It's a runtime error to use a session
 // after it has been closed.
 func (session *Session) Close() {
-    session.m.Lock()
-    if session.cluster != nil {
-        session.setSocket(nil)
-        session.cluster.Release()
-        session.cluster = nil
-    }
-    session.m.Unlock()
+	session.m.Lock()
+	if session.cluster != nil {
+		session.setSocket(nil)
+		session.cluster.Release()
+		session.cluster = nil
+	}
+	session.m.Unlock()
 }
 
 // Strong puts the session into strong consistency mode.
@@ -230,9 +230,9 @@ func (session *Session) Close() {
 // This offers the least benefits in terms of distributing load, but the
 // most guarantees.  See also Monotonic and Eventual.
 func (session *Session) Strong() {
-    session.m.Lock()
-    session.consistency = Strong
-    session.m.Unlock()
+	session.m.Lock()
+	session.consistency = Strong
+	session.m.Unlock()
 }
 
 // Monotonic puts the session into monotonic consistency mode.
@@ -250,9 +250,9 @@ func (session *Session) Strong() {
 // This manages to distribute some of the reading load with slaves, while
 // maintaining some useful guarantees.  See also Strong and Eventual.
 func (session *Session) Monotonic() {
-    session.m.Lock()
-    session.consistency = Monotonic
-    session.m.Unlock()
+	session.m.Lock()
+	session.consistency = Monotonic
+	session.m.Unlock()
 }
 
 // Eventual puts the session into eventual consistency mode.
@@ -270,10 +270,10 @@ func (session *Session) Monotonic() {
 // offering the least guarantees about ordering of the data read and written.
 // See also Strong and Monotonic.
 func (session *Session) Eventual() {
-    session.m.Lock()
-    session.consistency = Eventual
-    session.setSocket(nil)
-    session.m.Unlock()
+	session.m.Lock()
+	session.consistency = Eventual
+	session.setSocket(nil)
+	session.m.Unlock()
 }
 
 // SetSyncTimeout sets the amount of time an operation with this session
@@ -281,9 +281,9 @@ func (session *Session) Eventual() {
 // server can't be established. Set it to zero to wait forever. This is
 // the default.
 func (session *Session) SetSyncTimeout(nsec int64) {
-    session.m.Lock()
-    session.syncTimeout = nsec
-    session.m.Unlock()
+	session.m.Lock()
+	session.syncTimeout = nsec
+	session.m.Unlock()
 }
 
 // Batch sets the default batch size used when fetching documents from the
@@ -294,9 +294,9 @@ func (session *Session) SetSyncTimeout(nsec int64) {
 // writing, MongoDB will use an initial size of min(100 docs, 4MB) on the
 // first batch, and 4MB on remaining ones.
 func (session *Session) Batch(size int) {
-    session.m.Lock()
-    session.queryConfig.op.limit = int32(size)
-    session.m.Unlock()
+	session.m.Lock()
+	session.queryConfig.op.limit = int32(size)
+	session.m.Unlock()
 }
 
 // Prefetch sets the default point at which the next batch of results will be
@@ -313,9 +313,9 @@ func (session *Session) Batch(size int) {
 //
 // The default prefetch value is 0.25.
 func (session *Session) Prefetch(p float64) {
-    session.m.Lock()
-    session.queryConfig.prefetch = p
-    session.m.Unlock()
+	session.m.Lock()
+	session.queryConfig.prefetch = p
+	session.m.Unlock()
 }
 
 // Unsafe puts the session in unsafe mode. Writes will become fire-and-forget,
@@ -325,9 +325,9 @@ func (session *Session) Prefetch(p float64) {
 // tweaked via the Safe() method.  It's also possible to modify the safety
 // settings on a per-query basis, using the Safe and Unsafe methods of Query.
 func (session *Session) Unsafe() {
-    session.m.Lock()
-    session.safe = nil
-    session.m.Unlock()
+	session.m.Lock()
+	session.safe = nil
+	session.m.Unlock()
 }
 
 // Safe puts the session into safe mode.  Once in safe mode, any changing
@@ -335,13 +335,13 @@ func (session *Session) Unsafe() {
 // with the specified parameters, to ensure the request was correctly
 // processed.
 func (session *Session) Safe(w, wtimeout int, fsync bool) {
-    session.m.Lock()
-    session.safe = &queryOp{
-        query:      &getLastError{1, w, wtimeout, fsync},
-        collection: "admin.$cmd",
-        limit:      -1,
-    }
-    session.m.Unlock()
+	session.m.Lock()
+	session.safe = &queryOp{
+		query:      &getLastError{1, w, wtimeout, fsync},
+		collection: "admin.$cmd",
+		limit:      -1,
+	}
+	session.m.Unlock()
 }
 
 // Run issues the provided command against the "admin" database and
@@ -360,7 +360,7 @@ func (session *Session) Safe(w, wtimeout int, fsync bool) {
 // For commands against arbitrary databases, see the Run method in
 // the Database type.
 func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
-    return session.DB("admin").Run(cmd, result)
+	return session.DB("admin").Run(cmd, result)
 }
 
 // Find prepares a query using the provided document.  The document may be a
@@ -369,22 +369,22 @@ func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
 // properly typed map. Further details of the query may be tweaked using the
 // resulting Query value, and then executed using One or Iter.
 func (collection Collection) Find(query interface{}) *Query {
-    session := collection.Session
-    q := &Query{session: session, query: session.queryConfig}
-    q.op.query = query
-    q.op.collection = collection.Name
-    return q
+	session := collection.Session
+	q := &Query{session: session, query: session.queryConfig}
+	q.op.query = query
+	q.op.collection = collection.Name
+	return q
 }
 
 type LastError struct {
-    Err             string
-    Code, N, Waited int
-    WTimeout        bool
-    FSyncFiles      int "fsyncFiles"
+	Err             string
+	Code, N, Waited int
+	WTimeout        bool
+	FSyncFiles      int "fsyncFiles"
 }
 
 func (err *LastError) String() string {
-    return err.Err
+	return err.Err
 }
 
 // Insert inserts one or more documents in the respective collection.  In
@@ -392,7 +392,7 @@ func (err *LastError) String() string {
 // happens while inserting the provided documents, the returned error will
 // be of type *LastError.
 func (collection Collection) Insert(docs ...interface{}) os.Error {
-    return collection.Session.writeQuery(&insertOp{collection.Name, docs})
+	return collection.Session.writeQuery(&insertOp{collection.Name, docs})
 }
 
 // Update finds a single document matching the provided selector document
@@ -400,7 +400,7 @@ func (collection Collection) Insert(docs ...interface{}) os.Error {
 // is in safe mode (see the Safe method) and an error happens when attempting
 // the change, the returned error will be of type *LastError.
 func (collection Collection) Update(selector interface{}, change interface{}) os.Error {
-    return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 0})
+	return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 0})
 }
 
 // Upsert finds a single document matching the provided selector document
@@ -410,7 +410,7 @@ func (collection Collection) Update(selector interface{}, change interface{}) os
 // happens when attempting the change, the returned error will be of type
 // *LastError.
 func (collection Collection) Upsert(selector interface{}, change interface{}) os.Error {
-    return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 1})
+	return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 1})
 }
 
 // UpdateAll finds all documents matching the provided selector document
@@ -418,7 +418,7 @@ func (collection Collection) Upsert(selector interface{}, change interface{}) os
 // is in safe mode (see the Safe method) and an error happens when attempting
 // the change, the returned error will be of type *LastError.
 func (collection Collection) UpdateAll(selector interface{}, change interface{}) os.Error {
-    return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 2})
+	return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 2})
 }
 
 // Remove finds a single document matching the provided selector document
@@ -426,7 +426,7 @@ func (collection Collection) UpdateAll(selector interface{}, change interface{})
 // (see the Safe method) and an error happens when attempting the change,
 // the returned error will be of type *LastError.
 func (collection Collection) Remove(selector interface{}) os.Error {
-    return collection.Session.writeQuery(&deleteOp{collection.Name, selector, 1})
+	return collection.Session.writeQuery(&deleteOp{collection.Name, selector, 1})
 }
 
 // RemoveAll finds all documents matching the provided selector document
@@ -434,7 +434,7 @@ func (collection Collection) Remove(selector interface{}) os.Error {
 // (see the Safe method) and an error happens when attempting the change,
 // the returned error will be of type *LastError.
 func (collection Collection) RemoveAll(selector interface{}) os.Error {
-    return collection.Session.writeQuery(&deleteOp{collection.Name, selector, 0})
+	return collection.Session.writeQuery(&deleteOp{collection.Name, selector, 0})
 }
 
 // Batch sets the batch size used when fetching documents from the database.
@@ -445,10 +445,10 @@ func (collection Collection) RemoveAll(selector interface{}) os.Error {
 // writing, MongoDB will use an initial size of min(100 docs, 4MB) on the
 // first batch, and 4MB on remaining ones.
 func (query *Query) Batch(size int) *Query {
-    query.m.Lock()
-    query.op.limit = int32(size)
-    query.m.Unlock()
-    return query
+	query.m.Lock()
+	query.op.limit = int32(size)
+	query.m.Unlock()
+	return query
 }
 
 // Prefetch sets the point at which the next batch of results will be requested.
@@ -463,45 +463,45 @@ func (query *Query) Batch(size int) *Query {
 //
 // The default prefetch value is 0.25.
 func (query *Query) Prefetch(p float64) *Query {
-    query.m.Lock()
-    query.prefetch = p
-    query.m.Unlock()
-    return query
+	query.m.Lock()
+	query.prefetch = p
+	query.m.Unlock()
+	return query
 }
 
 // Skip skips over the n initial documents from the query results.  Note that
 // this only makes sense with capped collections where documents are naturally
 // ordered by insertion time, or with sorted results.
 func (query *Query) Skip(n int) *Query {
-    query.m.Lock()
-    query.op.skip = int32(n)
-    query.m.Unlock()
-    return query
+	query.m.Lock()
+	query.op.skip = int32(n)
+	query.m.Unlock()
+	return query
 }
 
 
 type queryWrapper struct {
-    Query   interface{} "$query"
-    OrderBy interface{} "$orderby/c"
+	Query   interface{} "$query"
+	OrderBy interface{} "$orderby/c"
 }
 
 func (query *Query) wrap() *queryWrapper {
-    w, ok := query.op.query.(*queryWrapper)
-    if !ok {
-        w = &queryWrapper{Query: query.op.query}
-        query.op.query = w
-    }
-    return w
+	w, ok := query.op.query.(*queryWrapper)
+	if !ok {
+		w = &queryWrapper{Query: query.op.query}
+		query.op.query = w
+	}
+	return w
 }
 
 // Sort asks the database to order returned documents according to the rules
 // provided in the given document.
 func (query *Query) Sort(order interface{}) *Query {
-    query.m.Lock()
-    w := query.wrap()
-    w.OrderBy = order
-    query.m.Unlock()
-    return query
+	query.m.Lock()
+	w := query.wrap()
+	w.OrderBy = order
+	query.m.Unlock()
+	return query
 }
 
 // One executes the query and unmarshals the first obtained document into the
@@ -509,51 +509,51 @@ func (query *Query) Sort(order interface{}) *Query {
 // unmarshalled into by gobson.  This function blocks until either a result
 // is available or an error happened. 
 func (query *Query) One(result interface{}) (err os.Error) {
-    query.m.Lock()
-    session := query.session
-    op := query.op // Copy.
-    query.m.Unlock()
+	query.m.Lock()
+	session := query.session
+	op := query.op // Copy.
+	query.m.Unlock()
 
-    socket, err := session.acquireSocket(false)
-    if err != nil {
-        return err
-    }
-    defer socket.Release()
+	socket, err := session.acquireSocket(false)
+	if err != nil {
+		return err
+	}
+	defer socket.Release()
 
-    var mutex sync.Mutex
-    var replyData []byte
-    var replyErr os.Error
+	var mutex sync.Mutex
+	var replyData []byte
+	var replyErr os.Error
 
-    mutex.Lock()
+	mutex.Lock()
 
-    op.limit = -1
-    op.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
-        replyErr = err
-        replyData = docData
-        mutex.Unlock()
-    }
+	op.limit = -1
+	op.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
+		replyErr = err
+		replyData = docData
+		mutex.Unlock()
+	}
 
-    err = socket.Query(&op)
-    if err != nil {
-        return err
-    }
+	err = socket.Query(&op)
+	if err != nil {
+		return err
+	}
 
-    mutex.Lock()
-    if replyErr != nil {
-        return replyErr
-    }
-    if replyData == nil {
-        return NotFound
-    }
+	mutex.Lock()
+	if replyErr != nil {
+		return replyErr
+	}
+	if replyData == nil {
+		return NotFound
+	}
 
-    // Unmarshal outside of the read goroutine (replyFunc) to avoid blocking it.
-    err = bson.Unmarshal(replyData, result)
-    if err == nil {
-        debugf("Query %p document unmarshaled: %#v", query, result)
-    } else {
-        debugf("Query %p document unmarshaling failed: %#v", query, err)
-    }
-    return err
+	// Unmarshal outside of the read goroutine (replyFunc) to avoid blocking it.
+	err = bson.Unmarshal(replyData, result)
+	if err == nil {
+		debugf("Query %p document unmarshaled: %#v", query, result)
+	} else {
+		debugf("Query %p document unmarshaling failed: %#v", query, err)
+	}
+	return err
 }
 
 // Iter executes the query and returns an iterator capable of going over all
@@ -561,33 +561,33 @@ func (query *Query) One(result interface{}) (err os.Error) {
 // size (see the Batch method) and more documents will be requested when a
 // configurable threshold is reached (see the Prefetch method).
 func (query *Query) Iter() (iter *Iter, err os.Error) {
-    query.m.Lock()
-    session := query.session
-    op := query.op
-    prefetch := query.prefetch
-    query.m.Unlock()
+	query.m.Lock()
+	session := query.session
+	op := query.op
+	prefetch := query.prefetch
+	query.m.Unlock()
 
-    socket, err := session.acquireSocket(false)
-    if err != nil {
-        return nil, err
-    }
-    defer socket.Release()
+	socket, err := session.acquireSocket(false)
+	if err != nil {
+		return nil, err
+	}
+	defer socket.Release()
 
-    iter = &Iter{session: session, prefetch: prefetch}
-    iter.gotReply.L = &iter.m
-    iter.op.collection = op.collection
-    iter.op.limit = op.limit
+	iter = &Iter{session: session, prefetch: prefetch}
+	iter.gotReply.L = &iter.m
+	iter.op.collection = op.collection
+	iter.op.limit = op.limit
 
-    op.replyFunc = iter.replyFunc()
-    iter.op.replyFunc = op.replyFunc
-    iter.pendingDocs++
+	op.replyFunc = iter.replyFunc()
+	iter.op.replyFunc = op.replyFunc
+	iter.pendingDocs++
 
-    err = socket.Query(&op)
-    if err != nil {
-        return nil, err
-    }
+	err = socket.Query(&op)
+	if err != nil {
+		return nil, err
+	}
 
-    return iter, nil
+	return iter, nil
 }
 
 // Tail returns a tailable iterator.  Unlike a normal iterator, a
@@ -629,35 +629,35 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
 //     http://www.mongodb.org/display/DOCS/Sorting+and+Natural+Order
 //
 func (query *Query) Tail(timeoutSecs int) (iter *Iter, err os.Error) {
-    query.m.Lock()
-    session := query.session
-    op := query.op
-    prefetch := query.prefetch
-    query.m.Unlock()
+	query.m.Lock()
+	session := query.session
+	op := query.op
+	prefetch := query.prefetch
+	query.m.Unlock()
 
-    socket, err := session.acquireSocket(false)
-    if err != nil {
-        return nil, err
-    }
-    defer socket.Release()
+	socket, err := session.acquireSocket(false)
+	if err != nil {
+		return nil, err
+	}
+	defer socket.Release()
 
-    iter = &Iter{session: session, prefetch: prefetch}
-    iter.gotReply.L = &iter.m
-    iter.timeout = timeoutSecs
-    iter.op.collection = op.collection
-    iter.op.limit = op.limit
+	iter = &Iter{session: session, prefetch: prefetch}
+	iter.gotReply.L = &iter.m
+	iter.timeout = timeoutSecs
+	iter.op.collection = op.collection
+	iter.op.limit = op.limit
 
-    op.flags |= 2 | 32 // Tailable | AwaitData
-    op.replyFunc = iter.replyFunc()
-    iter.op.replyFunc = op.replyFunc
-    iter.pendingDocs++
+	op.flags |= 2 | 32 // Tailable | AwaitData
+	op.replyFunc = iter.replyFunc()
+	iter.op.replyFunc = op.replyFunc
+	iter.pendingDocs++
 
-    err = socket.Query(&op)
-    if err != nil {
-        return nil, err
-    }
+	err = socket.Query(&op)
+	if err != nil {
+		return nil, err
+	}
 
-    return iter, nil
+	return iter, nil
 }
 
 // Next retrieves the next document from the result set, blocking if necessary.
@@ -669,54 +669,54 @@ func (query *Query) Tail(timeoutSecs int) (iter *Iter, err os.Error) {
 // iterator becomes invalid, and returns TailTimeout if a tailable iterator
 // times out (see the Tail method of Query).
 func (iter *Iter) Next(result interface{}) (err os.Error) {
-    timeout := int64(-1)
-    if iter.timeout >= 0 {
-        timeout = time.Nanoseconds() + int64(iter.timeout)*1e9
-    }
+	timeout := int64(-1)
+	if iter.timeout >= 0 {
+		timeout = time.Nanoseconds() + int64(iter.timeout)*1e9
+	}
 
-    iter.m.Lock()
+	iter.m.Lock()
 
-    for iter.err == nil && iter.docData.Len() == 0 && (iter.pendingDocs > 0 || iter.op.cursorId != 0) {
-        if iter.pendingDocs == 0 && iter.op.cursorId != 0 {
-            // Tailable cursor exhausted.
-            if timeout >= 0 && time.Nanoseconds() > timeout {
-                iter.m.Unlock()
-                return TailTimeout
-            }
-            iter.getMore()
-        }
-        iter.gotReply.Wait()
-    }
+	for iter.err == nil && iter.docData.Len() == 0 && (iter.pendingDocs > 0 || iter.op.cursorId != 0) {
+		if iter.pendingDocs == 0 && iter.op.cursorId != 0 {
+			// Tailable cursor exhausted.
+			if timeout >= 0 && time.Nanoseconds() > timeout {
+				iter.m.Unlock()
+				return TailTimeout
+			}
+			iter.getMore()
+		}
+		iter.gotReply.Wait()
+	}
 
-    // Exhaust available data before returning any errors.
-    if docData, ok := iter.docData.Pop().([]byte); ok {
-        if iter.op.cursorId != 0 && iter.err == nil {
-            iter.docsBeforeMore--
-            if iter.docsBeforeMore == 0 {
-                iter.getMore()
-            }
-        }
-        iter.m.Unlock()
-        err = bson.Unmarshal(docData, result)
-        if err == nil {
-            debugf("Iter %p document unmarshaled: %#v", iter, result)
-        } else {
-            debugf("Iter %p document unmarshaling failed: %#v", iter, err)
-        }
-        return err
-    } else if iter.err != nil {
-        err := iter.err
-        debugf("Iter %p returning error: %s", iter, err)
-        iter.m.Unlock()
-        return err
-    } else if iter.op.cursorId == 0 {
-        debugf("Iter %p returning NotFound with cursor=0", iter)
-        iter.m.Unlock()
-        return NotFound
-    }
+	// Exhaust available data before returning any errors.
+	if docData, ok := iter.docData.Pop().([]byte); ok {
+		if iter.op.cursorId != 0 && iter.err == nil {
+			iter.docsBeforeMore--
+			if iter.docsBeforeMore == 0 {
+				iter.getMore()
+			}
+		}
+		iter.m.Unlock()
+		err = bson.Unmarshal(docData, result)
+		if err == nil {
+			debugf("Iter %p document unmarshaled: %#v", iter, result)
+		} else {
+			debugf("Iter %p document unmarshaling failed: %#v", iter, err)
+		}
+		return err
+	} else if iter.err != nil {
+		err := iter.err
+		debugf("Iter %p returning error: %s", iter, err)
+		iter.m.Unlock()
+		return err
+	} else if iter.op.cursorId == 0 {
+		debugf("Iter %p returning NotFound with cursor=0", iter)
+		iter.m.Unlock()
+		return NotFound
+	}
 
-    panic("Internal error: this should be unreachable")
-    return
+	panic("Internal error: this should be unreachable")
+	return
 }
 
 
@@ -724,43 +724,43 @@ func (iter *Iter) Next(result interface{}) (err os.Error) {
 // Internal session handling helpers.
 
 func newSession(consistency int, cluster *mongoCluster, socket *mongoSocket) (session *Session) {
-    cluster.Acquire()
-    session = &Session{consistency: consistency, cluster: cluster}
-    session.setSocket(socket)
-    session.queryConfig.prefetch = defaultPrefetch
-    session.Safe(0, 0, false)
-    runtime.SetFinalizer(session, finalizeSession)
-    return session
+	cluster.Acquire()
+	session = &Session{consistency: consistency, cluster: cluster}
+	session.setSocket(socket)
+	session.queryConfig.prefetch = defaultPrefetch
+	session.Safe(0, 0, false)
+	runtime.SetFinalizer(session, finalizeSession)
+	return session
 }
 
 func finalizeSession(session *Session) {
-    session.Close()
+	session.Close()
 }
 
 func (session *Session) acquireSocket(write bool) (s *mongoSocket, err os.Error) {
-    session.m.RLock()
-    s = session.socket
-    // XXX Lock the server here?
-    if session.consistency == Strong {
-        write = true
-    }
-    if s == nil || write && !s.server.Master {
-        session.m.RUnlock()
-        // Try again, with an exclusive lock now.
-        session.m.Lock()
-        s = session.socket
-        if s == nil || write && !s.server.Master {
-            s, err = session.cluster.AcquireSocket(write, session.syncTimeout)
-            if err == nil && session.consistency != Eventual {
-                session.setSocket(s)
-            }
-        }
-        session.m.Unlock()
-    } else {
-        session.m.RUnlock()
-        s.Acquire()
-    }
-    return
+	session.m.RLock()
+	s = session.socket
+	// XXX Lock the server here?
+	if session.consistency == Strong {
+		write = true
+	}
+	if s == nil || write && !s.server.Master {
+		session.m.RUnlock()
+		// Try again, with an exclusive lock now.
+		session.m.Lock()
+		s = session.socket
+		if s == nil || write && !s.server.Master {
+			s, err = session.cluster.AcquireSocket(write, session.syncTimeout)
+			if err == nil && session.consistency != Eventual {
+				session.setSocket(s)
+			}
+		}
+		session.m.Unlock()
+	} else {
+		session.m.RUnlock()
+		s.Acquire()
+	}
+	return
 }
 
 // Set the socket bound to this session.  With a bound socket, all operations
@@ -769,98 +769,98 @@ func (session *Session) acquireSocket(write bool) (s *mongoSocket, err os.Error)
 // current socket.  Note that this method will properly refcount the socket up
 // and down when setting/releasing.
 func (session *Session) setSocket(socket *mongoSocket) {
-    if session.socket != nil {
-        session.socket.Release()
-    }
-    if socket != nil {
-        socket.Acquire() // Hold a reference while the session is using it.
-    }
-    session.socket = socket
+	if session.socket != nil {
+		session.socket.Release()
+	}
+	if socket != nil {
+		socket.Acquire() // Hold a reference while the session is using it.
+	}
+	session.socket = socket
 }
 
 func (iter *Iter) replyFunc() replyFunc {
-    return func(err os.Error, op *replyOp, docNum int, docData []byte) {
-        iter.m.Lock()
-        iter.pendingDocs--
-        if err != nil {
-            iter.err = err
-            debugf("Iter %p received an error: %s", iter, err.String())
-        } else if docNum == -1 {
-            debugf("Iter %p received no documents (cursor=%d).", iter, op.cursorId)
-            if op != nil && op.cursorId != 0 {
-                // It's a tailable cursor.
-                iter.op.cursorId = op.cursorId
-            } else {
-                iter.err = NotFound
-            }
-        } else {
-            rdocs := int(op.replyDocs)
-            if docNum == 0 {
-                iter.pendingDocs += rdocs - 1
-                iter.docsBeforeMore = rdocs - int(iter.prefetch*float64(rdocs))
-                iter.op.cursorId = op.cursorId
-            }
-            // XXX Handle errors and flags.
-            debugf("Iter %p received reply document %d/%d", iter, docNum+1, rdocs)
-            iter.docData.Push(docData)
-        }
-        iter.gotReply.Broadcast()
-        iter.m.Unlock()
-    }
+	return func(err os.Error, op *replyOp, docNum int, docData []byte) {
+		iter.m.Lock()
+		iter.pendingDocs--
+		if err != nil {
+			iter.err = err
+			debugf("Iter %p received an error: %s", iter, err.String())
+		} else if docNum == -1 {
+			debugf("Iter %p received no documents (cursor=%d).", iter, op.cursorId)
+			if op != nil && op.cursorId != 0 {
+				// It's a tailable cursor.
+				iter.op.cursorId = op.cursorId
+			} else {
+				iter.err = NotFound
+			}
+		} else {
+			rdocs := int(op.replyDocs)
+			if docNum == 0 {
+				iter.pendingDocs += rdocs - 1
+				iter.docsBeforeMore = rdocs - int(iter.prefetch*float64(rdocs))
+				iter.op.cursorId = op.cursorId
+			}
+			// XXX Handle errors and flags.
+			debugf("Iter %p received reply document %d/%d", iter, docNum+1, rdocs)
+			iter.docData.Push(docData)
+		}
+		iter.gotReply.Broadcast()
+		iter.m.Unlock()
+	}
 }
 
 func (iter *Iter) getMore() {
-    socket, err := iter.session.acquireSocket(false)
-    if err != nil {
-        iter.err = err
-        return
-    }
-    defer socket.Release()
-    debugf("Iter %p requesting more documents", iter)
-    iter.pendingDocs++
-    err = socket.Query(&iter.op)
-    if err != nil {
-        iter.err = err
-    }
+	socket, err := iter.session.acquireSocket(false)
+	if err != nil {
+		iter.err = err
+		return
+	}
+	defer socket.Release()
+	debugf("Iter %p requesting more documents", iter)
+	iter.pendingDocs++
+	err = socket.Query(&iter.op)
+	if err != nil {
+		iter.err = err
+	}
 }
 
 // writeQuery runs the given modifying operation, potentially followed up
 // by a getLastError command in case the session is in safe mode.
 func (session *Session) writeQuery(op interface{}) os.Error {
-    socket, err := session.acquireSocket(true)
-    if err != nil {
-        return err
-    }
-    defer socket.Release()
+	socket, err := session.acquireSocket(true)
+	if err != nil {
+		return err
+	}
+	defer socket.Release()
 
-    // Copy safe's address to avoid locking.
-    if safe := session.safe; safe == nil {
-        return socket.Query(op)
-    } else {
-        var mutex sync.Mutex
-        var replyData []byte
-        var replyErr os.Error
-        mutex.Lock()
-        query := *safe // Copy the data.
-        query.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
-            replyData = docData
-            replyErr = err
-            mutex.Unlock()
-        }
-        err = socket.Query(op, &query)
-        if err != nil {
-            return err
-        }
-        mutex.Lock() // Wait.
-        if replyErr != nil {
-            return replyErr // XXX TESTME
-        }
-        result := &LastError{}
-        bson.Unmarshal(replyData, &result)
-        debugf("Result from writing query: %#v", result)
-        if result.Err != "" {
-            return result
-        }
-    }
-    return nil
+	// Copy safe's address to avoid locking.
+	if safe := session.safe; safe == nil {
+		return socket.Query(op)
+	} else {
+		var mutex sync.Mutex
+		var replyData []byte
+		var replyErr os.Error
+		mutex.Lock()
+		query := *safe // Copy the data.
+		query.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
+			replyData = docData
+			replyErr = err
+			mutex.Unlock()
+		}
+		err = socket.Query(op, &query)
+		if err != nil {
+			return err
+		}
+		mutex.Lock() // Wait.
+		if replyErr != nil {
+			return replyErr // XXX TESTME
+		}
+		result := &LastError{}
+		bson.Unmarshal(replyData, &result)
+		debugf("Result from writing query: %#v", result)
+		if result.Err != "" {
+			return result
+		}
+	}
+	return nil
 }

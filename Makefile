@@ -1,7 +1,6 @@
 include $(GOROOT)/src/Make.inc
 
 TARG=launchpad.net/mgo
-GOFMT=gofmt -spaces=true -tabindent=false -tabwidth=4
 
 GOFILES=\
 	session.go\
@@ -27,7 +26,7 @@ stopdb:
 
 clean: stopdb
 
-GOFMT=gofmt -spaces=true -tabwidth=4 -tabindent=false
+GOFMT=gofmt
 BADFMT:=$(shell $(GOFMT) -l $(GOFILES) $(CGOFILES) $(wildcard *_test.go) 2> /dev/null)
 
 gofmt: $(BADFMT)
@@ -40,4 +39,3 @@ endif
 endif
 
 include $(GOROOT)/src/Make.pkg
-
