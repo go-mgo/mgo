@@ -38,6 +38,7 @@ import (
     "os"
     "runtime"
     "strings"
+    "time"
 )
 
 const (
@@ -94,9 +95,11 @@ type Iter struct {
     prefetch       float64
     pendingDocs    int
     docsBeforeMore int
+    timeout        int
 }
 
 var NotFound = os.ErrorString("Document not found")
+var TailTimeout = os.ErrorString("Tail timed out")
 
 const defaultPrefetch = 0.25
 
@@ -352,7 +355,7 @@ func (session *Session) Safe(w, wtimeout int, fsync bool) {
 // use an ordering-preserving document, such as a struct value or an
 // instance of bson.D.  For instance:
 //
-//     db.Run(mgo.D{{"create", "mycollection"}, {"size", 1024}})
+//     db.Run(bson.D{{"create", "mycollection"}, {"size", 1024}})
 //
 // For commands against arbitrary databases, see the Run method in
 // the Database type.
@@ -387,7 +390,7 @@ func (err *LastError) String() string {
 // Insert inserts one or more documents in the respective collection.  In
 // case the session is in safe mode (see the Safe method) and an error
 // happens while inserting the provided documents, the returned error will
-// be of type *mgo.LastError.
+// be of type *LastError.
 func (collection Collection) Insert(docs ...interface{}) os.Error {
     return collection.Session.writeQuery(&insertOp{collection.Name, docs})
 }
@@ -395,7 +398,7 @@ func (collection Collection) Insert(docs ...interface{}) os.Error {
 // Update finds a single document matching the provided selector document
 // and modifies it according to the change document.  In case the session
 // is in safe mode (see the Safe method) and an error happens when attempting
-// the change, the returned error will be of type *mgo.LastError.
+// the change, the returned error will be of type *LastError.
 func (collection Collection) Update(selector interface{}, change interface{}) os.Error {
     return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 0})
 }
@@ -405,7 +408,7 @@ func (collection Collection) Update(selector interface{}, change interface{}) os
 // the selector is found, the change document is newly inserted instead.
 // In case the session is in safe mode (see the Safe method) and an error
 // happens when attempting the change, the returned error will be of type
-// *mgo.LastError.
+// *LastError.
 func (collection Collection) Upsert(selector interface{}, change interface{}) os.Error {
     return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 1})
 }
@@ -413,7 +416,7 @@ func (collection Collection) Upsert(selector interface{}, change interface{}) os
 // UpdateAll finds all documents matching the provided selector document
 // and modifies them according to the change document.  In case the session
 // is in safe mode (see the Safe method) and an error happens when attempting
-// the change, the returned error will be of type *mgo.LastError.
+// the change, the returned error will be of type *LastError.
 func (collection Collection) UpdateAll(selector interface{}, change interface{}) os.Error {
     return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 2})
 }
@@ -421,7 +424,7 @@ func (collection Collection) UpdateAll(selector interface{}, change interface{})
 // Remove finds a single document matching the provided selector document
 // and removes it from the database.  In case the session is in safe mode
 // (see the Safe method) and an error happens when attempting the change,
-// the returned error will be of type *mgo.LastError.
+// the returned error will be of type *LastError.
 func (collection Collection) Remove(selector interface{}) os.Error {
     return collection.Session.writeQuery(&deleteOp{collection.Name, selector, 1})
 }
@@ -429,7 +432,7 @@ func (collection Collection) Remove(selector interface{}) os.Error {
 // RemoveAll finds all documents matching the provided selector document
 // and removes them from the database.  In case the session is in safe mode
 // (see the Safe method) and an error happens when attempting the change,
-// the returned error will be of type *mgo.LastError.
+// the returned error will be of type *LastError.
 func (collection Collection) RemoveAll(selector interface{}) os.Error {
     return collection.Session.writeQuery(&deleteOp{collection.Name, selector, 0})
 }
@@ -587,13 +590,101 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
     return iter, nil
 }
 
+// Tail returns a tailable iterator.  Unlike a normal iterator, a
+// tailable iterator will wait for new values to be inserted in the
+// collection once the end of the current result set is reached.
+// A tailable iterator may only be used with capped collections.
+//
+// The timeoutSecs parameter indicates how long Next will block
+// waiting for a result before returning TailTimeout.  If set to -1,
+// Next will not timeout, and will continue waiting for a result
+// for as long as the cursor is valid and the session is not closed.
+// If set to 0, Next will return TailTimeout as soon as it reaches
+// the end of the result set.  Otherwise, Next will wait for at
+// least the given number of seconds for a new document to be
+// available before aborting and returning TailTimeout.
+//
+// When Next returns TailTimeout, it may still be called again to
+// check if a new value is available. If Next returns NotFound,
+// though, it means the cursor became invalid, and the query must
+// be restarted.
+//
+// This example demonstrates query restarting in case the cursor
+// becomes invalid:
+//
+//    query := collection.Find(nil)
+//    for {
+//         iter := query.Sort("$natural").Tail(-1)
+//         for iter.Next(&result) != mgo.NotFound {
+//             println(result.Id)
+//             lastId = result.Id
+//         }
+//         query = collection.Find(bson.M{"_id", bson.M{"$gt", lastId}})
+//    }
+//
+// Useful documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Tailable+Cursors
+//     http://www.mongodb.org/display/DOCS/Capped+Collections
+//     http://www.mongodb.org/display/DOCS/Sorting+and+Natural+Order
+//
+func (query *Query) Tail(timeoutSecs int) (iter *Iter, err os.Error) {
+    query.m.Lock()
+    session := query.session
+    op := query.op
+    prefetch := query.prefetch
+    query.m.Unlock()
+
+    socket, err := session.acquireSocket(false)
+    if err != nil {
+        return nil, err
+    }
+    defer socket.Release()
+
+    iter = &Iter{session: session, prefetch: prefetch}
+    iter.gotReply.L = &iter.m
+    iter.timeout = timeoutSecs
+    iter.op.collection = op.collection
+    iter.op.limit = op.limit
+
+    op.flags |= 2 | 32 // Tailable | AwaitData
+    op.replyFunc = iter.replyFunc()
+    iter.op.replyFunc = op.replyFunc
+    iter.pendingDocs++
+
+    err = socket.Query(&op)
+    if err != nil {
+        return nil, err
+    }
+
+    return iter, nil
+}
+
 // Next retrieves the next document from the result set, blocking if necessary.
-// If necessary, this method will also retrieve another batch of documents from
-// the server, potentially in background (see the Prefetch method).
+// This method will also automatically retrieve another batch of documents from
+// the server when the current one is exhausted, or before that in background
+// if pre-fetching is enabled (see the Prefetch method).
+//
+// Next returns NotFound at the end of the result set, or in case a tailable
+// iterator becomes invalid, and returns TailTimeout if a tailable iterator
+// times out (see the Tail method of Query).
 func (iter *Iter) Next(result interface{}) (err os.Error) {
+    timeout := int64(-1)
+    if iter.timeout >= 0 {
+        timeout = time.Nanoseconds() + int64(iter.timeout)*1e9
+    }
+
     iter.m.Lock()
 
-    for iter.err == nil && iter.pendingDocs > 0 && iter.docData.Len() == 0 {
+    for iter.err == nil && iter.docData.Len() == 0 && (iter.pendingDocs > 0 || iter.op.cursorId != 0) {
+        if iter.pendingDocs == 0 && iter.op.cursorId != 0 {
+            // Tailable cursor exhausted.
+            if timeout >= 0 && time.Nanoseconds() > timeout {
+                iter.m.Unlock()
+                return TailTimeout
+            }
+            iter.getMore()
+        }
         iter.gotReply.Wait()
     }
 
@@ -695,8 +786,13 @@ func (iter *Iter) replyFunc() replyFunc {
             iter.err = err
             debugf("Iter %p received an error: %s", iter, err.String())
         } else if docNum == -1 {
-            iter.err = NotFound
-            debugf("Iter %p received no documents.", iter)
+            debugf("Iter %p received no documents (cursor=%d).", iter, op.cursorId)
+            if op != nil && op.cursorId != 0 {
+                // It's a tailable cursor.
+                iter.op.cursorId = op.cursorId
+            } else {
+                iter.err = NotFound
+            }
         } else {
             rdocs := int(op.replyDocs)
             if docNum == 0 {

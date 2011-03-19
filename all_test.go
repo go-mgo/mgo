@@ -374,6 +374,266 @@ func (s *S) TestFindIter(c *C) {
     c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
+// Test tailable cursors in a situation where Next has to sleep to
+// respect the timeout requested on Tail.
+func (s *S) TestFindTailTimeoutWithSleep(c *C) {
+    if *fast {
+        c.Skip("-fast")
+    }
+
+    session, err := mgo.Mongo("localhost:40001")
+    c.Assert(err, IsNil)
+    defer session.Close()
+
+    cresult := struct{ ErrMsg string }{}
+
+    db := session.DB("mydb")
+    err = db.Run(bson.D{{"create", "mycollection"}, {"capped", true}, {"size", 1024}}, &cresult)
+    c.Assert(err, IsNil)
+    c.Assert(cresult.ErrMsg, Equals, "")
+    coll := db.C("mycollection")
+
+    ns := []int{40, 41, 42, 43, 44, 45, 46}
+    for _, n := range ns {
+        coll.Insert(M{"n": n})
+    }
+
+    session.Restart() // Release socket.
+
+    mgo.ResetStats()
+
+    const timeout = 3
+
+    query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
+    iter, err := query.Tail(timeout)
+    c.Assert(err, IsNil)
+
+    n := len(ns)
+    result := struct{ N int }{}
+    for i := 2; i != n; i++ {
+        err = iter.Next(&result)
+        c.Assert(err, IsNil)
+        c.Assert(result.N, Equals, ns[i])
+        if i == 3 { // The batch boundary.
+            stats := mgo.GetStats()
+            c.Assert(stats.ReceivedDocs, Equals, 2)
+        }
+    }
+
+    mgo.ResetStats()
+
+    // The following call to Next will block.
+    go func() {
+        // The internal AwaitData timing of MongoDB is around 2 seconds,
+        // so this should force mgo to sleep at least once by itself to
+        // respect the requested timeout.
+        time.Sleep(timeout*1e9 + 5e8)
+        session := session.New()
+        defer session.Close()
+        coll := session.DB("mydb").C("mycollection")
+        coll.Insert(M{"n": 47})
+    }()
+
+    c.Log("Will wait for Next with N=47...")
+    err = iter.Next(&result)
+    c.Assert(err, IsNil)
+    c.Assert(result.N, Equals, 47)
+    c.Log("Got Next with N=47!")
+
+    // The following may break because it depends a bit on the internal
+    // timing used by MongoDB's AwaitData logic.  If it does, the problem
+    // will be observed as more GET_MORE_OPs than predicted:
+    // 1*GET_MORE_OP on Next + 1*GET_MORE_OP on Next after sleep +
+    // 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
+    stats := mgo.GetStats()
+    c.Assert(stats.SentOps, Equals, 4)
+    c.Assert(stats.ReceivedOps, Equals, 3)  // REPLY_OPs for 2*GET_MORE_OPs and 1*QUERY_OP
+    c.Assert(stats.ReceivedDocs, Equals, 2) // N=47 result + getLastError response
+
+    c.Log("Will wait for a result which will never come...")
+
+    started := time.Nanoseconds()
+    err = iter.Next(&result)
+    c.Assert(time.Nanoseconds()-started > timeout*1e9, Equals, true)
+    c.Assert(err == mgo.TailTimeout, Equals, true)
+}
+
+// Test tailable cursors in a situation where Next never gets to sleep once
+// to respect the timeout requested on Tail.
+func (s *S) TestFindTailTimeoutNoSleep(c *C) {
+    session, err := mgo.Mongo("localhost:40001")
+    c.Assert(err, IsNil)
+    defer session.Close()
+
+    cresult := struct{ ErrMsg string }{}
+
+    db := session.DB("mydb")
+    err = db.Run(bson.D{{"create", "mycollection"}, {"capped", true}, {"size", 1024}}, &cresult)
+    c.Assert(err, IsNil)
+    c.Assert(cresult.ErrMsg, Equals, "")
+    coll := db.C("mycollection")
+
+    ns := []int{40, 41, 42, 43, 44, 45, 46}
+    for _, n := range ns {
+        coll.Insert(M{"n": n})
+    }
+
+    session.Restart() // Release socket.
+
+    mgo.ResetStats()
+
+    const timeout = 1
+
+    query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
+    iter, err := query.Tail(timeout)
+    c.Assert(err, IsNil)
+
+    n := len(ns)
+    result := struct{ N int }{}
+    for i := 2; i != n; i++ {
+        err = iter.Next(&result)
+        c.Assert(err, IsNil)
+        c.Assert(result.N, Equals, ns[i])
+        if i == 3 { // The batch boundary.
+            stats := mgo.GetStats()
+            c.Assert(stats.ReceivedDocs, Equals, 2)
+        }
+    }
+
+    mgo.ResetStats()
+
+    // The following call to Next will block.
+    go func() {
+        // The internal AwaitData timing of MongoDB is around 2 seconds,
+        // so this item should arrive within the AwaitData threshold.
+        time.Sleep(5e8)
+        session := session.New()
+        defer session.Close()
+        coll := session.DB("mydb").C("mycollection")
+        coll.Insert(M{"n": 47})
+    }()
+
+    c.Log("Will wait for Next with N=47...")
+    err = iter.Next(&result)
+    c.Assert(err, IsNil)
+    c.Assert(result.N, Equals, 47)
+    c.Log("Got Next with N=47!")
+
+    // The following may break because it depends a bit on the internal
+    // timing used by MongoDB's AwaitData logic.  If it does, the problem
+    // will be observed as more GET_MORE_OPs than predicted:
+    // 1*GET_MORE_OP on Next +
+    // 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
+    stats := mgo.GetStats()
+    c.Assert(stats.SentOps, Equals, 3)
+    c.Assert(stats.ReceivedOps, Equals, 2)  // REPLY_OPs for 1*GET_MORE_OPs and 1*QUERY_OP
+    c.Assert(stats.ReceivedDocs, Equals, 2) // N=47 result + getLastError response
+
+    c.Log("Will wait for a result which will never come...")
+
+    started := time.Nanoseconds()
+    err = iter.Next(&result)
+    c.Assert(time.Nanoseconds()-started > timeout*1e9, Equals, true)
+    c.Assert(err == mgo.TailTimeout, Equals, true)
+}
+
+// Test tailable cursors in a situation where Next never gets to sleep once
+// to respect the timeout requested on Tail.
+func (s *S) TestFindTailNoTimeout(c *C) {
+    if *fast {
+        c.Skip("-fast")
+    }
+
+    session, err := mgo.Mongo("localhost:40001")
+    c.Assert(err, IsNil)
+    defer session.Close()
+
+    cresult := struct{ ErrMsg string }{}
+
+    db := session.DB("mydb")
+    err = db.Run(bson.D{{"create", "mycollection"}, {"capped", true}, {"size", 1024}}, &cresult)
+    c.Assert(err, IsNil)
+    c.Assert(cresult.ErrMsg, Equals, "")
+    coll := db.C("mycollection")
+
+    ns := []int{40, 41, 42, 43, 44, 45, 46}
+    for _, n := range ns {
+        coll.Insert(M{"n": n})
+    }
+
+    session.Restart() // Release socket.
+
+    mgo.ResetStats()
+
+    query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
+    iter, err := query.Tail(-1)
+    c.Assert(err, IsNil)
+
+    n := len(ns)
+    result := struct{ N int }{}
+    for i := 2; i != n; i++ {
+        err = iter.Next(&result)
+        c.Assert(err, IsNil)
+        c.Assert(result.N, Equals, ns[i])
+        if i == 3 { // The batch boundary.
+            stats := mgo.GetStats()
+            c.Assert(stats.ReceivedDocs, Equals, 2)
+        }
+    }
+
+    mgo.ResetStats()
+
+    // The following call to Next will block.
+    go func() {
+        time.Sleep(5e8)
+        session := session.New()
+        defer session.Close()
+        coll := session.DB("mydb").C("mycollection")
+        coll.Insert(M{"n": 47})
+    }()
+
+    c.Log("Will wait for Next with N=47...")
+    err = iter.Next(&result)
+    c.Assert(err, IsNil)
+    c.Assert(result.N, Equals, 47)
+    c.Log("Got Next with N=47!")
+
+    // The following may break because it depends a bit on the internal
+    // timing used by MongoDB's AwaitData logic.  If it does, the problem
+    // will be observed as more GET_MORE_OPs than predicted:
+    // 1*GET_MORE_OP on Next +
+    // 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
+    stats := mgo.GetStats()
+    c.Assert(stats.SentOps, Equals, 3)
+    c.Assert(stats.ReceivedOps, Equals, 2)  // REPLY_OPs for 1*GET_MORE_OPs and 1*QUERY_OP
+    c.Assert(stats.ReceivedDocs, Equals, 2) // N=47 result + getLastError response
+
+    c.Log("Will wait for a result which will never come...")
+
+    gotNext := make(chan os.Error)
+    go func() {
+        err := iter.Next(&result)
+        gotNext <- err
+    }()
+
+    select {
+    case err := <-gotNext:
+        c.Fatal("Next returned: " + err.String())
+    case <-time.After(3e9):
+        // Good. Should still be sleeping at that point.
+    }
+
+    // Closing the session should cause Next to return.
+    session.Close()
+
+    select {
+    case err := <-gotNext:
+        c.Assert(err, Matches, "Closed explicitly")
+    case <-time.After(1e9):
+        c.Fatal("Closing the session did not unblock Next")
+    }
+}
+
 func (s *S) TestSort(c *C) {
     session, err := mgo.Mongo("localhost:40001")
     c.Assert(err, IsNil)

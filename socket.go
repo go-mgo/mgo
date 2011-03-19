@@ -184,6 +184,7 @@ func (socket *mongoSocket) kill(err os.Error) {
     socket.replyFuncs = make(map[uint32]replyFunc)
     socket.Unlock()
     for _, f := range replyFuncs {
+        logf("Socket %p to %s: notifying replyFunc of closed socket: %s", socket, socket.addr, err.String())
         f(err, nil, -1, nil)
     }
 }
@@ -290,12 +291,14 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
     if socket.dead != nil {
         socket.Unlock()
         debug("Socket %p to %s: failing query, already closed: %s", socket, socket.addr, socket.dead.String())
-        //for i := 0; i != requestCount; i++ {
-        //    request := &requests[i]
-        //    if request.replyFunc != nil {
-        //        request.replyFunc(socket.dead, nil, -1, nil)
-        //    }
-        //}
+        // XXX This seems necessary in case the session is closed concurrently
+        // with a query being performed, but it's not yet tested:
+        for i := 0; i != requestCount; i++ {
+            request := &requests[i]
+            if request.replyFunc != nil {
+                request.replyFunc(socket.dead, nil, -1, nil)
+            }
+        }
         return socket.dead
     }
 
