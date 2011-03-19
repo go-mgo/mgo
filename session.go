@@ -158,6 +158,12 @@ func (database Database) C(name string) Collection {
 //
 // For privilleged commands typically run against the "admin" database, see
 // the Run method in the Session type.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Commands
+//     http://www.mongodb.org/display/DOCS/List+of+Database+CommandSkips
+//
 func (database Database) Run(cmd interface{}, result interface{}) os.Error {
 	if name, ok := cmd.(string); ok {
 		cmd = bson.M{name: 1}
@@ -359,6 +365,12 @@ func (session *Session) Safe(w, wtimeout int, fsync bool) {
 //
 // For commands against arbitrary databases, see the Run method in
 // the Database type.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Commands
+//     http://www.mongodb.org/display/DOCS/List+of+Database+CommandSkips
+//
 func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
 	return session.DB("admin").Run(cmd, result)
 }
@@ -373,6 +385,11 @@ func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
 // and then executed using methods such as One, Iter, or Tail.  For example:
 //
 //     err := collection.Find(bson.M{"a", 1}).One(&result)
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Querying
+//     http://www.mongodb.org/display/DOCS/Advanced+Queries
 //
 func (collection Collection) Find(query interface{}) *Query {
 	if query == nil {
@@ -488,6 +505,21 @@ func (query *Query) Skip(n int) *Query {
 	return query
 }
 
+// Select enables selecting which fields should be retrieved for the results
+// found. For example, the following query would only retrieve the name field:
+//
+//     err := collection.Find(nil).Select(bson.M{"name": 1}).One(&result)
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Retrieving+a+Subset+of+Fields
+//
+func (query *Query) Select(selector interface{}) *Query {
+	query.m.Lock()
+	query.op.selector = selector
+	query.m.Unlock()
+	return query
+}
 
 type queryWrapper struct {
 	Query   interface{} "$query"
@@ -631,7 +663,7 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
 //         query = collection.Find(bson.M{"_id", bson.M{"$gt", lastId}})
 //    }
 //
-// Useful documentation:
+// Relevant documentation:
 //
 //     http://www.mongodb.org/display/DOCS/Tailable+Cursors
 //     http://www.mongodb.org/display/DOCS/Capped+Collections

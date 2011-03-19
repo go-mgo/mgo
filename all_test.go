@@ -155,6 +155,22 @@ func (s *S) TestInsertFindOneMap(c *C) {
 	c.Assert(result["b"], Equals, int32(2))
 }
 
+func (s *S) TestSelect(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+	coll.Insert(M{"a": 1, "b": 2})
+
+	result := struct{ A, B int }{}
+
+	err = coll.Find(M{"a": 1}).Select(M{"b": 1}).One(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result.A, Equals, 0)
+	c.Assert(result.B, Equals, 2)
+}
+
 func (s *S) TestUpdate(c *C) {
 	session, err := mgo.Mongo("localhost:40001")
 	c.Assert(err, IsNil)
@@ -387,6 +403,50 @@ func (s *S) TestFindIter(c *C) {
 	c.Assert(stats.ReceivedOps, Equals, 3) // and their REPLY_OPs.
 	c.Assert(stats.ReceivedDocs, Equals, 5)
 	c.Assert(stats.SocketsInUse, Equals, 0)
+}
+
+func (s *S) TestFindIterTwiceWithSameQuery(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+
+	for i := 40; i != 47; i++ {
+		coll.Insert(M{"n": i})
+	}
+
+	query := coll.Find(M{}).Sort(M{"n": 1})
+
+	result1, err := query.Skip(1).Iter()
+	c.Assert(err, IsNil)
+	result2, err := query.Skip(2).Iter()
+	c.Assert(err, IsNil)
+
+	result := struct{ N int }{}
+	err = result2.Next(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result.N, Equals, 42)
+	err = result1.Next(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result.N, Equals, 41)
+}
+
+func (s *S) TestFindIterWithoutResults(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+	coll.Insert(M{"n": 42})
+
+	iter, err := coll.Find(M{"n": 0}).Iter()
+	c.Assert(err, IsNil)
+
+	result := struct{ N int }{}
+	err = iter.Next(&result)
+	c.Assert(result.N, Equals, 0)
+	c.Assert(err == mgo.NotFound, Equals, true)
 }
 
 // Test tailable cursors in a situation where Next has to sleep to
@@ -682,50 +742,6 @@ func (s *S) TestSort(c *C) {
 
 	c.Assert(l, Equals,
 		[]int{0, 2, 1, 2, 2, 2, 0, 1, 1, 1, 2, 1, 0, 0, 1, 0, 2, 0})
-}
-
-func (s *S) TestInsertFindIterTwiceWithSameQuery(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
-	c.Assert(err, IsNil)
-	defer session.Close()
-
-	coll := session.DB("mydb").C("mycollection")
-
-	for i := 40; i != 47; i++ {
-		coll.Insert(M{"n": i})
-	}
-
-	query := coll.Find(M{}).Sort(M{"n": 1})
-
-	result1, err := query.Skip(1).Iter()
-	c.Assert(err, IsNil)
-	result2, err := query.Skip(2).Iter()
-	c.Assert(err, IsNil)
-
-	result := struct{ N int }{}
-	err = result2.Next(&result)
-	c.Assert(err, IsNil)
-	c.Assert(result.N, Equals, 42)
-	err = result1.Next(&result)
-	c.Assert(err, IsNil)
-	c.Assert(result.N, Equals, 41)
-}
-
-func (s *S) TestInsertFindIterWithoutResults(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
-	c.Assert(err, IsNil)
-	defer session.Close()
-
-	coll := session.DB("mydb").C("mycollection")
-	coll.Insert(M{"n": 42})
-
-	iter, err := coll.Find(M{"n": 0}).Iter()
-	c.Assert(err, IsNil)
-
-	result := struct{ N int }{}
-	err = iter.Next(&result)
-	c.Assert(result.N, Equals, 0)
-	c.Assert(err == mgo.NotFound, Equals, true)
 }
 
 func (s *S) TestPrefetching(c *C) {
