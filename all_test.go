@@ -313,6 +313,21 @@ func (s *S) TestFindOneNotFound(c *C) {
 	c.Assert(err == mgo.NotFound, Equals, true)
 }
 
+func (s *S) TestFindNil(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+	coll.Insert(M{"n": 1})
+
+	result := struct{ N int }{}
+
+	err = coll.Find(nil).One(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result.N, Equals, 1)
+}
+
 func (s *S) TestFindIter(c *C) {
 	session, err := mgo.Mongo("localhost:40001")
 	c.Assert(err, IsNil)

@@ -365,10 +365,16 @@ func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
 
 // Find prepares a query using the provided document.  The document may be a
 // map or a struct value capable of being marshalled with bson.  The map
-// may be a generic one using interface{}, such as bson.M, or it may be a
-// properly typed map. Further details of the query may be tweaked using the
-// resulting Query value, and then executed using One or Iter.
+// may be a generic one using interface{} for its key and/or values, such as
+// bson.M, or it may be a properly typed map.  Providing nil as the document
+// is equivalent to providing an empty document such as bson.M{}.
+//
+// Further details of the query may be tweaked using the resulting Query value,
+// and then executed using One or Iter.
 func (collection Collection) Find(query interface{}) *Query {
+	if query == nil {
+		query = bson.M{}
+	}
 	session := collection.Session
 	q := &Query{session: session, query: session.queryConfig}
 	q.op.query = query
