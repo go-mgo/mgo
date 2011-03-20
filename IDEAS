@@ -5,25 +5,12 @@ col.Find(...).Select(...).Skip(i).Limit(j).All()
 col.Sort(...)
 col.MapReduce(mapfunc, reducefunc, opts) or
 col.Save(..., safe=true)
-session.Run(MapReduce{}) <= looks better
 
 col.Find(..., Options{Safe: true, W: 3})?
 
-Delete()
-
-Query(foo).Update(document)
-Find(foo).Update(doc)
-...or...
-session.Insert(value)
-session.UpdateOne(query, update)
-session.UpdateAll(query, update)
-session.UpdateOne(query, update, nil)
-session.UpdateAll(query, update, &Safe{W:3})
-session.Upsert(query, value)
 session.SafeUpdateOne(query, update, nil)
 session.SafeUpdateAll(query, update, nil)
 session.SafeInsert(value)
-
 
 session.Safe(&mongodb.Safe{W:1})
 session.Safe(0, 0, false) + session.Unsafe()
