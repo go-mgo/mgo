@@ -116,8 +116,41 @@ const defaultPrefetch = 0.25
 // sessions to the same cluster are then established using the New method on
 // the obtained session.  This will make them share the underlying cluster,
 // and manage the pool of connections appropriately.
-func Mongo(servers string) (session *Session, err os.Error) {
-	userSeeds := strings.Split(servers, ",", -1)
+//
+// Once the session is not useful anymore, Close must be called to release the
+// resources appropriately.
+//
+// The seed servers must be provided in the following format:
+//
+//     [mongodb://]host1[:port1][,host2[:port2],...][/]
+//
+// If the port number is not provided for a server, it defaults to 27017.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Connections
+//
+func Mongo(url string) (session *Session, err os.Error) {
+	if strings.Contains(url, "@") {
+		return nil, os.ErrorString("Authentication not supported yet; coming soon")
+	}
+	if strings.Contains(url, "?") {
+		return nil, os.ErrorString("URL options are not supported yet")
+	}
+	if strings.HasPrefix(url, "mongodb://") {
+		url = url[10:]
+	}
+	if strings.HasSuffix(url, "/") {
+		url = url[:len(url)-1]
+	}
+	userSeeds := strings.Split(url, ",", -1)
+	// XXX This is untested. The test suite doesn't use the standard port.
+	for i, server := range userSeeds {
+		p := strings.LastIndexAny(server, "]:")
+		if p == -1 || server[p] != ':' {
+			userSeeds[i] = server + ":27017"
+		}
+	}
 	cluster := newCluster(userSeeds)
 	session = newSession(Strong, cluster, nil)
 	cluster.Release()

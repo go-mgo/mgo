@@ -125,6 +125,28 @@ func (s *S) TestRunValue(c *C) {
 	c.Assert(result.Ok, Equals, 1)
 }
 
+func (s *S) TestURLSingle(c *C) {
+	session, err := mgo.Mongo("mongodb://localhost:40001/")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	result := struct{ Ok int }{}
+	err = session.Run("ping", &result)
+	c.Assert(err, IsNil)
+	c.Assert(result.Ok, Equals, 1)
+}
+
+func (s *S) TestURLMany(c *C) {
+	session, err := mgo.Mongo("mongodb://localhost:40011,localhost:40012/")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	result := struct{ Ok int }{}
+	err = session.Run("ping", &result)
+	c.Assert(err, IsNil)
+	c.Assert(result.Ok, Equals, 1)
+}
+
 func (s *S) TestInsertFindOne(c *C) {
 	session, err := mgo.Mongo("localhost:40001")
 	c.Assert(err, IsNil)
