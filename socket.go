@@ -323,6 +323,17 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
 	return err
 }
 
+func fill(r *net.TCPConn, b []byte) os.Error {
+	l := len(b)
+	n, err := r.Read(b)
+	for n != l && err == nil {
+		var ni int
+		ni, err = r.Read(b[n:])
+		n += ni
+	}
+	return err
+}
+
 // Estimated minimum cost per socket: 1 goroutine + memory for the largest
 // document ever seen.
 func (socket *mongoSocket) readLoop() {
@@ -330,8 +341,8 @@ func (socket *mongoSocket) readLoop() {
 	s := [4]byte{}[:]
 	conn := socket.conn // No locking, conn never changes.
 	for {
-		// XXX Handle timeouts, EOFs, stopping, etc
-		_, err := conn.Read(p)
+		// XXX Handle timeouts, , etc
+		err := fill(conn, p)
 		if err != nil {
 			socket.kill(err)
 			return
@@ -369,7 +380,7 @@ func (socket *mongoSocket) readLoop() {
 			replyFunc(nil, &reply, -1, nil)
 		} else {
 			for i := 0; i != int(reply.replyDocs); i++ {
-				_, err := conn.Read(s)
+				err := fill(conn, s)
 				if err != nil {
 					socket.kill(err)
 					return
@@ -383,7 +394,7 @@ func (socket *mongoSocket) readLoop() {
 				b[2] = s[2]
 				b[3] = s[3]
 
-				_, err = conn.Read(b[4:])
+				err = fill(conn, b[4:])
 				if err != nil {
 					socket.kill(err)
 					return
