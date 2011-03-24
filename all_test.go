@@ -1329,3 +1329,124 @@ func (s *S) TestSyncTimeout(c *C) {
 	c.Assert(time.Nanoseconds()-started > timeout, Equals, true)
 	c.Assert(time.Nanoseconds()-started < timeout*2, Equals, true)
 }
+
+func (s *S) TestDirect(c *C) {
+	session, err := mgo.Mongo("localhost:40012?connect=direct")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	// We know that server is a slave.
+	session.Monotonic()
+
+	result := &struct{ Host string }{}
+	err = session.Run("serverStatus", result)
+	c.Assert(err, IsNil)
+	c.Assert(strings.HasSuffix(result.Host, ":40012"), Equals, true)
+
+	stats := mgo.GetStats()
+	c.Assert(stats.SocketsAlive, Equals, 1)
+	c.Assert(stats.SocketsInUse, Equals, 1)
+	c.Assert(stats.SocketRefs, Equals, 1)
+
+	// We've got no master, so it'll timeout.
+	session.SetSyncTimeout(5e8)
+
+	coll := session.DB("mydb").C("mycollection")
+	err = coll.Insert(M{"test": 1})
+	c.Assert(err, Matches, "no reachable servers")
+
+	// Slave is still reachable.
+	result.Host = ""
+	err = session.Run("serverStatus", result)
+	c.Assert(err, IsNil)
+	c.Assert(strings.HasSuffix(result.Host, ":40012"), Equals, true)
+}
+
+type OpCounters struct {
+	Insert int
+	Query int
+	Update int
+	Delete int
+	GetMore int
+	Command int
+}
+
+func getOpCounters(server string) (c *OpCounters, err os.Error) {
+	session, err := mgo.Mongo(server + "?connect=direct")
+	if err != nil {
+		return nil, err
+	}
+	defer session.Close()
+	session.Monotonic()
+	result := struct{ OpCounters }{}
+	err = session.Run("serverStatus", &result)
+	return &result.OpCounters, err
+}
+
+func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
+	session, err := mgo.Mongo("localhost:40021")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	ssresult := &struct{ Host string }{}
+	imresult := &struct{ IsMaster bool }{}
+
+	// Figure the master while still using the strong session.
+	err = session.Run("serverStatus", ssresult)
+	c.Assert(err, IsNil)
+	err = session.Run("isMaster", imresult)
+	c.Assert(err, IsNil)
+	master := ssresult.Host
+	c.Assert(imresult.IsMaster, Equals, true, Bug("%s is not the master", master))
+
+	// Collect op counters for everyone.
+	opc21a, err := getOpCounters("localhost:40021")
+	c.Assert(err, IsNil)
+	opc22a, err := getOpCounters("localhost:40022")
+	c.Assert(err, IsNil)
+	opc23a, err := getOpCounters("localhost:40023")
+	c.Assert(err, IsNil)
+
+	// Do a SlaveOk query through MongoS
+
+	mongos, err := mgo.Mongo("localhost:40202")
+	c.Assert(err, IsNil)
+	defer mongos.Close()
+
+	mongos.Monotonic()
+
+	coll := mongos.DB("mydb").C("mycollection")
+	result := &struct{}{}
+	for i := 0; i != 5; i++ {
+		err := coll.Find(nil).One(result)
+		c.Assert(err, Equals, mgo.NotFound)
+	}
+
+	// Collect op counters for everyone again.
+	opc21b, err := getOpCounters("localhost:40021")
+	c.Assert(err, IsNil)
+	opc22b, err := getOpCounters("localhost:40022")
+	c.Assert(err, IsNil)
+	opc23b, err := getOpCounters("localhost:40023")
+	c.Assert(err, IsNil)
+
+	masterPort := master[strings.Index(master, ":")+1:]
+
+	var masterDelta, slaveDelta int
+	switch masterPort {
+	case "40021":
+		masterDelta = opc21b.Query - opc21a.Query
+		slaveDelta = (opc22b.Query - opc22a.Query) + (opc23b.Query - opc23a.Query)
+	case "40022":
+		masterDelta = opc22b.Query - opc22a.Query
+		slaveDelta = (opc21b.Query - opc21a.Query) + (opc23b.Query - opc23a.Query)
+	case "40023":
+		masterDelta = opc23b.Query - opc23a.Query
+		slaveDelta = (opc21b.Query - opc21a.Query) + (opc22b.Query - opc22a.Query)
+	default:
+		c.Fatal("Uh?")
+	}
+
+	c.Check(masterDelta, Equals, 0) // Just the counting itself.
+	c.Check(slaveDelta, Equals, 5) // The counting for both, plus 5 queries above.
+}

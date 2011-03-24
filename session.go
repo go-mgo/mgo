@@ -49,12 +49,13 @@ const (
 
 type Session struct {
 	m           sync.RWMutex
-	consistency int
 	cluster     *mongoCluster
 	socket      *mongoSocket
 	queryConfig query
 	safe        *queryOp
 	syncTimeout int64
+	consistency int
+	slaveOk     bool
 }
 
 type Database struct {
@@ -122,39 +123,85 @@ const defaultPrefetch = 0.25
 //
 // The seed servers must be provided in the following format:
 //
-//     [mongodb://]host1[:port1][,host2[:port2],...][/]
+//     [mongodb://]host1[:port1][,host2[:port2],...][?options]
 //
 // If the port number is not provided for a server, it defaults to 27017.
+//
+// The following options are supported:
+//
+//     connect=direct
+//
+//         This option will disable the automatic replica set server
+//         discovery logic, and will only use the servers provided.
+//         This enables forcing the communication with a specific
+//         server or set of servers (even if they are slaves).  Note
+//         that to talk to a slave you'll need to relax the consistency
+//         requirements via the Monotonic or Eventual session methods.
 //
 // Relevant documentation:
 //
 //     http://www.mongodb.org/display/DOCS/Connections
 //
 func Mongo(url string) (session *Session, err os.Error) {
-	if strings.Contains(url, "@") {
-		return nil, os.ErrorString("Authentication not supported yet; coming soon")
+	servers, options, err := parseURL(url)
+	if err != nil {
+		return nil, err
 	}
-	if strings.Contains(url, "?") {
-		return nil, os.ErrorString("URL options are not supported yet")
+	direct := false
+	for k, v := range options {
+		switch k {
+		case "connect":
+			if v == "direct" {
+				direct = true
+			} else if v != "replicaSet" {
+				goto bad
+			}
+		default:
+bad:
+			err = os.ErrorString("Unsupported connection URL option: " + k + "=" + v)
+			return
+		}
+	}
+	cluster := newCluster(servers, direct)
+	session = newSession(Strong, cluster, nil)
+	cluster.Release()
+	return session, nil
+}
+
+func parseURL(url string) (servers []string, options map[string]string, err os.Error) {
+	if strings.Contains(url, "@") {
+		err = os.ErrorString("Authentication not supported in URL yet; coming soon")
+		return
 	}
 	if strings.HasPrefix(url, "mongodb://") {
 		url = url[10:]
 	}
-	if strings.HasSuffix(url, "/") {
-		url = url[:len(url)-1]
+	if c := strings.Index(url, "?"); c != -1 {
+		options = make(map[string]string)
+		for _, pair := range strings.Split(url[c+1:], ";", -1) {
+			l := strings.Split(pair, "=", 2)
+			if len(l) != 2 || l[0] == "" || l[1] == "" {
+				err = os.ErrorString("Connection option must be key=value: " + pair)
+			}
+			options[l[0]] = l[1]
+		}
+		url = url[:c]
 	}
-	userSeeds := strings.Split(url, ",", -1)
+	if c := strings.Index(url, "/"); c != -1 {
+		if c != len(url) - 1 {
+			err = os.ErrorString("Database name not supported in URL yet; coming soon")
+		}
+		url = url[:c]
+	}
+	servers = strings.Split(url, ",", -1)
 	// XXX This is untested. The test suite doesn't use the standard port.
-	for i, server := range userSeeds {
+	for i, server := range servers {
 		p := strings.LastIndexAny(server, "]:")
 		if p == -1 || server[p] != ':' {
-			userSeeds[i] = server + ":27017"
+			servers[i] = server + ":27017"
 		}
 	}
-	cluster := newCluster(userSeeds)
-	session = newSession(Strong, cluster, nil)
-	cluster.Release()
-	return session, nil
+	return
 }
 
 
@@ -210,15 +257,16 @@ func (database Database) Run(cmd interface{}, result interface{}) os.Error {
 // (see the Clone method for a different behavior).
 func (session *Session) New() *Session {
 	session.m.Lock()
-	clone := &Session{
-		consistency: session.consistency,
+	s := &Session{
 		cluster:     session.cluster,
 		safe:        session.safe,
 		queryConfig: session.queryConfig,
+		consistency: session.consistency,
+		slaveOk:     session.consistency != Strong,
 	}
 	session.cluster.Acquire()
 	session.m.Unlock()
-	return clone
+	return s
 }
 
 // Clone creates a new session with the same parameters as the current one,
@@ -228,24 +276,17 @@ func (session *Session) New() *Session {
 // session (for a different behavior see the New method).
 func (session *Session) Clone() *Session {
 	session.m.Lock()
-	clone := &Session{
+	s := &Session{
 		consistency: session.consistency,
 		cluster:     session.cluster,
 		safe:        session.safe,
 		queryConfig: session.queryConfig,
+		slaveOk:     session.slaveOk,
 	}
 	session.cluster.Acquire()
-	clone.setSocket(session.socket)
+	s.setSocket(session.socket)
 	session.m.Unlock()
-	return clone
-}
-
-// Restart puts back any reserved sockets in use and restarts the consistency
-// guarantees according to the existing consistency setting.
-func (session *Session) Restart() {
-	session.m.Lock()
-	session.setSocket(nil)
-	session.m.Unlock()
+	return s
 }
 
 // Close terminates the session.  It's a runtime error to use a session
@@ -260,7 +301,13 @@ func (session *Session) Close() {
 	session.m.Unlock()
 }
 
-// Strong puts the session into strong consistency mode.
+// Restart puts back any reserved sockets in use and restarts the consistency
+// guarantees according to the existing consistency setting.
+func (session *Session) Restart() {
+	session.restart(-1)
+}
+
+// Strong restarts the session in strong consistency mode.
 //
 // In this mode, reads and writes will always be made to the master server
 // using a unique connection so that reads and writes are fully consistent,
@@ -269,12 +316,10 @@ func (session *Session) Close() {
 // This offers the least benefits in terms of distributing load, but the
 // most guarantees.  See also Monotonic and Eventual.
 func (session *Session) Strong() {
-	session.m.Lock()
-	session.consistency = Strong
-	session.m.Unlock()
+	session.restart(Strong)
 }
 
-// Monotonic puts the session into monotonic consistency mode.
+// Monotonic restarts the session in monotonic consistency mode.
 //
 // In this mode, reads may not be entirely up-to-date, but they will always
 // see the history of changes moving forward, the data read will be consistent
@@ -289,12 +334,10 @@ func (session *Session) Strong() {
 // This manages to distribute some of the reading load with slaves, while
 // maintaining some useful guarantees.  See also Strong and Eventual.
 func (session *Session) Monotonic() {
-	session.m.Lock()
-	session.consistency = Monotonic
-	session.m.Unlock()
+	session.restart(Monotonic)
 }
 
-// Eventual puts the session into eventual consistency mode.
+// Eventual restarts the session in eventual consistency mode.
 //
 // In this mode, reads will be made to any slave in the cluster, if one is
 // available, and sequential reads will not necessarily be made with the same
@@ -309,8 +352,17 @@ func (session *Session) Monotonic() {
 // offering the least guarantees about ordering of the data read and written.
 // See also Strong and Monotonic.
 func (session *Session) Eventual() {
+	session.restart(Eventual)
+}
+
+func (session *Session) restart(consistency int) {
 	session.m.Lock()
-	session.consistency = Eventual
+	if consistency == -1 {
+		consistency = session.consistency
+	} else {
+		session.consistency = consistency
+	}
+	session.slaveOk = consistency != Strong
 	session.setSocket(nil)
 	session.m.Unlock()
 }
@@ -588,7 +640,7 @@ func (query *Query) One(result interface{}) (err os.Error) {
 	op := query.op // Copy.
 	query.m.Unlock()
 
-	socket, err := session.acquireSocket(false)
+	socket, err := session.acquireSocket(true)
 	if err != nil {
 		return err
 	}
@@ -600,6 +652,7 @@ func (query *Query) One(result interface{}) (err os.Error) {
 
 	mutex.Lock()
 
+	op.flags |= session.slaveOkFlag()
 	op.limit = -1
 	op.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
 		replyErr = err
@@ -641,7 +694,7 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
 	prefetch := query.prefetch
 	query.m.Unlock()
 
-	socket, err := session.acquireSocket(false)
+	socket, err := session.acquireSocket(true)
 	if err != nil {
 		return nil, err
 	}
@@ -651,10 +704,10 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
 	iter.gotReply.L = &iter.m
 	iter.op.collection = op.collection
 	iter.op.limit = op.limit
-
-	op.replyFunc = iter.replyFunc()
-	iter.op.replyFunc = op.replyFunc
+	iter.op.replyFunc = iter.replyFunc()
 	iter.pendingDocs++
+	op.replyFunc = iter.op.replyFunc
+	op.flags |= session.slaveOkFlag()
 
 	err = socket.Query(&op)
 	if err != nil {
@@ -709,7 +762,7 @@ func (query *Query) Tail(timeoutSecs int) (iter *Iter, err os.Error) {
 	prefetch := query.prefetch
 	query.m.Unlock()
 
-	socket, err := session.acquireSocket(false)
+	socket, err := session.acquireSocket(true)
 	if err != nil {
 		return nil, err
 	}
@@ -720,11 +773,10 @@ func (query *Query) Tail(timeoutSecs int) (iter *Iter, err os.Error) {
 	iter.timeout = timeoutSecs
 	iter.op.collection = op.collection
 	iter.op.limit = op.limit
-
-	op.flags |= 2 | 32 // Tailable | AwaitData
-	op.replyFunc = iter.replyFunc()
-	iter.op.replyFunc = op.replyFunc
+	iter.op.replyFunc = iter.replyFunc()
 	iter.pendingDocs++
+	op.replyFunc = iter.op.replyFunc
+	op.flags |= 2 | 32 | session.slaveOkFlag() // Tailable | AwaitData [| SlaveOk]
 
 	err = socket.Query(&op)
 	if err != nil {
@@ -732,6 +784,15 @@ func (query *Query) Tail(timeoutSecs int) (iter *Iter, err os.Error) {
 	}
 
 	return iter, nil
+}
+
+func (session *Session) slaveOkFlag() (flag uint32) {
+	session.m.RLock()
+	if session.slaveOk {
+		flag = 4
+	}
+	session.m.RUnlock()
+	return
 }
 
 // Next retrieves the next document from the result set, blocking if necessary.
@@ -811,21 +872,26 @@ func finalizeSession(session *Session) {
 	session.Close()
 }
 
-func (session *Session) acquireSocket(write bool) (s *mongoSocket, err os.Error) {
+func (session *Session) acquireSocket(slaveOk bool) (s *mongoSocket, err os.Error) {
 	session.m.RLock()
-	s = session.socket
-	// XXX Lock the server here?
-	if session.consistency == Strong {
-		write = true
+	if session.consistency == Eventual {
+		s, err = session.cluster.AcquireSocket(slaveOk, session.syncTimeout)
+		session.m.RUnlock()
+		return
 	}
-	if s == nil || write && !s.server.Master {
+
+	s = session.socket
+	if s == nil || !slaveOk && session.slaveOk {
 		session.m.RUnlock()
 		// Try again, with an exclusive lock now.
 		session.m.Lock()
 		s = session.socket
-		if s == nil || write && !s.server.Master {
-			s, err = session.cluster.AcquireSocket(write, session.syncTimeout)
-			if err == nil && session.consistency != Eventual {
+		if swap := !slaveOk && session.slaveOk; swap || s == nil {
+			if swap {
+				session.slaveOk = false
+			}
+			s, err = session.cluster.AcquireSocket(session.slaveOk, session.syncTimeout)
+			if err == nil {
 				session.setSocket(s)
 			}
 		}
@@ -843,11 +909,11 @@ func (session *Session) acquireSocket(write bool) (s *mongoSocket, err os.Error)
 // current socket.  Note that this method will properly refcount the socket up
 // and down when setting/releasing.
 func (session *Session) setSocket(socket *mongoSocket) {
-	if session.socket != nil {
-		session.socket.Release()
-	}
 	if socket != nil {
 		socket.Acquire() // Hold a reference while the session is using it.
+	}
+	if session.socket != nil {
+		session.socket.Release()
 	}
 	session.socket = socket
 }
@@ -884,7 +950,7 @@ func (iter *Iter) replyFunc() replyFunc {
 }
 
 func (iter *Iter) getMore() {
-	socket, err := iter.session.acquireSocket(false)
+	socket, err := iter.session.acquireSocket(true)
 	if err != nil {
 		iter.err = err
 		return
@@ -901,7 +967,7 @@ func (iter *Iter) getMore() {
 // writeQuery runs the given modifying operation, potentially followed up
 // by a getLastError command in case the session is in safe mode.
 func (session *Session) writeQuery(op interface{}) os.Error {
-	socket, err := session.acquireSocket(true)
+	socket, err := session.acquireSocket(false)
 	if err != nil {
 		return err
 	}
