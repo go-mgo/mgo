@@ -253,8 +253,9 @@ func (database Database) Run(cmd interface{}, result interface{}) os.Error {
 
 // New creates a new session with the same parameters as the original
 // session, including consistency, batch size, prefetching, safety mode,
-// etc. The new session will not share any sockets with the old session
-// (see the Clone method for a different behavior).
+// etc. The returned session may not necessarily use the same socket as
+// the old session, so writes just performed may not be immediately
+// visible.
 func (session *Session) New() *Session {
 	session.m.Lock()
 	s := &Session{
@@ -271,9 +272,11 @@ func (session *Session) New() *Session {
 
 // Clone creates a new session with the same parameters as the current one,
 // including consistency, batch size, prefetching, safety mode, etc. In case
-// a socket has already been reserved by the original session to preserve
-// consistency requirements, the same socket will be shared with the new
-// session (for a different behavior see the New method).
+// a socket was reserved by the old session to preserve consistency
+// requirements, the same socket will be shared with the new session. This
+// behavior ensures that writes performed in an old session of strong or
+// eventual consistency are necessarily observed when using the new session.
+// See the New method as well.
 func (session *Session) Clone() *Session {
 	session.m.Lock()
 	s := &Session{
