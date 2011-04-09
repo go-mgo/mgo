@@ -1,38 +1,39 @@
-/*
-mgo - MongoDB driver for Go
-
-Copyright (c) 2010-2011 - Gustavo Niemeyer <gustavo@niemeyer.net>
-
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-    * Redistributions of source code must retain the above copyright notice,
-      this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright notice,
-      this list of conditions and the following disclaimer in the documentation
-      and/or other materials provided with the distribution.
-    * Neither the name of the copyright holder nor the names of its
-      contributors may be used to endorse or promote products derived from
-      this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+// mgo - MongoDB driver for Go
+// 
+// Copyright (c) 2010-2011 - Gustavo Niemeyer <gustavo@niemeyer.net>
+// 
+// All rights reserved.
+// 
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+// 
+//     * Redistributions of source code must retain the above copyright notice,
+//       this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above copyright notice,
+//       this list of conditions and the following disclaimer in the documentation
+//       and/or other materials provided with the distribution.
+//     * Neither the name of the copyright holder nor the names of its
+//       contributors may be used to endorse or promote products derived from
+//       this software without specific prior written permission.
+// 
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+// LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+// NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 package mgo
 
 import (
+	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"launchpad.net/gobson/bson"
 	"sync"
 	"os"
@@ -55,6 +56,8 @@ type Session struct {
 	safe        *queryOp
 	syncTimeout int64
 	consistency int
+	urlauth     *authInfo
+	auth        []authInfo
 	slaveOk     bool
 }
 
@@ -77,6 +80,7 @@ type Query struct {
 type query struct {
 	op       queryOp
 	prefetch float64
+	limit    int32
 }
 
 type getLastError struct {
@@ -94,6 +98,7 @@ type Iter struct {
 	err            os.Error
 	op             getMoreOp
 	prefetch       float64
+	limit          int32
 	pendingDocs    int
 	docsBeforeMore int
 	timeout        int
@@ -123,11 +128,24 @@ const defaultPrefetch = 0.25
 //
 // The seed servers must be provided in the following format:
 //
-//     [mongodb://]host1[:port1][,host2[:port2],...][?options]
+//     [mongodb://][user:pass@]host1[:port1][,host2[:port2],...][/database][?options]
+//
+// For example, it may be as simple as:
+//
+//     localhost
+//
+// Or more involved like:
+//
+//     mongodb://myuser:mypass@localhost:40001,otherhost:40001/mydb
 //
 // If the port number is not provided for a server, it defaults to 27017.
 //
-// The following options are supported:
+// The username and password provided in the URL will be used to authenticate
+// into the database named after the slash at the end of the host names, or
+// into the "admin" database if none is provided.  The authentication information
+// will persist in sessions obtained through the New method as well.
+//
+// The following connection options are supported after the question mark:
 //
 //     connect=direct
 //
@@ -143,7 +161,7 @@ const defaultPrefetch = 0.25
 //     http://www.mongodb.org/display/DOCS/Connections
 //
 func Mongo(url string) (session *Session, err os.Error) {
-	servers, options, err := parseURL(url)
+	servers, auth, options, err := parseURL(url)
 	if err != nil {
 		return nil, err
 	}
@@ -164,34 +182,54 @@ bad:
 	}
 	cluster := newCluster(servers, direct)
 	session = newSession(Strong, cluster, nil)
+	if auth.user != "" {
+		session.urlauth = &auth
+		session.auth = []authInfo{auth}
+	}
 	cluster.Release()
 	return session, nil
 }
 
-func parseURL(url string) (servers []string, options map[string]string, err os.Error) {
-	if strings.Contains(url, "@") {
-		err = os.ErrorString("Authentication not supported in URL yet; coming soon")
-		return
-	}
+func parseURL(url string) (servers []string, auth authInfo, options map[string]string, err os.Error) {
 	if strings.HasPrefix(url, "mongodb://") {
 		url = url[10:]
 	}
+	options = make(map[string]string)
 	if c := strings.Index(url, "?"); c != -1 {
-		options = make(map[string]string)
 		for _, pair := range strings.Split(url[c+1:], ";", -1) {
 			l := strings.Split(pair, "=", 2)
 			if len(l) != 2 || l[0] == "" || l[1] == "" {
 				err = os.ErrorString("Connection option must be key=value: " + pair)
+				return
 			}
 			options[l[0]] = l[1]
 		}
 		url = url[:c]
 	}
+	if c := strings.Index(url, "@"); c != -1 {
+		pair := strings.Split(url[:c], ":", 2)
+		if len(pair) != 2 || pair[0] == "" {
+			err = os.ErrorString("Credentials must be provided as user:pass@host") 
+			return
+		}
+		auth.user = pair[0]
+		auth.pass = pair[1]
+		url = url[c+1:]
+		auth.db = "admin"
+	}
 	if c := strings.Index(url, "/"); c != -1 {
 		if c != len(url) - 1 {
-			err = os.ErrorString("Database name not supported in URL yet; coming soon")
+			auth.db = url[c+1:]
 		}
 		url = url[:c]
+	}
+	if auth.user == "" {
+		if auth.db != "" {
+			err = os.ErrorString("Database name only makes sense with credentials")
+			return
+		}
+	} else if auth.db == "" {
+		auth.db = "admin"
 	}
 	servers = strings.Split(url, ",", -1)
 	// XXX This is untested. The test suite doesn't use the standard port.
@@ -251,11 +289,83 @@ func (database Database) Run(cmd interface{}, result interface{}) os.Error {
 	return database.C("$cmd").Find(cmd).One(result)
 }
 
+// Login authenticates against MongoDB with the provided credentials.  The
+// authentication is valid for the whole session and will stay valid until
+// Logout is explicitly called for the same database, or the session is
+// closed.
+//
+// Concurrent Login calls will work correctly.
+func (database Database) Login(user, pass string) (err os.Error) {
+	session := database.Session
+	dbname := database.Name
+
+	socket, err := session.acquireSocket(false)
+	if err != nil {
+		return err
+	}
+	defer socket.Release()
+
+	err = socket.Login(dbname, user, pass)
+	if err != nil {
+		return err
+	}
+
+	session.m.Lock()
+	defer session.m.Unlock()
+
+	for _, a := range session.auth {
+		if a.db == dbname {
+			a.user = user
+			a.pass = pass
+			return nil
+		}
+	}
+	session.auth = append(session.auth, authInfo{dbname, user, pass})
+	return nil
+}
+
+// Logout removes any established authentication credentials for the database.
+func (database Database) Logout() {
+	session := database.Session
+	dbname := database.Name
+	session.m.Lock()
+	found := false
+	for i, a := range session.auth {
+		if a.db == dbname {
+			copy(session.auth[i:], session.auth[i+1:])
+			session.auth = session.auth[:len(session.auth)-1]
+			found = true
+			break
+		}
+	}
+	if found && session.socket != nil {
+		session.socket.Logout(dbname)
+	}
+	session.m.Unlock()
+}
+
+// LogoutAll removes all established authentication credentials for the session.
+func (session *Session) LogoutAll() {
+	session.m.Lock()
+	for _, a := range session.auth {
+		session.socket.Logout(a.db)
+	}
+	session.auth = session.auth[0:0]
+	session.m.Unlock()
+}
+
 // New creates a new session with the same parameters as the original
 // session, including consistency, batch size, prefetching, safety mode,
-// etc. The returned session may not necessarily use the same socket as
-// the old session, so writes just performed may not be immediately
-// visible.
+// etc. The returned session will use sockets from the poll, so there's
+// a chance that writes just performed in another session may not yet
+// be visible.
+//
+// Login information from the original session will not be copied over
+// into the new session unless it was provided through the initial URL
+// for the Mongo function.
+//
+// See the Copy and Clone methods.
+//
 func (session *Session) New() *Session {
 	session.m.Lock()
 	s := &Session{
@@ -264,19 +374,40 @@ func (session *Session) New() *Session {
 		queryConfig: session.queryConfig,
 		consistency: session.consistency,
 		slaveOk:     session.consistency != Strong,
+		urlauth:     session.urlauth,
+	}
+	if s.urlauth != nil {
+		s.auth = []authInfo{*s.urlauth}
 	}
 	session.cluster.Acquire()
 	session.m.Unlock()
 	return s
 }
 
-// Clone creates a new session with the same parameters as the current one,
-// including consistency, batch size, prefetching, safety mode, etc. In case
-// a socket was reserved by the old session to preserve consistency
-// requirements, the same socket will be shared with the new session. This
-// behavior ensures that writes performed in an old session of strong or
-// eventual consistency are necessarily observed when using the new session.
-// See the New method as well.
+// Copy works just like New, but preserves the exact authentication
+// information from the original session.
+func (session *Session) Copy() *Session {
+	session.m.Lock()
+	s := &Session{
+		cluster:     session.cluster,
+		safe:        session.safe,
+		queryConfig: session.queryConfig,
+		consistency: session.consistency,
+		slaveOk:     session.consistency != Strong,
+		auth:        make([]authInfo, len(session.auth)),
+	}
+	copy(s.auth, session.auth)
+	session.cluster.Acquire()
+	session.m.Unlock()
+	return s
+}
+
+// Clone works just like Copy, but also reuses the same socket as the original
+// session, in case it had already reserved one due to its consistency
+// guarantees.  This behavior ensures that writes performed in the old session
+// are necessarily observed when using the new session, as long as it was a
+// strong or monotonic session.  That said, it also means that long operations
+// may cause other goroutines using the original session to wait.
 func (session *Session) Clone() *Session {
 	session.m.Lock()
 	s := &Session{
@@ -304,13 +435,13 @@ func (session *Session) Close() {
 	session.m.Unlock()
 }
 
-// Restart puts back any reserved sockets in use and restarts the consistency
-// guarantees according to the existing consistency setting.
-func (session *Session) Restart() {
-	session.restart(-1)
+// Refresh puts back any reserved sockets in use and restarts the consistency
+// guarantees according to the current consistency setting for the session.
+func (session *Session) Refresh() {
+	session.refresh(-1)
 }
 
-// Strong restarts the session in strong consistency mode.
+// Strong changes the session to strong consistency mode.
 //
 // In this mode, reads and writes will always be made to the master server
 // using a unique connection so that reads and writes are fully consistent,
@@ -319,10 +450,10 @@ func (session *Session) Restart() {
 // This offers the least benefits in terms of distributing load, but the
 // most guarantees.  See also Monotonic and Eventual.
 func (session *Session) Strong() {
-	session.restart(Strong)
+	session.refresh(Strong)
 }
 
-// Monotonic restarts the session in monotonic consistency mode.
+// Monotonic changes the session to monotonic consistency mode.
 //
 // In this mode, reads may not be entirely up-to-date, but they will always
 // see the history of changes moving forward, the data read will be consistent
@@ -337,10 +468,10 @@ func (session *Session) Strong() {
 // This manages to distribute some of the reading load with slaves, while
 // maintaining some useful guarantees.  See also Strong and Eventual.
 func (session *Session) Monotonic() {
-	session.restart(Monotonic)
+	session.refresh(Monotonic)
 }
 
-// Eventual restarts the session in eventual consistency mode.
+// Eventual changes the session to eventual consistency mode.
 //
 // In this mode, reads will be made to any slave in the cluster, if one is
 // available, and sequential reads will not necessarily be made with the same
@@ -355,10 +486,10 @@ func (session *Session) Monotonic() {
 // offering the least guarantees about ordering of the data read and written.
 // See also Strong and Monotonic.
 func (session *Session) Eventual() {
-	session.restart(Eventual)
+	session.refresh(Eventual)
 }
 
-func (session *Session) restart(consistency int) {
+func (session *Session) refresh(consistency int) {
 	session.m.Lock()
 	if consistency == -1 {
 		consistency = session.consistency
@@ -387,9 +518,9 @@ func (session *Session) SetSyncTimeout(nsec int64) {
 // The default batch size is defined by the database itself.  As of this
 // writing, MongoDB will use an initial size of min(100 docs, 4MB) on the
 // first batch, and 4MB on remaining ones.
-func (session *Session) Batch(size int) {
+func (session *Session) Batch(n int) {
 	session.m.Lock()
-	session.queryConfig.op.limit = int32(size)
+	session.queryConfig.op.limit = int32(n)
 	session.m.Unlock()
 }
 
@@ -463,6 +594,12 @@ func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
 	return session.DB("admin").Run(cmd, result)
 }
 
+// Ping runs a trivial ping command just to get in touch with the server.
+func (session *Session) Ping() os.Error {
+	result := struct{}{} // We don't care.
+	return session.Run("ping", &result)
+}
+
 // Find prepares a query using the provided document.  The document may be a
 // map or a struct value capable of being marshalled with bson.  The map
 // may be a generic one using interface{} for its key and/or values, such as
@@ -470,9 +607,34 @@ func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
 // is equivalent to providing an empty document such as bson.M{}.
 //
 // Further details of the query may be tweaked using the resulting Query value,
-// and then executed using methods such as One, Iter, or Tail.  For example:
+// and then executed using methods such as One, Iter, or Tail.
 //
-//     err := collection.Find(bson.M{"a", 1}).One(&result)
+// In case the resulting document includes a field named $err, which is a
+// standard way for MongoDB to return query errors, the returned err will be
+// set to a *QueryError value including the Err message and the Code.  In those
+// cases, the result argument is still unmarshalled into with the received
+// document so that any other custom values may be obtained if desired.
+//
+// For example:
+//
+//     err := collection.Find(bson.M{"a", 1}).One(result)
+//
+// Or, for iterating over all results:
+//
+//    iter, err := collection.Find(nil).Iter()
+//    if err != nil {
+//        panic(err.String())
+//    }
+//    for {
+//        err = iter.Next(&result)
+//        if err != nil {
+//            break
+//        }
+//        fmt.Println(result.Id)
+//    }
+//    if err != nil {
+//        panic(err.String())
+//    }
 //
 // Relevant documentation:
 //
@@ -498,6 +660,15 @@ type LastError struct {
 }
 
 func (err *LastError) String() string {
+	return err.Err
+}
+
+type QueryError struct {
+	Err string "$err"
+	Code int
+}
+
+func (err *QueryError) String() string {
 	return err.Err
 }
 
@@ -551,6 +722,22 @@ func (collection Collection) RemoveAll(selector interface{}) os.Error {
 	return collection.Session.writeQuery(&deleteOp{collection.Name, selector, 0})
 }
 
+// AddUser creates or updates the authentication credentials of user within
+// the database.
+func (database Database) AddUser(user, pass string, readOnly bool) os.Error {
+	psum := md5.New()
+	psum.Write([]byte(user + ":mongo:" + pass))
+	digest := hex.EncodeToString(psum.Sum())
+	c := database.C("system.users")
+	return c.Upsert(bson.M{"user": user}, bson.M{"$set": bson.M{"user": user, "pwd": digest, "readOnly": readOnly}})
+}
+
+// RemoveUser removes the authentication credentials of user from the database.
+func (database Database) RemoveUser(user string) os.Error {
+	c := database.C("system.users")
+	return c.Remove(bson.M{"user": user})
+}
+
 // Batch sets the batch size used when fetching documents from the database.
 // It's possible to change this setting on a per-session basis as well, using
 // the Batch method of Session.
@@ -558,9 +745,9 @@ func (collection Collection) RemoveAll(selector interface{}) os.Error {
 // The default batch size is defined by the database itself.  As of this
 // writing, MongoDB will use an initial size of min(100 docs, 4MB) on the
 // first batch, and 4MB on remaining ones.
-func (query *Query) Batch(size int) *Query {
+func (query *Query) Batch(n int) *Query {
 	query.m.Lock()
-	query.op.limit = int32(size)
+	query.op.limit = int32(n)
 	query.m.Unlock()
 	return query
 }
@@ -589,6 +776,17 @@ func (query *Query) Prefetch(p float64) *Query {
 func (query *Query) Skip(n int) *Query {
 	query.m.Lock()
 	query.op.skip = int32(n)
+	query.m.Unlock()
+	return query
+}
+
+// Limit restricts the maximum number of documents retrieved to n, and also
+// changes the batch size to the same value.  Once n documents have been
+// returned by Next, the following call will return NotFound.
+func (query *Query) Limit(n int) *Query {
+	query.m.Lock()
+	query.limit = int32(n)
+	query.op.limit = -int32(n)
 	query.m.Unlock()
 	return query
 }
@@ -633,10 +831,33 @@ func (query *Query) Sort(order interface{}) *Query {
 	return query
 }
 
+var errHint = []byte("\x02$err\x00")
+
+func checkQueryError(data []byte) os.Error {
+	if bytes.Index(data, errHint) < 0 {
+		return nil
+	}
+	result := &QueryError{}
+	err := bson.Unmarshal(data, result)
+	if err == nil && result.Err != "" {
+		return result
+	}
+	return nil
+}
+
 // One executes the query and unmarshals the first obtained document into the
 // result argument.  The result must be a struct or map value capable of being
 // unmarshalled into by gobson.  This function blocks until either a result
-// is available or an error happened. 
+// is available or an error happens.  For example:
+//
+//     err := collection.Find(bson.M{"a", 1}).One(&result)
+//
+// In case the resulting document includes a field named $err, which is a
+// standard way for MongoDB to return query errors, the returned err will be
+// set to a *QueryError value including the Err message and the Code.  In those
+// cases, the result argument is still unmarshalled into with the received
+// document so that any other custom values may be obtained if desired.
+//
 func (query *Query) One(result interface{}) (err os.Error) {
 	query.m.Lock()
 	session := query.session
@@ -649,41 +870,26 @@ func (query *Query) One(result interface{}) (err os.Error) {
 	}
 	defer socket.Release()
 
-	var mutex sync.Mutex
-	var replyData []byte
-	var replyErr os.Error
-
-	mutex.Lock()
-
 	op.flags |= session.slaveOkFlag()
 	op.limit = -1
-	op.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
-		replyErr = err
-		replyData = docData
-		mutex.Unlock()
-	}
 
-	err = socket.Query(&op)
+	data, err := socket.SimpleQuery(&op)
 	if err != nil {
 		return err
 	}
-
-	mutex.Lock()
-	if replyErr != nil {
-		return replyErr
-	}
-	if replyData == nil {
+	if data == nil {
 		return NotFound
 	}
 
-	// Unmarshal outside of the read goroutine (replyFunc) to avoid blocking it.
-	err = bson.Unmarshal(replyData, result)
+	err = bson.Unmarshal(data, result)
 	if err == nil {
 		debugf("Query %p document unmarshaled: %#v", query, result)
 	} else {
 		debugf("Query %p document unmarshaling failed: %#v", query, err)
+		return err
 	}
-	return err
+
+	return checkQueryError(data)
 }
 
 // Iter executes the query and returns an iterator capable of going over all
@@ -695,6 +901,7 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
 	session := query.session
 	op := query.op
 	prefetch := query.prefetch
+	limit := query.limit
 	query.m.Unlock()
 
 	socket, err := session.acquireSocket(true)
@@ -703,7 +910,7 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
 	}
 	defer socket.Release()
 
-	iter = &Iter{session: session, prefetch: prefetch}
+	iter = &Iter{session: session, prefetch: prefetch, limit: limit}
 	iter.gotReply.L = &iter.m
 	iter.op.collection = op.collection
 	iter.op.limit = op.limit
@@ -745,9 +952,19 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
 //    query := collection.Find(nil)
 //    for {
 //         iter := query.Sort("$natural").Tail(-1)
-//         for iter.Next(&result) != mgo.NotFound {
-//             println(result.Id)
+//         for {
+//             err := iter.Next(&result)
+//             if err == mgo.TailTimeout {
+//                 continue
+//             }
+//             if err != nil {
+//                 break
+//             }
+//             fmt.Println(result.Id)
 //             lastId = result.Id
+//         }
+//         if err != mgo.NotFound {
+//             panic(err.String())
 //         }
 //         query = collection.Find(bson.M{"_id", bson.M{"$gt", lastId}})
 //    }
@@ -805,7 +1022,27 @@ func (session *Session) slaveOkFlag() (flag uint32) {
 //
 // Next returns NotFound at the end of the result set, or in case a tailable
 // iterator becomes invalid, and returns TailTimeout if a tailable iterator
-// times out (see the Tail method of Query).
+// times out (see the Tail method of Query).  Also, in case the resulting
+// document includes a field named $err, which is a standard way for MongoDB
+// to return query errors, the returned err will be set to a *QueryError value
+// including the Err message and the Code.  In those cases, the result argument
+// is still unmarshalled into with the received document so that any other
+// custom values may be obtained if desired.
+//
+// For example:
+//
+//    iter := collection.Find(nil).Iter()
+//    for {
+//        err := iter.Next(&result)
+//        if err != nil {
+//            break
+//        }
+//        println(result.Id)
+//    }
+//    if err != mgo.NotFound {
+//        panic(err.String())
+//    }
+//
 func (iter *Iter) Next(result interface{}) (err os.Error) {
 	timeout := int64(-1)
 	if iter.timeout >= 0 {
@@ -828,6 +1065,11 @@ func (iter *Iter) Next(result interface{}) (err os.Error) {
 
 	// Exhaust available data before returning any errors.
 	if docData, ok := iter.docData.Pop().([]byte); ok {
+		iter.limit--
+		if iter.limit == 0 {
+			// XXX Must kill the cursor here.
+			iter.err = NotFound
+		}
 		if iter.op.cursorId != 0 && iter.err == nil {
 			iter.docsBeforeMore--
 			if iter.docsBeforeMore == 0 {
@@ -841,7 +1083,7 @@ func (iter *Iter) Next(result interface{}) (err os.Error) {
 		} else {
 			debugf("Iter %p document unmarshaling failed: %#v", iter, err)
 		}
-		return err
+		return checkQueryError(docData)
 	} else if iter.err != nil {
 		err := iter.err
 		debugf("Iter %p returning error: %s", iter, err)
@@ -857,6 +1099,58 @@ func (iter *Iter) Next(result interface{}) (err os.Error) {
 	return
 }
 
+func (iter *Iter) getMore() {
+	socket, err := iter.session.acquireSocket(true)
+	if err != nil {
+		iter.err = err
+		return
+	}
+	defer socket.Release()
+	debugf("Iter %p requesting more documents", iter)
+	iter.pendingDocs++
+	if iter.limit > 0 && iter.op.limit > iter.limit {
+		iter.op.limit = -iter.limit
+	}
+	err = socket.Query(&iter.op)
+	if err != nil {
+		iter.err = err
+	}
+}
+
+type countCmd struct {
+	Count string
+	Query interface{}
+}
+
+// Count returns the total number of documents in the result set.
+func (query *Query) Count() (n int, err os.Error) {
+	query.m.Lock()
+	session := query.session
+	op := query.op
+	query.m.Unlock()
+
+	c := strings.Index(op.collection, ".")
+	if c < 0 {
+		return 0, os.ErrorString("Bad collection name: " + op.collection)
+	}
+
+	dbname := op.collection[:c]
+	cname := op.collection[c+1:]
+
+	q := op.query
+	if qw, ok := q.(*queryWrapper); ok {
+		q = qw.Query
+	}
+
+	result := struct{ N int }{}
+	err = session.DB(dbname).Run(countCmd{cname, q}, &result)
+	return result.N, err
+}
+
+// Count returns the total number of documents in the collection.
+func (collection Collection) Count() (n int, err os.Error) {
+	return collection.Find(nil).Count()
+}
 
 // ---------------------------------------------------------------------------
 // Internal session handling helpers.
@@ -890,12 +1184,23 @@ func (session *Session) acquireSocket(slaveOk bool) (s *mongoSocket, err os.Erro
 		session.m.Lock()
 		s = session.socket
 		if swap := !slaveOk && session.slaveOk; swap || s == nil {
+			s, err = session.cluster.AcquireSocket(slaveOk && session.slaveOk, session.syncTimeout)
+			if err != nil {
+				session.m.Unlock()
+				return
+			}
+			for _, a := range session.auth {
+				err = s.Login(a.db, a.user, a.pass)
+				if err != nil {
+					s.Release()
+					s = nil
+					session.m.Unlock()
+					return
+				}
+			}
+			session.setSocket(s)
 			if swap {
 				session.slaveOk = false
-			}
-			s, err = session.cluster.AcquireSocket(session.slaveOk, session.syncTimeout)
-			if err == nil {
-				session.setSocket(s)
 			}
 		}
 		session.m.Unlock()
@@ -949,21 +1254,6 @@ func (iter *Iter) replyFunc() replyFunc {
 		}
 		iter.gotReply.Broadcast()
 		iter.m.Unlock()
-	}
-}
-
-func (iter *Iter) getMore() {
-	socket, err := iter.session.acquireSocket(true)
-	if err != nil {
-		iter.err = err
-		return
-	}
-	defer socket.Release()
-	debugf("Iter %p requesting more documents", iter)
-	iter.pendingDocs++
-	err = socket.Query(&iter.op)
-	if err != nil {
-		iter.err = err
 	}
 }
 

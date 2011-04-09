@@ -3,7 +3,7 @@
 start() {
     mkdir _testdb
     cd _testdb
-    mkdir db1 rs1a rs1b rs1c rs2a rs2b rs2c cfg1 cfg2
+    mkdir db1 db2 rs1a rs1b rs1c rs2a rs2b rs2c cfg1 cfg2
     ln -s ../testdb/supervisord.conf supervisord.conf
     echo "Running supervisord..."
     supervisord || ( echo "Supervisord failed executing ($?)" && exit 1 )

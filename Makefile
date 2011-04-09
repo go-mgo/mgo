@@ -3,13 +3,14 @@ include $(GOROOT)/src/Make.inc
 TARG=launchpad.net/mgo
 
 GOFILES=\
-	session.go\
+	auth.go\
 	cluster.go\
+	log.go\
+	queue.go\
 	server.go\
+	session.go\
 	socket.go\
 	stats.go\
-	queue.go\
-	log.go\
 
 all: package
 

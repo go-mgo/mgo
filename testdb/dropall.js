@@ -1,9 +1,13 @@
 
-var ports = [40001, 40011, 40012, 40013, 40021, 40022, 40023, 40101, 40201, 40202]
+var ports = [40001, 40002, 40011, 40012, 40013, 40021, 40022, 40023, 40101, 40201, 40202]
 
 for (var i = 0; i != ports.length; i++) {
+    var server = "localhost:" + ports[i]
     var mongo = new Mongo("localhost:" + ports[i])
     var admin = mongo.getDB("admin")
+    if (ports[i] == 40002) {
+        admin.auth("root", "rapadura")
+    }
     var result = admin.runCommand({"listDatabases": 1})
     // Why is the command returning undefined!?
     while (typeof result.databases == "undefined") {

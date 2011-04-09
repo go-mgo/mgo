@@ -1,34 +1,32 @@
-/*
-mgo - MongoDB driver for Go
-
-Copyright (c) 2010-2011 - Gustavo Niemeyer <gustavo@niemeyer.net>
-
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-    * Redistributions of source code must retain the above copyright notice,
-      this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright notice,
-      this list of conditions and the following disclaimer in the documentation
-      and/or other materials provided with the distribution.
-    * Neither the name of the copyright holder nor the names of its
-      contributors may be used to endorse or promote products derived from
-      this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+// mgo - MongoDB driver for Go
+// 
+// Copyright (c) 2010-2011 - Gustavo Niemeyer <gustavo@niemeyer.net>
+// 
+// All rights reserved.
+// 
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+// 
+//     * Redistributions of source code must retain the above copyright notice,
+//       this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above copyright notice,
+//       this list of conditions and the following disclaimer in the documentation
+//       and/or other materials provided with the distribution.
+//     * Neither the name of the copyright holder nor the names of its
+//       contributors may be used to endorse or promote products derived from
+//       this software without specific prior written permission.
+// 
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+// LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+// NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 package mgo_test
 
@@ -39,6 +37,7 @@ import (
 	"launchpad.net/mgo"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -66,8 +65,8 @@ func (s *S) TestTopologySyncWithSingleMaster(c *C) {
 	c.Assert(stats.SlaveConns, Equals, 0)
 	c.Assert(stats.SocketsInUse, Equals, 1)
 
-	// Restart session and socket must be released.
-	session.Restart()
+	// Refresh session and socket must be released.
+	session.Refresh()
 	stats = mgo.GetStats()
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
@@ -97,8 +96,8 @@ func (s *S) TestTopologySyncWithSlaveSeed(c *C) {
 	// by the above session.
 	c.Assert(stats.SocketsInUse, Equals, 1)
 
-	// Restart it, and it must be gone.
-	session.Restart()
+	// Refresh it, and it must be gone.
+	session.Refresh()
 	stats = mgo.GetStats()
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
@@ -123,6 +122,26 @@ func (s *S) TestRunValue(c *C) {
 	err = session.Run(M{"ping": 1}, &result)
 	c.Assert(err, IsNil)
 	c.Assert(result.Ok, Equals, 1)
+}
+
+func (s *S) TestPing(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	// Just ensure the nonce has been received.
+	result := struct{}{}
+	err = session.Run("ping", &result)
+
+	mgo.ResetStats()
+
+	err = session.Ping()
+	c.Assert(err, IsNil)
+
+	// Pretty boring.
+	stats := mgo.GetStats()
+	c.Assert(stats.SentOps, Equals, 1)
+	c.Assert(stats.ReceivedOps, Equals, 1)
 }
 
 func (s *S) TestURLSingle(c *C) {
@@ -337,6 +356,60 @@ func (s *S) TestRemoveAll(c *C) {
 	c.Assert(err, Equals, mgo.NotFound)
 }
 
+func (s *S) TestCountCollection(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+
+	ns := []int{40, 41, 42}
+	for _, n := range ns {
+		err := coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
+	}
+
+	n, err := coll.Count()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 3)
+}
+
+func (s *S) TestCountQuery(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+
+	ns := []int{40, 41, 42}
+	for _, n := range ns {
+		err := coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
+	}
+
+	n, err := coll.Find(M{"n": M{"$gt": 40}}).Count()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 2)
+}
+
+func (s *S) TestCountQuerySorted(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+
+	ns := []int{40, 41, 42}
+	for _, n := range ns {
+		err := coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
+	}
+
+	n, err := coll.Find(M{"n": M{"$gt": 40}}).Sort(M{"n": 1}).Count()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 2)
+}
+
 func (s *S) TestFindOneNotFound(c *C) {
 	session, err := mgo.Mongo("localhost:40001")
 	c.Assert(err, IsNil)
@@ -378,7 +451,7 @@ func (s *S) TestFindIter(c *C) {
 		coll.Insert(M{"n": n})
 	}
 
-	session.Restart() // Release socket.
+	session.Refresh() // Release socket.
 
 	mgo.ResetStats()
 
@@ -418,7 +491,7 @@ func (s *S) TestFindIter(c *C) {
 	err = iter.Next(&result)
 	c.Assert(err == mgo.NotFound, Equals, true)
 
-	session.Restart() // Release socket.
+	session.Refresh() // Release socket.
 
 	stats := mgo.GetStats()
 	c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 2*GET_MORE_OP
@@ -471,6 +544,88 @@ func (s *S) TestFindIterWithoutResults(c *C) {
 	c.Assert(err == mgo.NotFound, Equals, true)
 }
 
+func (s *S) TestFindIterLimit(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+
+	ns := []int{40, 41, 42, 43, 44, 45, 46}
+	for _, n := range ns {
+		coll.Insert(M{"n": n})
+	}
+
+	session.Refresh() // Release socket.
+
+	mgo.ResetStats()
+
+	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Limit(3)
+	iter, err := query.Iter()
+	c.Assert(err, IsNil)
+
+	result := struct{ N int }{}
+	for i := 2; i < 5; i++ {
+		err = iter.Next(&result)
+		c.Assert(err, IsNil)
+		c.Assert(result.N, Equals, ns[i])
+	}
+
+	err = iter.Next(&result)
+	c.Assert(err == mgo.NotFound, Equals, true)
+
+	session.Refresh() // Release socket.
+
+	stats := mgo.GetStats()
+	c.Assert(stats.SentOps, Equals, 1)     // 1*QUERY_OP
+	c.Assert(stats.ReceivedOps, Equals, 1) // and its REPLY_OP
+	c.Assert(stats.ReceivedDocs, Equals, 3)
+	c.Assert(stats.SocketsInUse, Equals, 0)
+}
+
+func (s *S) TestFindIterLimitWithBatch(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+
+	ns := []int{40, 41, 42, 43, 44, 45, 46}
+	for _, n := range ns {
+		coll.Insert(M{"n": n})
+	}
+
+	session.Refresh() // Release socket.
+
+	mgo.ResetStats()
+
+	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Limit(3).Batch(2)
+	iter, err := query.Iter()
+	c.Assert(err, IsNil)
+
+	result := struct{ N int }{}
+	for i := 2; i < 5; i++ {
+		err = iter.Next(&result)
+		c.Assert(err, IsNil)
+		c.Assert(result.N, Equals, ns[i])
+		if i == 3 {
+			stats := mgo.GetStats()
+			c.Assert(stats.ReceivedDocs, Equals, 2)
+		}
+	}
+
+	err = iter.Next(&result)
+	c.Assert(err == mgo.NotFound, Equals, true)
+
+	session.Refresh() // Release socket.
+
+	stats := mgo.GetStats()
+	c.Assert(stats.SentOps, Equals, 2)     // 1*QUERY_OP + 1*GET_MORE_OP
+	c.Assert(stats.ReceivedOps, Equals, 2) // and its REPLY_OPs
+	c.Assert(stats.ReceivedDocs, Equals, 3)
+	c.Assert(stats.SocketsInUse, Equals, 0)
+}
+
 // Test tailable cursors in a situation where Next has to sleep to
 // respect the timeout requested on Tail.
 func (s *S) TestFindTailTimeoutWithSleep(c *C) {
@@ -495,7 +650,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 		coll.Insert(M{"n": n})
 	}
 
-	session.Restart() // Release socket.
+	session.Refresh() // Release socket.
 
 	mgo.ResetStats()
 
@@ -540,12 +695,12 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	// The following may break because it depends a bit on the internal
 	// timing used by MongoDB's AwaitData logic.  If it does, the problem
 	// will be observed as more GET_MORE_OPs than predicted:
-	// 1*GET_MORE_OP on Next + 1*GET_MORE_OP on Next after sleep +
+	// 1*QUERY for nonce + 1*GET_MORE_OP on Next + 1*GET_MORE_OP on Next after sleep +
 	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 4)
-	c.Assert(stats.ReceivedOps, Equals, 3)  // REPLY_OPs for 2*GET_MORE_OPs and 1*QUERY_OP
-	c.Assert(stats.ReceivedDocs, Equals, 2) // N=47 result + getLastError response
+	c.Assert(stats.SentOps, Equals, 5)
+	c.Assert(stats.ReceivedOps, Equals, 4)  // REPLY_OPs for 1*QUERY_OP for nonce + 2*GET_MORE_OPs + 1*QUERY_OP
+	c.Assert(stats.ReceivedDocs, Equals, 3) // nonce + N=47 result + getLastError response
 
 	c.Log("Will wait for a result which will never come...")
 
@@ -575,7 +730,7 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 		coll.Insert(M{"n": n})
 	}
 
-	session.Restart() // Release socket.
+	session.Refresh() // Release socket.
 
 	mgo.ResetStats()
 
@@ -619,12 +774,12 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	// The following may break because it depends a bit on the internal
 	// timing used by MongoDB's AwaitData logic.  If it does, the problem
 	// will be observed as more GET_MORE_OPs than predicted:
-	// 1*GET_MORE_OP on Next +
+	// 1*QUERY_OP for nonce + 1*GET_MORE_OP on Next +
 	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 3)
-	c.Assert(stats.ReceivedOps, Equals, 2)  // REPLY_OPs for 1*GET_MORE_OPs and 1*QUERY_OP
-	c.Assert(stats.ReceivedDocs, Equals, 2) // N=47 result + getLastError response
+	c.Assert(stats.SentOps, Equals, 4)
+	c.Assert(stats.ReceivedOps, Equals, 3)  // REPLY_OPs for 1*QUERY_OP for nonce + 1*GET_MORE_OPs and 1*QUERY_OP
+	c.Assert(stats.ReceivedDocs, Equals, 3) // nonce + N=47 result + getLastError response
 
 	c.Log("Will wait for a result which will never come...")
 
@@ -658,7 +813,7 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 		coll.Insert(M{"n": n})
 	}
 
-	session.Restart() // Release socket.
+	session.Refresh() // Release socket.
 
 	mgo.ResetStats()
 
@@ -698,12 +853,12 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	// The following may break because it depends a bit on the internal
 	// timing used by MongoDB's AwaitData logic.  If it does, the problem
 	// will be observed as more GET_MORE_OPs than predicted:
-	// 1*GET_MORE_OP on Next +
+	// 1*QUERY_OP for nonce + 1*GET_MORE_OP on Next +
 	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 3)
-	c.Assert(stats.ReceivedOps, Equals, 2)  // REPLY_OPs for 1*GET_MORE_OPs and 1*QUERY_OP
-	c.Assert(stats.ReceivedDocs, Equals, 2) // N=47 result + getLastError response
+	c.Assert(stats.SentOps, Equals, 4)
+	c.Assert(stats.ReceivedOps, Equals, 3)  // REPLY_OPs for 1*QUERY_OP for nonce + 1*GET_MORE_OPs and 1*QUERY_OP
+	c.Assert(stats.ReceivedDocs, Equals, 3) // nonce + N=47 result + getLastError response
 
 	c.Log("Will wait for a result which will never come...")
 
@@ -876,6 +1031,45 @@ func (s *S) TestSafeParameters(c *C) {
 	c.Assert(err.(*mgo.LastError).WTimeout, Equals, true)
 }
 
+func (s *S) TestQueryErrorOne(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+
+	result := struct{ Err string "$err" }{}
+
+	err = coll.Find(M{"a": 1}).Select(M{"a": M{"b": 1}}).One(&result)
+	c.Assert(err, Matches, "Unsupported projection option: b")
+	c.Assert(err.(*mgo.QueryError).Err, Matches, "Unsupported projection option: b")
+	c.Assert(err.(*mgo.QueryError).Code, Equals, 13097)
+
+	// The result should be properly unmarshalled with QueryError
+	c.Assert(result.Err, Matches, "Unsupported projection option: b")
+}
+
+func (s *S) TestQueryErrorNext(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+
+	result := struct{ Err string "$err" }{}
+
+	iter, err := coll.Find(M{"a": 1}).Select(M{"a": M{"b": 1}}).Iter()
+	c.Assert(err, IsNil)
+
+	err = iter.Next(&result)
+	c.Assert(err, Matches, "Unsupported projection option: b")
+	c.Assert(err.(*mgo.QueryError).Err, Matches, "Unsupported projection option: b")
+	c.Assert(err.(*mgo.QueryError).Code, Equals, 13097)
+
+	// The result should be properly unmarshalled with QueryError
+	c.Assert(result.Err, Matches, "Unsupported projection option: b")
+}
+
 func (s *S) TestNewSession(c *C) {
 	session, err := mgo.Mongo("localhost:40001")
 	c.Assert(err, IsNil)
@@ -956,9 +1150,9 @@ func (s *S) TestCloneSession(c *C) {
 	c.Assert(stats.SocketsInUse, Equals, 1)
 	c.Assert(stats.SocketRefs, Equals, 2)
 
-	// Restarting one of them should let the original socket go,
+	// Refreshing one of them should let the original socket go,
 	// while preserving the safety settings.
-	clone.Restart()
+	clone.Refresh()
 	err = cloneColl.Insert(M{"_id": 1})
 	c.Assert(err, IsNil)
 
@@ -970,6 +1164,9 @@ func (s *S) TestCloneSession(c *C) {
 	// Ensure query parameters were cloned.
 	err = cloneColl.Insert(M{"_id": 2})
 	c.Assert(err, IsNil)
+
+	// Ping the database to ensure the nonce has been received already.
+	c.Assert(clone.Ping(), IsNil)
 
 	mgo.ResetStats()
 
@@ -1095,7 +1292,7 @@ func (s *S) TestPrimaryShutdownStrong(c *C) {
 	err = session.Run("serverStatus", result)
 	c.Assert(err, Equals, os.EOF)
 
-	session.Restart()
+	session.Refresh()
 
 	// Now we should be able to talk to the new master.
 	err = session.Run("serverStatus", result)
@@ -1135,7 +1332,7 @@ func (s *S) TestPrimaryShutdownMonotonic(c *C) {
 	err = session.Run("serverStatus", result)
 	c.Assert(err, Equals, os.EOF)
 
-	session.Restart()
+	session.Refresh()
 
 	// Now we should be able to talk to the new master.
 	err = session.Run("serverStatus", result)
@@ -1311,8 +1508,8 @@ func (s *S) TestSyncTimeout(c *C) {
 		c.Skip("-fast")
 	}
 
-	// 40002 isn't used by the test servers.
-	session, err := mgo.Mongo("localhost:40002")
+	// 40009 isn't used by the test servers.
+	session, err := mgo.Mongo("localhost:40009")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1449,4 +1646,488 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 
 	c.Check(masterDelta, Equals, 0) // Just the counting itself.
 	c.Check(slaveDelta, Equals, 5) // The counting for both, plus 5 queries above.
+}
+
+func (s *S) TestAuthLogin(c *C) {
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, Matches, "unauthorized")
+
+	admindb := session.DB("admin")
+
+	err = admindb.Login("root", "wrong")
+	c.Assert(err, Matches, "auth fails")
+
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+}
+
+func (s *S) TestAuthLoginLogout(c *C) {
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	admindb.Logout()
+
+	coll := session.DB("mydb").C("mycollection")
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, Matches, "unauthorized")
+
+	// Must have dropped auth from the session too.
+	session = session.Copy()
+	defer session.Close()
+
+	coll = session.DB("mydb").C("mycollection")
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, Matches, "unauthorized")
+}
+
+func (s *S) TestAuthLoginLogoutAll(c *C) {
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	session.LogoutAll()
+
+	coll := session.DB("mydb").C("mycollection")
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, Matches, "unauthorized")
+
+	// Must have dropped auth from the session too.
+	session = session.Copy()
+	defer session.Close()
+
+	coll = session.DB("mydb").C("mycollection")
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, Matches, "unauthorized")
+}
+
+func (s *S) TestAuthAddUser(c *C) {
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	mydb := session.DB("mydb")
+	err = mydb.AddUser("myruser", "mypass", true)
+	c.Assert(err, IsNil)
+	err = mydb.AddUser("mywuser", "mypass", false)
+	c.Assert(err, IsNil)
+
+	err = mydb.Login("myruser", "mypass")
+	c.Assert(err, IsNil)
+
+	admindb.Logout()
+
+	coll := session.DB("mydb").C("mycollection")
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, Matches, "unauthorized")
+
+	err = mydb.Login("mywuser", "mypass")
+	c.Assert(err, IsNil)
+
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+}
+
+func (s *S) TestAuthAddUserReplaces(c *C) {
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	mydb := session.DB("mydb")
+	err = mydb.AddUser("myuser", "myoldpass", false)
+	c.Assert(err, IsNil)
+	err = mydb.AddUser("myuser", "mynewpass", true)
+	c.Assert(err, IsNil)
+
+	admindb.Logout()
+
+	err = mydb.Login("myuser", "myoldpass")
+	c.Assert(err, Matches, "auth fails")
+	err = mydb.Login("myuser", "mynewpass")
+	c.Assert(err, IsNil)
+
+	// ReadOnly flag was changed too.
+	err = mydb.C("mycollection").Insert(M{"n": 1})
+	c.Assert(err, Matches, "unauthorized")
+}
+
+func (s *S) TestAuthRemoveUser(c *C) {
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	mydb := session.DB("mydb")
+	err = mydb.AddUser("myuser", "mypass", true)
+	c.Assert(err, IsNil)
+	err = mydb.RemoveUser("myuser")
+	c.Assert(err, IsNil)
+
+	err = mydb.Login("myuser", "mypass")
+	c.Assert(err, Matches, "auth fails")
+}
+
+func (s *S) TestAuthLoginTwiceDoesNothing(c *C) {
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	oldStats := mgo.GetStats()
+
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	newStats := mgo.GetStats()
+	c.Assert(newStats.SentOps, Equals, oldStats.SentOps)
+}
+
+func (s *S) TestAuthLoginLogoutLoginDoesNothing(c *C) {
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	oldStats := mgo.GetStats()
+
+	admindb.Logout()
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	newStats := mgo.GetStats()
+	c.Assert(newStats.SentOps, Equals, oldStats.SentOps)
+}
+
+func (s *S) TestAuthLoginSwitchUser(c *C) {
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	coll := session.DB("mydb").C("mycollection")
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+
+	err = admindb.Login("reader", "rapadura")
+	c.Assert(err, IsNil)
+
+	// Can't write.
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, Matches, "unauthorized")
+
+	// But can read.
+	result := struct{N int}{}
+	err = coll.Find(nil).One(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result.N, Equals, 1)
+}
+
+func (s *S) TestAuthLoginChangePassword(c *C) {
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	mydb := session.DB("mydb")
+	err = mydb.AddUser("myuser", "myoldpass", false)
+	c.Assert(err, IsNil)
+
+	err = mydb.Login("myuser", "myoldpass")
+	c.Assert(err, IsNil)
+
+	err = mydb.AddUser("myuser", "mynewpass", true)
+	c.Assert(err, IsNil)
+
+	err = mydb.Login("myuser", "mynewpass")
+	c.Assert(err, IsNil)
+
+	admindb.Logout()
+
+	// The second login must be in effect, which means read-only.
+	err = mydb.C("mycollection").Insert(M{"n": 1})
+	c.Assert(err, Matches, "unauthorized")
+}
+
+func (s *S) TestAuthLoginCachingWithSessionRefresh(c *C) {
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	session.Refresh()
+
+	coll := session.DB("mydb").C("mycollection")
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+}
+
+func (s *S) TestAuthLoginCachingWithSessionCopy(c *C) {
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	session = session.Copy()
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+}
+
+func (s *S) TestAuthLoginCachingWithSessionClone(c *C) {
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	session = session.Clone()
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+}
+
+func (s *S) TestAuthLoginCachingWithNewSession(c *C) {
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	session = session.New()
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycollection")
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, Matches, "unauthorized")
+}
+
+func (s *S) TestAuthLoginCachingAcrossPool(c *C) {
+	// Logins are cached even when the conenction goes back
+	// into the pool.
+
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	// Add another user to test the logout case at the same time.
+	mydb := session.DB("mydb")
+	err = mydb.AddUser("myuser", "mypass", false)
+	c.Assert(err, IsNil)
+
+	err = mydb.Login("myuser", "mypass")
+	c.Assert(err, IsNil)
+
+	// Logout root explicitly, to test both cases.
+	admindb.Logout()
+
+	// Give socket back to pool.
+	session.Refresh()
+
+	// Brand new session, should use socket from the pool.
+	other := session.New()
+	defer other.Close()
+
+	oldStats := mgo.GetStats()
+
+	err = other.DB("admin").Login("root", "rapadura")
+	c.Assert(err, IsNil)
+	err = other.DB("mydb").Login("myuser", "mypass")
+	c.Assert(err, IsNil)
+
+	// Both logins were cached, so no ops.
+	newStats := mgo.GetStats()
+	c.Assert(newStats.SentOps, Equals, oldStats.SentOps)
+
+	// And they actually worked.
+	err = other.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+
+	other.DB("admin").Logout()
+
+	err = other.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+}
+
+func (s *S) TestAuthLoginCachingAcrossPoolWithLogout(c *C) {
+	// Now verify that logouts are properly flushed if they
+	// are not revalidated after leaving the pool.
+
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	// Add another user to test the logout case at the same time.
+	mydb := session.DB("mydb")
+	err = mydb.AddUser("myuser", "mypass", true)
+	c.Assert(err, IsNil)
+
+	err = mydb.Login("myuser", "mypass")
+	c.Assert(err, IsNil)
+
+	// Just some data to query later.
+	err = session.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+
+	// Give socket back to pool.
+	session.Refresh()
+
+	// Brand new session, should use socket from the pool.
+	other := session.New()
+	defer other.Close()
+
+	oldStats := mgo.GetStats()
+
+	err = other.DB("mydb").Login("myuser", "mypass")
+	c.Assert(err, IsNil)
+
+	// Login was cached, so no ops.
+	newStats := mgo.GetStats()
+	c.Assert(newStats.SentOps, Equals, oldStats.SentOps)
+
+	// Can't write, since root has been implicitly logged out
+	// when the collection went into the pool, and not revalidated.
+	err = other.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	c.Assert(err, Matches, "unauthorized")
+
+	// But can read due to the revalidated myuser login.
+	result := struct{N int}{}
+	err = other.DB("mydb").C("mycollection").Find(nil).One(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result.N, Equals, 1)
+}
+
+func (s *S) TestAuthEventual(c *C) {
+	// Eventual sessions don't keep sockets around, so they are
+	// an interesting test case.
+	session, err := mgo.Mongo("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	admindb := session.DB("admin")
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	err = session.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+
+	var wg sync.WaitGroup
+	wg.Add(20)
+
+	result := struct{N int}{}
+	for i := 0; i != 10; i++ {
+		go func() {
+			defer wg.Done()
+			err = session.DB("mydb").C("mycollection").Find(nil).One(&result)
+			c.Assert(err, IsNil)
+			c.Assert(result.N, Equals, 1)
+		}()
+	}
+
+	for i := 0; i != 10; i++ {
+		go func() {
+			defer wg.Done()
+			err = session.DB("mydb").C("mycollection").Insert(M{"n": 1})
+			c.Assert(err, IsNil)
+		}()
+	}
+
+	wg.Wait()
+}
+
+func (s *S) TestAuthURL(c *C) {
+	session, err := mgo.Mongo("mongodb://root:rapadura@localhost:40002/")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	err = session.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+}
+
+func (s *S) TestAuthURLWrongCredentials(c *C) {
+	session, err := mgo.Mongo("mongodb://root:wrong@localhost:40002/")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	err = session.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	c.Assert(err, Matches, "auth fails")
+}
+
+func (s *S) TestAuthURLWithNewSession(c *C) {
+	// When authentication is in the URL, the new session will
+	// actually carry it on as well, even if logged out explicitly.
+	session, err := mgo.Mongo("mongodb://root:rapadura@localhost:40002/")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	session.DB("admin").Logout()
+
+	// Do it twice to ensure it passes the needed data on.
+	session = session.New()
+	defer session.Close()
+	session = session.New()
+	defer session.Close()
+
+	err = session.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	c.Assert(err, IsNil)
 }

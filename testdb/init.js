@@ -1,4 +1,10 @@
 
+// Setup auth on db2.
+db2 = new Mongo("127.0.0.1:40002").getDB("admin")
+db2.addUser("root", "rapadura")
+db2.auth("root", "rapadura")
+db2.addUser("reader", "rapadura", true)
+
 //var settings = {heartbeatSleep: 0.05, heartbeatTimeout: 0.5}
 var settings = {}
 
