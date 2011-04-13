@@ -1322,6 +1322,9 @@ func (s *S) TestEnsureIndexGetIndexes(c *C) {
 	err = coll.EnsureIndexKey([]string{"a"})
 	c.Assert(err, IsNil)
 
+	err = coll.EnsureIndexKey([]string{"@c"})
+	c.Assert(err, IsNil)
+
 	indexes, err := coll.GetIndexes()
 
 	c.Assert(indexes[0].Name, Equals, "_id_")
@@ -1329,6 +1332,8 @@ func (s *S) TestEnsureIndexGetIndexes(c *C) {
 	c.Assert(indexes[1].Key, Equals, []string{"a"})
 	c.Assert(indexes[2].Name, Equals, "b_-1")
 	c.Assert(indexes[2].Key, Equals, []string{"-b"})
+	c.Assert(indexes[3].Name, Equals, "c_")
+	c.Assert(indexes[3].Key, Equals, []string{"@c"})
 }
 
 func (s *S) TestNewSession(c *C) {

@@ -682,14 +682,21 @@ func (collection Collection) GetIndexes() (indexes []Index, err os.Error) {
 func simpleIndexKey(realKey bson.D) (key []string) {
 	for i := range realKey {
 		field := realKey[i].Name
-		i, ok := realKey[i].Value.(int)
-		if !ok {
-			panic("Got non-int for index key order")
+		i, _ := realKey[i].Value.(int)
+		if i == 1 {
+			key = append(key, field)
+			continue
 		}
 		if i == -1 {
-			field = "-" + field
+			key = append(key, "-" + field)
+			continue
 		}
-		key = append(key, field)
+		s, _ := realKey[i].Value.(string)
+		if s == "2d" {
+			key = append(key, "@" + field)
+			continue
+		}
+		panic("Got unknown index key type for field " + field)
 	}
 	return
 }
