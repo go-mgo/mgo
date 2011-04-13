@@ -138,14 +138,16 @@ func (socket *mongoSocket) Acquired(server *mongoServer) os.Error {
 // Acquire the socket again, increasing its refcount.  The socket
 // will only be recycled when it's released as many times as it's
 // acquired.
-func (socket *mongoSocket) Acquire() {
+func (socket *mongoSocket) Acquire() (isMaster bool) {
 	socket.Lock()
 	if socket.references == 0 {
 		panic("socket.Acquire() with references == 0")
 	}
 	socket.references++
 	stats.socketRefs(+1)
+	isMaster = socket.server.IsMaster()
 	socket.Unlock()
+	return isMaster
 }
 
 // Decrement the socket refcount. The socket will be recycled once its

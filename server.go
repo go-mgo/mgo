@@ -42,12 +42,12 @@ import (
 
 type mongoServer struct {
 	sync.RWMutex
-	Master       bool
 	Addr         string
 	ResolvedAddr string
 	tcpaddr      *net.TCPAddr
 	sockets      []*mongoSocket
 	closed       bool
+	master       bool
 }
 
 
@@ -99,6 +99,7 @@ func (server *mongoServer) Connect() (*mongoSocket, os.Error) {
 	server.RLock()
 	addr := server.Addr
 	tcpaddr := server.tcpaddr
+	master := server.master
 	server.RUnlock()
 
 	log("Establishing new connection to ", addr, "...")
@@ -109,7 +110,7 @@ func (server *mongoServer) Connect() (*mongoSocket, os.Error) {
 	}
 	log("Connection to ", addr, " established.")
 
-	stats.conn(+1, server.Master)
+	stats.conn(+1, master)
 	return newSocket(server, conn), nil
 }
 
@@ -136,7 +137,7 @@ func (server *mongoServer) RecycleSocket(socket *mongoSocket) {
 
 func (server *mongoServer) Merge(other *mongoServer) {
 	server.Lock()
-	server.Master = other.Master
+	server.master = other.master
 	// Sockets of other are ignored for the moment. Merging them
 	// would mean a large number of sockets being cached on longer
 	// recovering situations.
@@ -146,8 +147,15 @@ func (server *mongoServer) Merge(other *mongoServer) {
 
 func (server *mongoServer) SetMaster(isMaster bool) {
 	server.Lock()
-	server.Master = isMaster
+	server.master = isMaster
 	server.Unlock()
+}
+
+func (server *mongoServer) IsMaster() bool {
+	server.RLock()
+	result := server.master
+	server.RUnlock()
+	return result
 }
 
 type mongoServerSlice []*mongoServer

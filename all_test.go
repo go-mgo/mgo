@@ -54,7 +54,7 @@ func (s *S) TestTopologySyncWithSingleMaster(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"a": 1, "b": 2})
 	c.Assert(err, IsNil)
 
@@ -78,7 +78,7 @@ func (s *S) TestTopologySyncWithSlaveSeed(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	coll.Insert(M{"a": 1, "b": 2})
 
 	result := struct{ Ok bool }{}
@@ -171,7 +171,7 @@ func (s *S) TestInsertFindOne(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	coll.Insert(M{"a": 1, "b": 2})
 
 	result := struct{ A, B int }{}
@@ -187,7 +187,7 @@ func (s *S) TestInsertFindOneMap(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	coll.Insert(M{"a": 1, "b": 2})
 	result := make(M)
 	err = coll.Find(M{"a": 1}).One(result)
@@ -201,7 +201,7 @@ func (s *S) TestSelect(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	coll.Insert(M{"a": 1, "b": 2})
 
 	result := struct{ A, B int }{}
@@ -217,7 +217,7 @@ func (s *S) TestUpdate(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
@@ -245,7 +245,7 @@ func (s *S) TestUpsert(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
@@ -274,7 +274,7 @@ func (s *S) TestUpdateAll(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
@@ -304,7 +304,7 @@ func (s *S) TestRemove(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
@@ -333,7 +333,7 @@ func (s *S) TestRemoveAll(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
@@ -361,7 +361,7 @@ func (s *S) TestCountCollection(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	ns := []int{40, 41, 42}
 	for _, n := range ns {
@@ -379,7 +379,7 @@ func (s *S) TestCountQuery(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	ns := []int{40, 41, 42}
 	for _, n := range ns {
@@ -397,7 +397,7 @@ func (s *S) TestCountQuerySorted(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	ns := []int{40, 41, 42}
 	for _, n := range ns {
@@ -415,7 +415,7 @@ func (s *S) TestFindOneNotFound(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	result := struct{ A, B int }{}
 	err = coll.Find(M{"a": 1}).One(&result)
@@ -429,7 +429,7 @@ func (s *S) TestFindNil(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	coll.Insert(M{"n": 1})
 
 	result := struct{ N int }{}
@@ -444,7 +444,7 @@ func (s *S) TestFindIter(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
@@ -505,7 +505,7 @@ func (s *S) TestFindIterTwiceWithSameQuery(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	for i := 40; i != 47; i++ {
 		coll.Insert(M{"n": i})
@@ -532,7 +532,7 @@ func (s *S) TestFindIterWithoutResults(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	coll.Insert(M{"n": 42})
 
 	iter, err := coll.Find(M{"n": 0}).Iter()
@@ -549,7 +549,7 @@ func (s *S) TestFindIterLimit(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
@@ -588,7 +588,7 @@ func (s *S) TestFindIterLimitWithBatch(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
@@ -640,10 +640,10 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	cresult := struct{ ErrMsg string }{}
 
 	db := session.DB("mydb")
-	err = db.Run(bson.D{{"create", "mycollection"}, {"capped", true}, {"size", 1024}}, &cresult)
+	err = db.Run(bson.D{{"create", "mycoll"}, {"capped", true}, {"size", 1024}}, &cresult)
 	c.Assert(err, IsNil)
 	c.Assert(cresult.ErrMsg, Equals, "")
-	coll := db.C("mycollection")
+	coll := db.C("mycoll")
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
@@ -682,7 +682,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 		time.Sleep(timeout*1e9 + 5e8)
 		session := session.New()
 		defer session.Close()
-		coll := session.DB("mydb").C("mycollection")
+		coll := session.DB("mydb").C("mycoll")
 		coll.Insert(M{"n": 47})
 	}()
 
@@ -720,10 +720,10 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	cresult := struct{ ErrMsg string }{}
 
 	db := session.DB("mydb")
-	err = db.Run(bson.D{{"create", "mycollection"}, {"capped", true}, {"size", 1024}}, &cresult)
+	err = db.Run(bson.D{{"create", "mycoll"}, {"capped", true}, {"size", 1024}}, &cresult)
 	c.Assert(err, IsNil)
 	c.Assert(cresult.ErrMsg, Equals, "")
-	coll := db.C("mycollection")
+	coll := db.C("mycoll")
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
@@ -761,7 +761,7 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 		time.Sleep(5e8)
 		session := session.New()
 		defer session.Close()
-		coll := session.DB("mydb").C("mycollection")
+		coll := session.DB("mydb").C("mycoll")
 		coll.Insert(M{"n": 47})
 	}()
 
@@ -803,10 +803,10 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	cresult := struct{ ErrMsg string }{}
 
 	db := session.DB("mydb")
-	err = db.Run(bson.D{{"create", "mycollection"}, {"capped", true}, {"size", 1024}}, &cresult)
+	err = db.Run(bson.D{{"create", "mycoll"}, {"capped", true}, {"size", 1024}}, &cresult)
 	c.Assert(err, IsNil)
 	c.Assert(cresult.ErrMsg, Equals, "")
-	coll := db.C("mycollection")
+	coll := db.C("mycoll")
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
@@ -840,7 +840,7 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 		time.Sleep(5e8)
 		session := session.New()
 		defer session.Close()
-		coll := session.DB("mydb").C("mycollection")
+		coll := session.DB("mydb").C("mycoll")
 		coll.Insert(M{"n": 47})
 	}()
 
@@ -891,7 +891,7 @@ func (s *S) TestSort(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	coll.Insert(M{"a": 1, "b": 1})
 	coll.Insert(M{"a": 2, "b": 2})
@@ -926,7 +926,7 @@ func (s *S) TestPrefetching(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	docs := make([]interface{}, 200)
 	for i := 0; i != 200; i++ {
@@ -987,7 +987,7 @@ func (s *S) TestSafeInsert(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	// Insert an element with a predefined key.
 	err = coll.Insert(M{"_id": 1})
@@ -1022,7 +1022,7 @@ func (s *S) TestSafeParameters(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	// Tweak the safety parameters to something unachievable.
 	session.Safe(4, 100, false)
@@ -1036,7 +1036,7 @@ func (s *S) TestQueryErrorOne(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	result := struct{ Err string "$err" }{}
 
@@ -1054,7 +1054,7 @@ func (s *S) TestQueryErrorNext(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 
 	result := struct{ Err string "$err" }{}
 
@@ -1070,13 +1070,250 @@ func (s *S) TestQueryErrorNext(c *C) {
 	c.Assert(result.Err, Matches, "Unsupported projection option: b")
 }
 
+func (s *S) TestEnsureIndex(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	index1 := mgo.Index{
+		Key: []string{"a"},
+		Background: true,
+	}
+
+	index2 := mgo.Index{
+		Key: []string{"a", "-b"},
+		Unique: true,
+		DropDups: true,
+	}
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.EnsureIndex(index1)
+	c.Assert(err, IsNil)
+
+	err = coll.EnsureIndex(index2)
+	c.Assert(err, IsNil)
+
+	sysidx := session.DB("mydb").C("system.indexes")
+
+	result1 := M{}
+	err = sysidx.Find(M{"name": "a_1"}).One(result1)
+	c.Assert(err, IsNil)
+
+	result2 := M{}
+	err = sysidx.Find(M{"name": "a_1_b_-1"}).One(result2)
+	c.Assert(err, IsNil)
+
+	expected1 := M{
+		"name": "a_1",
+		"key": bson.M{"a": int32(1)},
+		"ns": "mydb.mycoll",
+		"v": int32(0),
+		"background": true,
+	}
+	c.Assert(result1, Equals, expected1)
+
+	expected2 := M{
+		"name": "a_1_b_-1",
+		"key": bson.M{"a": int32(1), "b": int32(-1)},
+		"ns": "mydb.mycoll",
+		"unique": true,
+		"dropDups": true,
+		"v": int32(0),
+	}
+	c.Assert(result2, Equals, expected2)
+
+	// Ensure the index actually works for real.
+	err = coll.Insert(M{"a": 1, "b": 1})
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{"a": 1, "b": 1})
+	c.Assert(err, Matches, ".*duplicate key error.*")
+}
+
+func (s *S) TestEnsureIndexWithBadInfo(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.EnsureIndex(mgo.Index{})
+	c.Assert(err, Matches, "Invalid index key:.*")
+
+	err = coll.EnsureIndex(mgo.Index{Key: []string{""}})
+	c.Assert(err, Matches, "Invalid index key:.*")
+}
+
+func (s *S) TestEnsureIndexWithUnsafeSession(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	session.Unsafe()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"a": 1})
+	c.Assert(err, IsNil)
+
+	err = coll.Insert(M{"a": 1})
+	c.Assert(err, IsNil)
+
+	// Should fail since there are duplicated entries.
+	index := mgo.Index{
+		Key: []string{"a"},
+		Unique: true,
+	}
+
+	err = coll.EnsureIndex(index)
+	c.Assert(err, Matches, ".*duplicate key error.*")
+}
+
+func (s *S) TestEnsureIndexKey(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.EnsureIndexKey([]string{"a"})
+	c.Assert(err, IsNil)
+
+	err = coll.EnsureIndexKey([]string{"a", "-b"})
+	c.Assert(err, IsNil)
+
+	sysidx := session.DB("mydb").C("system.indexes")
+
+	result1 := M{}
+	err = sysidx.Find(M{"name": "a_1"}).One(result1)
+	c.Assert(err, IsNil)
+
+	result2 := M{}
+	err = sysidx.Find(M{"name": "a_1_b_-1"}).One(result2)
+	c.Assert(err, IsNil)
+
+	expected1 := M{
+		"name": "a_1",
+		"key": bson.M{"a": int32(1)},
+		"ns": "mydb.mycoll",
+		"v": int32(0),
+	}
+	c.Assert(result1, Equals, expected1)
+
+	expected2 := M{
+		"name": "a_1_b_-1",
+		"key": bson.M{"a": int32(1), "b": int32(-1)},
+		"ns": "mydb.mycoll",
+		"v": int32(0),
+	}
+	c.Assert(result2, Equals, expected2)
+}
+
+func (s *S) TestEnsureIndexDropIndex(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.EnsureIndexKey([]string{"a"})
+	c.Assert(err, IsNil)
+
+	err = coll.EnsureIndexKey([]string{"-b"})
+	c.Assert(err, IsNil)
+
+	err = coll.DropIndex([]string{"-b"})
+	c.Assert(err, IsNil)
+
+	sysidx := session.DB("mydb").C("system.indexes")
+	dummy := &struct{}{}
+
+	err = sysidx.Find(M{"name": "a_1"}).One(dummy)
+	c.Assert(err, IsNil)
+
+	err = sysidx.Find(M{"name": "b_1"}).One(dummy)
+	c.Assert(err, Equals, mgo.NotFound)
+
+	err = coll.DropIndex([]string{"a"})
+	c.Assert(err, IsNil)
+
+	err = sysidx.Find(M{"name": "a_1"}).One(dummy)
+	c.Assert(err, Equals, mgo.NotFound)
+
+	err = coll.DropIndex([]string{"a"})
+	c.Assert(err, Matches, "index not found")
+}
+
+func (s *S) TestEnsureIndexCaching(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.EnsureIndexKey([]string{"a"})
+	c.Assert(err, IsNil)
+
+	mgo.ResetStats()
+
+	// Second EnsureIndex should be cached and do nothing.
+	err = coll.EnsureIndexKey([]string{"a"})
+	c.Assert(err, IsNil)
+
+	stats := mgo.GetStats()
+	c.Assert(stats.SentOps, Equals, 0)
+
+	// Resetting the cache should make it contact the server again.
+	session.ResetIndexCache()
+
+	err = coll.EnsureIndexKey([]string{"a"})
+	c.Assert(err, IsNil)
+
+	stats = mgo.GetStats()
+	c.Assert(stats.SentOps, Equals, 2)
+
+	// Dropping the index should also drop the cached index key.
+	err = coll.DropIndex([]string{"a"})
+	c.Assert(err, IsNil)
+
+	mgo.ResetStats()
+
+	err = coll.EnsureIndexKey([]string{"a"})
+	c.Assert(err, IsNil)
+
+	stats = mgo.GetStats()
+	c.Assert(stats.SentOps, Equals, 2)
+}
+
+func (s *S) TestEnsureIndexGetIndexes(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.EnsureIndexKey([]string{"-b"})
+	c.Assert(err, IsNil)
+
+	err = coll.EnsureIndexKey([]string{"a"})
+	c.Assert(err, IsNil)
+
+	indexes, err := coll.GetIndexes()
+
+	c.Assert(indexes[0].Name, Equals, "_id_")
+	c.Assert(indexes[1].Name, Equals, "a_1")
+	c.Assert(indexes[1].Key, Equals, []string{"a"})
+	c.Assert(indexes[2].Name, Equals, "b_-1")
+	c.Assert(indexes[2].Key, Equals, []string{"-b"})
+}
+
 func (s *S) TestNewSession(c *C) {
 	session, err := mgo.Mongo("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
 	// Do a dummy operation to wait for connection.
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"_id": 1})
 	c.Assert(err, IsNil)
 
@@ -1088,7 +1325,7 @@ func (s *S) TestNewSession(c *C) {
 	session.Safe(0, 0, false)
 
 	// Clone was copied while session was unsafe, so no errors.
-	otherColl := other.DB("mydb").C("mycollection")
+	otherColl := other.DB("mydb").C("mycoll")
 	err = otherColl.Insert(M{"_id": 1})
 	c.Assert(err, IsNil)
 
@@ -1125,7 +1362,7 @@ func (s *S) TestCloneSession(c *C) {
 	defer session.Close()
 
 	// Do a dummy operation to wait for connection.
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"_id": 1})
 	c.Assert(err, IsNil)
 
@@ -1137,7 +1374,7 @@ func (s *S) TestCloneSession(c *C) {
 	session.Safe(0, 0, false)
 
 	// Clone was copied while session was unsafe, so no errors.
-	cloneColl := clone.DB("mydb").C("mycollection")
+	cloneColl := clone.DB("mydb").C("mycoll")
 	err = cloneColl.Insert(M{"_id": 1})
 	c.Assert(err, IsNil)
 
@@ -1182,13 +1419,15 @@ func (s *S) TestCloneSession(c *C) {
 	c.Assert(stats.ReceivedDocs, Equals, 1)
 }
 
-func (s *S) TestStrongSession(c *C) {
+func (s *S) TestSetModeStrong(c *C) {
 	session, err := mgo.Mongo("localhost:40012")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	session.Monotonic()
-	session.Strong()
+	session.SetMode(mgo.Monotonic, false)
+	session.SetMode(mgo.Strong, false)
+
+	c.Assert(session.GetMode(), Equals, mgo.Strong)
 
 	result := M{}
 	cmd := session.DB("admin").C("$cmd")
@@ -1196,24 +1435,37 @@ func (s *S) TestStrongSession(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result["ismaster"], Equals, true)
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"a": 1})
 	c.Assert(err, IsNil)
+
+	// Wait since the sync also uses sockets.
+	for len(session.GetLiveServers()) != 3 {
+		c.Log("Waiting for cluster sync to finish...")
+		time.Sleep(5e8)
+	}
 
 	stats := mgo.GetStats()
 	c.Assert(stats.MasterConns, Equals, 1)
 	c.Assert(stats.SlaveConns, Equals, 2)
 	c.Assert(stats.SocketsInUse, Equals, 1)
+
+	session.SetMode(mgo.Strong, true)
+
+	stats = mgo.GetStats()
+	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
-func (s *S) TestMonotonicSession(c *C) {
+func (s *S) TestSetModeMonotonic(c *C) {
 	// Must necessarily connect to a slave, otherwise the
 	// master connection will be available first.
 	session, err := mgo.Mongo("localhost:40012")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	session.Monotonic()
+	session.SetMode(mgo.Monotonic, false)
+
+	c.Assert(session.GetMode(), Equals, mgo.Monotonic)
 
 	result := M{}
 	cmd := session.DB("admin").C("$cmd")
@@ -1221,7 +1473,7 @@ func (s *S) TestMonotonicSession(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result["ismaster"], Equals, false)
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"a": 1})
 	c.Assert(err, IsNil)
 
@@ -1230,39 +1482,168 @@ func (s *S) TestMonotonicSession(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result["ismaster"], Equals, true)
 
+	// Wait since the sync also uses sockets.
+	for len(session.GetLiveServers()) != 3 {
+		c.Log("Waiting for cluster sync to finish...")
+		time.Sleep(5e8)
+	}
+
 	stats := mgo.GetStats()
 	c.Assert(stats.MasterConns, Equals, 1)
 	c.Assert(stats.SlaveConns, Equals, 2)
 	c.Assert(stats.SocketsInUse, Equals, 1)
+
+	session.SetMode(mgo.Monotonic, true)
+
+	stats = mgo.GetStats()
+	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
-func (s *S) TestEventualSession(c *C) {
+func (s *S) TestSetModeMonotonicAfterStrong(c *C) {
+	// Test that a strong session shifting to a monotonic
+	// one preserves the socket untouched.
+
+	session, err := mgo.Mongo("localhost:40012")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	// Insert something to force a connection to the master.
+	coll := session.DB("mydb").C("mycoll")
+	err = coll.Insert(M{"a": 1})
+	c.Assert(err, IsNil)
+
+	session.SetMode(mgo.Monotonic, false)
+
+	// Wait since the sync also uses sockets.
+	for len(session.GetLiveServers()) != 3 {
+		c.Log("Waiting for cluster sync to finish...")
+		time.Sleep(5e8)
+	}
+
+	// Master socket should still be reserved.
+	stats := mgo.GetStats()
+	c.Assert(stats.SocketsInUse, Equals, 1)
+
+	// Confirm it's the master even though it's Monotonic by now.
+	result := M{}
+	cmd := session.DB("admin").C("$cmd")
+	err = cmd.Find(M{"ismaster": 1}).One(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result["ismaster"], Equals, true)
+}
+
+func (s *S) TestSetModeStrongAfterMonotonic(c *C) {
+	// Test that shifting from Monotonic to Strong while
+	// using a slave socket will keep the socket reserved
+	// until the master socket is necessary, so that no
+	// switch over occurs unless it's actually necessary.
+
 	// Must necessarily connect to a slave, otherwise the
 	// master connection will be available first.
 	session, err := mgo.Mongo("localhost:40012")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	session.Eventual()
+	session.SetMode(mgo.Monotonic, false)
 
+	// Ensure we're talking to a slave, and reserve the socket.
 	result := M{}
-	cmd := session.DB("admin").C("$cmd")
-	err = cmd.Find(M{"ismaster": 1}).One(&result)
+	err = session.Run("ismaster", &result)
 	c.Assert(err, IsNil)
 	c.Assert(result["ismaster"], Equals, false)
 
-	coll := session.DB("mydb").C("mycollection")
+	// Switch to a Strong session.
+	session.SetMode(mgo.Strong, false)
+
+	// Wait since the sync also uses sockets.
+	for len(session.GetLiveServers()) != 3 {
+		c.Log("Waiting for cluster sync to finish...")
+		time.Sleep(5e8)
+	}
+
+	// Slave socket should still be reserved.
+	stats := mgo.GetStats()
+	c.Assert(stats.SocketsInUse, Equals, 1)
+
+	// But any operation will switch it to the master.
+	result = M{}
+	err = session.Run("ismaster", &result)
+	c.Assert(err, IsNil)
+	c.Assert(result["ismaster"], Equals, true)
+}
+
+func (s *S) TestSetModeEventual(c *C) {
+	// Must necessarily connect to a slave, otherwise the
+	// master connection will be available first.
+	session, err := mgo.Mongo("localhost:40012")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	session.SetMode(mgo.Eventual, false)
+
+	c.Assert(session.GetMode(), Equals, mgo.Eventual)
+
+	result := M{}
+	err = session.Run("ismaster", &result)
+	c.Assert(err, IsNil)
+	c.Assert(result["ismaster"], Equals, false)
+
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"a": 1})
 	c.Assert(err, IsNil)
 
 	result = M{}
-	err = cmd.Find(M{"ismaster": 1}).One(&result)
+	err = session.Run("ismaster", &result)
 	c.Assert(err, IsNil)
 	c.Assert(result["ismaster"], Equals, false)
+
+	// Wait since the sync also uses sockets.
+	for len(session.GetLiveServers()) != 3 {
+		c.Log("Waiting for cluster sync to finish...")
+		time.Sleep(5e8)
+	}
 
 	stats := mgo.GetStats()
 	c.Assert(stats.MasterConns, Equals, 1)
 	c.Assert(stats.SlaveConns, Equals, 2)
+	c.Assert(stats.SocketsInUse, Equals, 0)
+}
+
+func (s *S) TestSetModeEventualAfterStrong(c *C) {
+	// Test that a strong session shifting to an eventual
+	// one preserves the socket untouched.
+
+	session, err := mgo.Mongo("localhost:40012")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	// Insert something to force a connection to the master.
+	coll := session.DB("mydb").C("mycoll")
+	err = coll.Insert(M{"a": 1})
+	c.Assert(err, IsNil)
+
+	session.SetMode(mgo.Eventual, false)
+
+	// Wait since the sync also uses sockets.
+	for len(session.GetLiveServers()) != 3 {
+		c.Log("Waiting for cluster sync to finish...")
+		time.Sleep(5e8)
+	}
+
+	// Master socket should still be reserved.
+	stats := mgo.GetStats()
+	c.Assert(stats.SocketsInUse, Equals, 1)
+
+	// Confirm it's the master even though it's Eventual by now.
+	result := M{}
+	cmd := session.DB("admin").C("$cmd")
+	err = cmd.Find(M{"ismaster": 1}).One(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result["ismaster"], Equals, true)
+
+	session.SetMode(mgo.Eventual, true)
+
+	stats = mgo.GetStats()
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
@@ -1309,10 +1690,10 @@ func (s *S) TestPrimaryShutdownMonotonic(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	session.Monotonic()
+	session.SetMode(mgo.Monotonic, true)
 
 	// Insert something to force a switch to the master.
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"a": 1})
 	c.Assert(err, IsNil)
 
@@ -1379,7 +1760,7 @@ func (s *S) TestPrimaryShutdownMonotonicWithSlave(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	session.Monotonic()
+	session.SetMode(mgo.Monotonic, true)
 
 	// Check the address of the socket associated with the monotonic session.
 	c.Log("Running serverStatus and isMaster with monotonic session")
@@ -1404,7 +1785,7 @@ func (s *S) TestPrimaryShutdownMonotonicWithSlave(c *C) {
 
 	// If we try to insert something, it'll have to hold until the new
 	// master is available to move the connection, and work correctly.
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"a": 1})
 	c.Assert(err, IsNil)
 
@@ -1433,10 +1814,10 @@ func (s *S) TestPrimaryShutdownEventual(c *C) {
 	c.Assert(err, IsNil)
 	master := result.Host
 
-	session.Eventual()
+	session.SetMode(mgo.Eventual, true)
 
 	// Should connect to the master when needed.
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"a": 1})
 	c.Assert(err, IsNil)
 
@@ -1444,7 +1825,7 @@ func (s *S) TestPrimaryShutdownEventual(c *C) {
 	s.Stop(master)
 
 	// Should still work, with the new master now.
-	coll = session.DB("mydb").C("mycollection")
+	coll = session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"a": 1})
 	c.Assert(err, IsNil)
 
@@ -1533,7 +1914,7 @@ func (s *S) TestDirect(c *C) {
 	defer session.Close()
 
 	// We know that server is a slave.
-	session.Monotonic()
+	session.SetMode(mgo.Monotonic, true)
 
 	result := &struct{ Host string }{}
 	err = session.Run("serverStatus", result)
@@ -1548,7 +1929,7 @@ func (s *S) TestDirect(c *C) {
 	// We've got no master, so it'll timeout.
 	session.SetSyncTimeout(5e8)
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"test": 1})
 	c.Assert(err, Matches, "no reachable servers")
 
@@ -1574,7 +1955,7 @@ func getOpCounters(server string) (c *OpCounters, err os.Error) {
 		return nil, err
 	}
 	defer session.Close()
-	session.Monotonic()
+	session.SetMode(mgo.Monotonic, true)
 	result := struct{ OpCounters }{}
 	err = session.Run("serverStatus", &result)
 	return &result.OpCounters, err
@@ -1610,9 +1991,9 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 	c.Assert(err, IsNil)
 	defer mongos.Close()
 
-	mongos.Monotonic()
+	mongos.SetMode(mgo.Monotonic, true)
 
-	coll := mongos.DB("mydb").C("mycollection")
+	coll := mongos.DB("mydb").C("mycoll")
 	result := &struct{}{}
 	for i := 0; i != 5; i++ {
 		err := coll.Find(nil).One(result)
@@ -1653,7 +2034,7 @@ func (s *S) TestAuthLogin(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
 	c.Assert(err, Matches, "unauthorized")
 
@@ -1680,7 +2061,7 @@ func (s *S) TestAuthLoginLogout(c *C) {
 
 	admindb.Logout()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
 	c.Assert(err, Matches, "unauthorized")
 
@@ -1688,7 +2069,7 @@ func (s *S) TestAuthLoginLogout(c *C) {
 	session = session.Copy()
 	defer session.Close()
 
-	coll = session.DB("mydb").C("mycollection")
+	coll = session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
 	c.Assert(err, Matches, "unauthorized")
 }
@@ -1704,7 +2085,7 @@ func (s *S) TestAuthLoginLogoutAll(c *C) {
 
 	session.LogoutAll()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
 	c.Assert(err, Matches, "unauthorized")
 
@@ -1712,7 +2093,7 @@ func (s *S) TestAuthLoginLogoutAll(c *C) {
 	session = session.Copy()
 	defer session.Close()
 
-	coll = session.DB("mydb").C("mycollection")
+	coll = session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
 	c.Assert(err, Matches, "unauthorized")
 }
@@ -1737,7 +2118,7 @@ func (s *S) TestAuthAddUser(c *C) {
 
 	admindb.Logout()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
 	c.Assert(err, Matches, "unauthorized")
 
@@ -1771,7 +2152,7 @@ func (s *S) TestAuthAddUserReplaces(c *C) {
 	c.Assert(err, IsNil)
 
 	// ReadOnly flag was changed too.
-	err = mydb.C("mycollection").Insert(M{"n": 1})
+	err = mydb.C("mycoll").Insert(M{"n": 1})
 	c.Assert(err, Matches, "unauthorized")
 }
 
@@ -1840,7 +2221,7 @@ func (s *S) TestAuthLoginSwitchUser(c *C) {
 	err = admindb.Login("root", "rapadura")
 	c.Assert(err, IsNil)
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
 	c.Assert(err, IsNil)
 
@@ -1883,7 +2264,7 @@ func (s *S) TestAuthLoginChangePassword(c *C) {
 	admindb.Logout()
 
 	// The second login must be in effect, which means read-only.
-	err = mydb.C("mycollection").Insert(M{"n": 1})
+	err = mydb.C("mycoll").Insert(M{"n": 1})
 	c.Assert(err, Matches, "unauthorized")
 }
 
@@ -1898,7 +2279,7 @@ func (s *S) TestAuthLoginCachingWithSessionRefresh(c *C) {
 
 	session.Refresh()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
 	c.Assert(err, IsNil)
 }
@@ -1915,7 +2296,7 @@ func (s *S) TestAuthLoginCachingWithSessionCopy(c *C) {
 	session = session.Copy()
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
 	c.Assert(err, IsNil)
 }
@@ -1932,7 +2313,7 @@ func (s *S) TestAuthLoginCachingWithSessionClone(c *C) {
 	session = session.Clone()
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
 	c.Assert(err, IsNil)
 }
@@ -1949,7 +2330,7 @@ func (s *S) TestAuthLoginCachingWithNewSession(c *C) {
 	session = session.New()
 	defer session.Close()
 
-	coll := session.DB("mydb").C("mycollection")
+	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
 	c.Assert(err, Matches, "unauthorized")
 }
@@ -1996,12 +2377,12 @@ func (s *S) TestAuthLoginCachingAcrossPool(c *C) {
 	c.Assert(newStats.SentOps, Equals, oldStats.SentOps)
 
 	// And they actually worked.
-	err = other.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	err = other.DB("mydb").C("mycoll").Insert(M{"n": 1})
 	c.Assert(err, IsNil)
 
 	other.DB("admin").Logout()
 
-	err = other.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	err = other.DB("mydb").C("mycoll").Insert(M{"n": 1})
 	c.Assert(err, IsNil)
 }
 
@@ -2026,7 +2407,7 @@ func (s *S) TestAuthLoginCachingAcrossPoolWithLogout(c *C) {
 	c.Assert(err, IsNil)
 
 	// Just some data to query later.
-	err = session.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	err = session.DB("mydb").C("mycoll").Insert(M{"n": 1})
 	c.Assert(err, IsNil)
 
 	// Give socket back to pool.
@@ -2047,12 +2428,12 @@ func (s *S) TestAuthLoginCachingAcrossPoolWithLogout(c *C) {
 
 	// Can't write, since root has been implicitly logged out
 	// when the collection went into the pool, and not revalidated.
-	err = other.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	err = other.DB("mydb").C("mycoll").Insert(M{"n": 1})
 	c.Assert(err, Matches, "unauthorized")
 
 	// But can read due to the revalidated myuser login.
 	result := struct{N int}{}
-	err = other.DB("mydb").C("mycollection").Find(nil).One(&result)
+	err = other.DB("mydb").C("mycoll").Find(nil).One(&result)
 	c.Assert(err, IsNil)
 	c.Assert(result.N, Equals, 1)
 }
@@ -2068,7 +2449,7 @@ func (s *S) TestAuthEventual(c *C) {
 	err = admindb.Login("root", "rapadura")
 	c.Assert(err, IsNil)
 
-	err = session.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	err = session.DB("mydb").C("mycoll").Insert(M{"n": 1})
 	c.Assert(err, IsNil)
 
 	var wg sync.WaitGroup
@@ -2078,7 +2459,7 @@ func (s *S) TestAuthEventual(c *C) {
 	for i := 0; i != 10; i++ {
 		go func() {
 			defer wg.Done()
-			err = session.DB("mydb").C("mycollection").Find(nil).One(&result)
+			err = session.DB("mydb").C("mycoll").Find(nil).One(&result)
 			c.Assert(err, IsNil)
 			c.Assert(result.N, Equals, 1)
 		}()
@@ -2087,7 +2468,7 @@ func (s *S) TestAuthEventual(c *C) {
 	for i := 0; i != 10; i++ {
 		go func() {
 			defer wg.Done()
-			err = session.DB("mydb").C("mycollection").Insert(M{"n": 1})
+			err = session.DB("mydb").C("mycoll").Insert(M{"n": 1})
 			c.Assert(err, IsNil)
 		}()
 	}
@@ -2100,7 +2481,7 @@ func (s *S) TestAuthURL(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	err = session.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	err = session.DB("mydb").C("mycoll").Insert(M{"n": 1})
 	c.Assert(err, IsNil)
 }
 
@@ -2109,7 +2490,7 @@ func (s *S) TestAuthURLWrongCredentials(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	err = session.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	err = session.DB("mydb").C("mycoll").Insert(M{"n": 1})
 	c.Assert(err, Matches, "auth fails")
 }
 
@@ -2128,6 +2509,6 @@ func (s *S) TestAuthURLWithNewSession(c *C) {
 	session = session.New()
 	defer session.Close()
 
-	err = session.DB("mydb").C("mycollection").Insert(M{"n": 1})
+	err = session.DB("mydb").C("mycoll").Insert(M{"n": 1})
 	c.Assert(err, IsNil)
 }

@@ -55,6 +55,7 @@ type mongoCluster struct {
 	references   int
 	syncing      bool
 	direct       bool
+	cachedIndex  map[string]bool
 }
 
 func newCluster(userSeeds []string, direct bool) *mongoCluster {
@@ -85,6 +86,15 @@ func (cluster *mongoCluster) Release() {
 		}
 	}
 	cluster.Unlock()
+}
+
+func (cluster *mongoCluster) GetLiveServers() (servers []string) {
+	cluster.RLock()
+	for _, serv := range cluster.servers.Slice() {
+		servers = append(servers, serv.Addr)
+	}
+	cluster.RUnlock()
+	return servers
 }
 
 func (cluster *mongoCluster) removeServer(server *mongoServer) {
@@ -123,7 +133,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 		return
 	}
 
-	// Monotonic will let us talk to a slave, while holding the socket.
+	// Monotonic will let us talk to a slave and still hold the socket.
 	session := newSession(Monotonic, cluster, socket)
 	defer session.Close()
 
@@ -139,10 +149,10 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 
 	if result.IsMaster {
 		log("[sync] ", addr, " is a master.")
-		// Made an incorrect connection above, so fix stats.
-		stats.conn(-1, server.Master)
+		// Made an incorrect assumption above, so fix stats.
+		stats.conn(-1, false)
 		server.SetMaster(true)
-		stats.conn(+1, server.Master)
+		stats.conn(+1, true)
 	} else if result.Secondary {
 		log("[sync] ", addr, " is a slave.")
 	} else {
@@ -170,9 +180,10 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 func (cluster *mongoCluster) mergeServer(server *mongoServer) {
 	cluster.Lock()
 	previous := cluster.servers.Search(server)
+	isMaster := server.IsMaster()
 	if previous == nil {
 		cluster.servers.Add(server)
-		if server.Master {
+		if isMaster {
 			log("[sync] Adding ", server.Addr, " to cluster as a master.")
 			cluster.masters.Add(server)
 		} else {
@@ -180,15 +191,15 @@ func (cluster *mongoCluster) mergeServer(server *mongoServer) {
 			cluster.slaves.Add(server)
 		}
 	} else {
-		if server.Master != previous.Master {
-			if previous.Master {
-				log("[sync] Server ", server.Addr, " is now a slave.")
-				cluster.masters.Remove(previous)
-				cluster.slaves.Add(previous)
-			} else {
+		if isMaster != previous.IsMaster() {
+			if isMaster {
 				log("[sync] Server ", server.Addr, " is now a master.")
 				cluster.slaves.Remove(previous)
 				cluster.masters.Add(previous)
+			} else {
+				log("[sync] Server ", server.Addr, " is now a slave.")
+				cluster.masters.Remove(previous)
+				cluster.slaves.Add(previous)
 			}
 		}
 		previous.Merge(server)
@@ -394,4 +405,28 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout int64) (s *
 		return s, nil
 	}
 	panic("unreached")
+}
+
+func (cluster *mongoCluster) CacheIndex(cacheKey string, exists bool) {
+	cluster.Lock()
+	if cluster.cachedIndex == nil {
+		cluster.cachedIndex = make(map[string]bool)
+	}
+	cluster.cachedIndex[cacheKey] = exists, exists
+	cluster.Unlock()
+}
+
+func (cluster *mongoCluster) HasCachedIndex(cacheKey string) (result bool) {
+	cluster.RLock()
+	if cluster.cachedIndex != nil {
+		result = cluster.cachedIndex[cacheKey]
+	}
+	cluster.RUnlock()
+	return
+}
+
+func (cluster *mongoCluster) ResetIndexCache() {
+	cluster.Lock()
+	cluster.cachedIndex = make(map[string]bool)
+	cluster.Unlock()
 }

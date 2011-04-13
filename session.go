@@ -42,23 +42,29 @@ import (
 	"time"
 )
 
+type mode int
+
 const (
-	Strong = iota
-	Monotonic
-	Eventual
+	Eventual mode = 0
+	Monotonic mode = 1
+	Strong mode = 2
 )
 
+// When changing the Session type, check if newSession and copySession
+// need to be updated too.
+
 type Session struct {
-	m           sync.RWMutex
-	cluster     *mongoCluster
-	socket      *mongoSocket
-	queryConfig query
-	safe        *queryOp
-	syncTimeout int64
-	consistency int
-	urlauth     *authInfo
-	auth        []authInfo
-	slaveOk     bool
+	m              sync.RWMutex
+	cluster        *mongoCluster
+	socket         *mongoSocket
+	socketIsMaster bool
+	slaveOk        bool
+	consistency    mode
+	queryConfig    query
+	safe           *queryOp
+	syncTimeout    int64
+	urlauth        *authInfo
+	auth           []authInfo
 }
 
 type Database struct {
@@ -67,8 +73,9 @@ type Database struct {
 }
 
 type Collection struct {
-	Session *Session
-	Name    string
+	DB	Database
+	Name    string  // "collection"
+	FullName string // "db.collection"
 }
 
 type Query struct {
@@ -109,9 +116,6 @@ var TailTimeout = os.ErrorString("Tail timed out")
 
 const defaultPrefetch = 0.25
 
-
-// ---------------------------------------------------------------------------
-// Entry point function to the cluster/session/server/socket hierarchy.
 
 // Mongo establishes a new session to the cluster identified by the given seed
 // server(s).  The session will enable communication with all of the servers in
@@ -243,8 +247,58 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 }
 
 
-// ---------------------------------------------------------------------------
-// Public session methods.
+func newSession(consistency mode, cluster *mongoCluster, socket *mongoSocket) (session *Session) {
+	cluster.Acquire()
+	session = &Session{cluster: cluster}
+	session.SetMode(consistency, true)
+	session.Safe(0, 0, false)
+	session.setSocket(socket)
+	session.queryConfig.prefetch = defaultPrefetch
+	runtime.SetFinalizer(session, finalizeSession)
+	return session
+}
+
+func copySession(session *Session, keepAuth bool) (s *Session) {
+	session.cluster.Acquire()
+	if session.socket != nil {
+		session.socket.Acquire()
+	}
+	var auth []authInfo
+	if keepAuth {
+		auth = make([]authInfo, len(session.auth))
+		copy(auth, session.auth)
+	} else if session.urlauth != nil {
+		auth = []authInfo{*session.urlauth}
+	}
+	// Copy everything but the mutex.
+	s = &Session{
+		cluster:        session.cluster,
+		socket:         session.socket,
+		socketIsMaster: session.socketIsMaster,
+		slaveOk:        session.slaveOk,
+		consistency:    session.consistency,
+		queryConfig:    session.queryConfig,
+		safe:           session.safe,
+		syncTimeout:    session.syncTimeout,
+		urlauth:        session.urlauth,
+		auth:		auth,
+	}
+	runtime.SetFinalizer(s, finalizeSession)
+	return s
+}
+
+func finalizeSession(session *Session) {
+	session.Close()
+}
+
+// GetLiveServers returns a list of server addresses which are
+// currently known to be alive.
+func (session *Session) GetLiveServers() (addrs []string) {
+	session.m.RLock()
+	addrs = session.cluster.GetLiveServers()
+	session.m.RUnlock()
+	return addrs
+}
 
 // DB returns a database object, which allows further accessing any
 // collections within it, or performing any database-level operations.
@@ -259,7 +313,7 @@ func (session *Session) DB(name string) Database {
 // object is a very lightweight operation, and involves no network
 // communication.
 func (database Database) C(name string) Collection {
-	return Collection{database.Session, database.Name + "." + name}
+	return Collection{database, name, database.Name + "." + name}
 }
 
 // Run issues the provided command against the database and unmarshals
@@ -354,6 +408,266 @@ func (session *Session) LogoutAll() {
 	session.m.Unlock()
 }
 
+// AddUser creates or updates the authentication credentials of user within
+// the database.
+func (database Database) AddUser(user, pass string, readOnly bool) os.Error {
+	psum := md5.New()
+	psum.Write([]byte(user + ":mongo:" + pass))
+	digest := hex.EncodeToString(psum.Sum())
+	c := database.C("system.users")
+	return c.Upsert(bson.M{"user": user}, bson.M{"$set": bson.M{"user": user, "pwd": digest, "readOnly": readOnly}})
+}
+
+// RemoveUser removes the authentication credentials of user from the database.
+func (database Database) RemoveUser(user string) os.Error {
+	c := database.C("system.users")
+	return c.Remove(bson.M{"user": user})
+}
+
+type indexSpec struct {
+	Name, NS string
+	Key bson.D
+	Unique bool "/c"
+	DropDups bool "dropDups/c"
+	Background bool "/c"
+	Sparse bool "/c"
+}
+
+type Index struct {
+	Key []string    // Index key fields; prefix name with dash (-) for descending order
+	Unique bool     // Prevent two documents from having the same index key
+	DropDups bool   // Drop documents with the same index key as a previously indexed one
+	Background bool // Build index in background and return immediately
+	Sparse bool     // Only index documents containing the Key fields
+
+	Name string     // Index name, computed by EnsureIndex
+}
+
+func parseIndexKey(key []string) (name string, realKey bson.D, err os.Error) {
+	for _, field := range key {
+		if name != "" {
+			name += "_"
+		}
+		order := 1
+		if field != "" && (field[0] == '+' || field[0] == '-') {
+			if field[0] == '-' {
+				order = -1
+			}
+			field = field[1:]
+		}
+		if field == "" {
+			return "", nil, os.ErrorString("Invalid index key: empty field name")
+		}
+		if order == 1 {
+			name += field + "_1"
+		} else {
+			name += field + "_-1"
+		}
+		realKey = append(realKey, bson.DocElem{field, order})
+	}
+	if name == "" {
+		return "", nil, os.ErrorString("Invalid index key: no fields provided")
+	}
+	return
+}
+
+// EnsureIndexKey ensures an index with the given key exists, creating it
+// if necessary.
+//
+// This example:
+//
+//     err := collection.EnsureIndexKey([]string{"a", "b"})
+//
+// Is equivalent to:
+//
+//     err := collection.EnsureIndex(mgo.Index{Key: []string{"a", "b"}})
+//
+// See the EnsureIndex method for more details.
+func (collection Collection) EnsureIndexKey(key []string) os.Error {
+    return collection.EnsureIndex(Index{Key: key})
+}
+
+// EnsureIndex ensures an index with the given key exists, creating it with
+// the provided parameters if necessary.
+//
+// For example:
+//
+//     index := Index{
+//         Key: []string{"lastname", "firstname"},
+//         Unique: true,
+//         DropDups: true,
+//         Background: true,
+//         Sparse: true,
+//     }
+//     err := collection.EnsureIndex(index)
+//
+// The Key value determines which fields compose the index. The index ordering
+// will be ascending by default.  To obtain an index with a descending order,
+// the field name should be prefixed by a dash (e.g. []string{"-time"}).
+//
+// If Unique is true, the index must necessarily contain only a single
+// document per Key.  With DropDups set to true, documents with the same key
+// as a previously indexed one will be dropped rather than an error returned.
+//
+// If Background is true, the operation will return immediately and will
+// continue in background.  The index won't be used for queries until the build
+// is complete.
+//
+// If Sparse is true, only documents containing the indexed field will be
+// included in the results.  When using a sparse index for sorting, only indexed
+// documents will be returned.
+//
+// Once EnsureIndex returns successfully, following requests for the same index
+// will not contact the server unless Collection.DropIndex is used to drop the
+// same index, or Session.ResetIndexCache is called.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Indexes
+//     http://www.mongodb.org/display/DOCS/Indexing+Advice+and+FAQ
+//     http://www.mongodb.org/display/DOCS/Indexing+as+a+Background+Operation
+//     http://www.mongodb.org/display/DOCS/Geospatial+Indexing
+//     http://www.mongodb.org/display/DOCS/Multikeys
+//
+func (collection Collection) EnsureIndex(index Index) os.Error {
+	name, realKey, err := parseIndexKey(index.Key)
+	if err != nil {
+		return err
+	}
+
+	db := collection.DB
+	session := db.Session
+	cacheKey := collection.FullName + "\x00" +  name
+	if session.cluster.HasCachedIndex(cacheKey) {
+		return nil
+	}
+
+	spec := indexSpec{
+		Name: name,
+		NS: collection.FullName,
+		Key: realKey,
+		Unique: index.Unique,
+		DropDups: index.DropDups,
+		Background: index.Background,
+		Sparse: index.Sparse,
+	}
+
+	session = session.Clone()
+	defer session.Close()
+	session.SetMode(Strong, false)
+	if session.safe == nil {
+		session.Safe(0, 0, false)
+	}
+
+	db.Session = session
+	err = db.C("system.indexes").Insert(&spec)
+	if err == nil {
+		session.cluster.CacheIndex(cacheKey, true)
+	}
+	return err
+}
+
+// DropIndex removes the index with key from the collection.
+//
+// The key value determines which fields compose the index. The index ordering
+// will be ascending by default.  To obtain an index with a descending order,
+// the field name should be prefixed by a dash (e.g. []string{"-time"}).
+//
+// For example:
+//
+//     err := collection.DropIndex([]string{"lastname", "firstname"})
+//
+// See the EnsureIndex method for more details on indexes.
+func (collection Collection) DropIndex(key []string) os.Error {
+	name, _, err := parseIndexKey(key)
+	if err != nil {
+		return err
+	}
+
+	db := collection.DB
+	session := db.Session
+	cacheKey := collection.FullName + "\x00" +  name
+	session.cluster.CacheIndex(cacheKey, false)
+
+	session = session.Clone()
+	defer session.Close()
+	session.SetMode(Strong, false)
+
+	db.Session = session
+	defer db.Session.Close()
+	result := struct{ ErrMsg string; Ok bool }{}
+	err = db.Run(bson.D{{"dropIndexes", collection.Name}, {"index", name}}, &result)
+	if err != nil {
+		return err
+	}
+	if !result.Ok {
+		return os.ErrorString(result.ErrMsg)
+	}
+	return nil
+}
+
+// GetIndexes returns a list of all indexes for the collection.
+//
+// For example, this snippet would drop all available indexes:
+//
+//   indexes, err := collection.GetIndexes()
+//   if err != nil {
+//       panic(err.String())
+//   }
+//   for _, index := range indexes {
+//       err = collection.DropIndex(index.Key)
+//       if err != nil {
+//           panic(err.String())
+//       }
+//   }
+//
+// See the EnsureIndex method for more details on indexes.
+func (collection Collection) GetIndexes() (indexes []Index, err os.Error) {
+	query := collection.DB.C("system.indexes").Find(bson.M{"ns": collection.FullName})
+	iter, err := query.Sort(bson.D{{"name", 1}}).Iter()
+	for {
+		var spec indexSpec
+		err = iter.Next(&spec)
+		if err != nil {
+			break
+		}
+		index := Index{
+			Name: spec.Name,
+			Key: simpleIndexKey(spec.Key),
+			Unique: spec.Unique,
+			DropDups: spec.DropDups,
+			Background: spec.Background,
+			Sparse: spec.Sparse,
+		}
+		indexes = append(indexes, index)
+	}
+	if err == NotFound {
+		err = nil
+	}
+	return
+}
+
+func simpleIndexKey(realKey bson.D) (key []string) {
+	for i := range realKey {
+		field := realKey[i].Name
+		i, ok := realKey[i].Value.(int32)
+		if !ok {
+			panic("Got non-int32 for index key order")
+		}
+		if i == -1 {
+			field = "-" + field
+		}
+		key = append(key, field)
+	}
+	return
+}
+
+// ResetIndexCache() clears the cache of previously ensured indexes.
+// Following requests to EnsureIndex will contact the server.
+func (session *Session) ResetIndexCache() {
+	session.cluster.ResetIndexCache()
+}
+
 // New creates a new session with the same parameters as the original
 // session, including consistency, batch size, prefetching, safety mode,
 // etc. The returned session will use sockets from the poll, so there's
@@ -368,19 +682,9 @@ func (session *Session) LogoutAll() {
 //
 func (session *Session) New() *Session {
 	session.m.Lock()
-	s := &Session{
-		cluster:     session.cluster,
-		safe:        session.safe,
-		queryConfig: session.queryConfig,
-		consistency: session.consistency,
-		slaveOk:     session.consistency != Strong,
-		urlauth:     session.urlauth,
-	}
-	if s.urlauth != nil {
-		s.auth = []authInfo{*s.urlauth}
-	}
-	session.cluster.Acquire()
+	s := copySession(session, false)
 	session.m.Unlock()
+	s.Refresh()
 	return s
 }
 
@@ -388,17 +692,9 @@ func (session *Session) New() *Session {
 // information from the original session.
 func (session *Session) Copy() *Session {
 	session.m.Lock()
-	s := &Session{
-		cluster:     session.cluster,
-		safe:        session.safe,
-		queryConfig: session.queryConfig,
-		consistency: session.consistency,
-		slaveOk:     session.consistency != Strong,
-		auth:        make([]authInfo, len(session.auth)),
-	}
-	copy(s.auth, session.auth)
-	session.cluster.Acquire()
+	s := copySession(session, true)
 	session.m.Unlock()
+	s.Refresh()
 	return s
 }
 
@@ -410,15 +706,7 @@ func (session *Session) Copy() *Session {
 // may cause other goroutines using the original session to wait.
 func (session *Session) Clone() *Session {
 	session.m.Lock()
-	s := &Session{
-		consistency: session.consistency,
-		cluster:     session.cluster,
-		safe:        session.safe,
-		queryConfig: session.queryConfig,
-		slaveOk:     session.slaveOk,
-	}
-	session.cluster.Acquire()
-	s.setSocket(session.socket)
+	s := copySession(session, true)
 	session.m.Unlock()
 	return s
 }
@@ -438,67 +726,72 @@ func (session *Session) Close() {
 // Refresh puts back any reserved sockets in use and restarts the consistency
 // guarantees according to the current consistency setting for the session.
 func (session *Session) Refresh() {
-	session.refresh(-1)
-}
-
-// Strong changes the session to strong consistency mode.
-//
-// In this mode, reads and writes will always be made to the master server
-// using a unique connection so that reads and writes are fully consistent,
-// ordered, and observing the most up-to-date data.
-//
-// This offers the least benefits in terms of distributing load, but the
-// most guarantees.  See also Monotonic and Eventual.
-func (session *Session) Strong() {
-	session.refresh(Strong)
-}
-
-// Monotonic changes the session to monotonic consistency mode.
-//
-// In this mode, reads may not be entirely up-to-date, but they will always
-// see the history of changes moving forward, the data read will be consistent
-// across sequential queries in the same session, and modifications made within
-// the session will be observed in following queries (read-your-writes).
-//
-// In practice, this consistency level is obtained by performing initial reads
-// against a unique connection to an arbitrary slave, if one is available, and
-// once the first write happens, the session connection is switched over
-// to the master server.
-//
-// This manages to distribute some of the reading load with slaves, while
-// maintaining some useful guarantees.  See also Strong and Eventual.
-func (session *Session) Monotonic() {
-	session.refresh(Monotonic)
-}
-
-// Eventual changes the session to eventual consistency mode.
-//
-// In this mode, reads will be made to any slave in the cluster, if one is
-// available, and sequential reads will not necessarily be made with the same
-// connection.  This means that data may be observed out of order.
-//
-// Writes will of course be issued to the master, but independent writes in
-// the same session may also be made with independent connections, so there
-// are also no guarantees in terms of write ordering, let alone reading your
-// own writes.
-//
-// This mode is the fastest and most resource-friendly, but is also the one
-// offering the least guarantees about ordering of the data read and written.
-// See also Strong and Monotonic.
-func (session *Session) Eventual() {
-	session.refresh(Eventual)
-}
-
-func (session *Session) refresh(consistency int) {
 	session.m.Lock()
-	if consistency == -1 {
-		consistency = session.consistency
-	} else {
-		session.consistency = consistency
-	}
-	session.slaveOk = consistency != Strong
+	session.slaveOk = session.consistency != Strong
 	session.setSocket(nil)
 	session.m.Unlock()
+}
+
+// SetMode changes the consistency mode for the session.
+//
+// In the Strong consistency mode reads and writes will always be made to
+// the master server using a unique connection so that reads and writes are
+// fully consistent, ordered, and observing the most up-to-date data.
+// This offers the least benefits in terms of distributing load, but the
+// most guarantees.  See also Monotonic and Eventual.
+//
+// In the Monotonic consistency mode reads may not be entirely up-to-date,
+// but they will always see the history of changes moving forward, the data
+// read will be consistent across sequential queries in the same session,
+// and modifications made within the session will be observed in following
+// queries (read-your-writes).
+//
+// In practice, the Monotonic mode is obtained by performing initial reads
+// against a unique connection to an arbitrary slave, if one is available,
+// and once the first write happens, the session connection is switched over
+// to the master server.  This manages to distribute some of the reading
+// load with slaves, while maintaining some useful guarantees.
+//
+// In the Eventual consistency mode reads will be made to any slave in the
+// cluster, if one is available, and sequential reads will not necessarily
+// be made with the same connection.  This means that data may be observed
+// out of order.  Writes will of course be issued to the master, but
+// independent writes in the same Eventual session may also be made with
+// independent connections, so there are also no guarantees in terms of
+// write ordering (no read-your-writes guarantees either).
+//
+// The Eventual mode is the fastest and most resource-friendly, but is
+// also the one offering the least guarantees about ordering of the data
+// read and written.
+//
+// If refresh is true, in addition to ensuring the session is in the given
+// consistency mode, the consistency guarantees will also be reset (e.g.
+// a Monotonic session will be allowed to read from slaves again).  This is
+// equivalent to calling the Refresh function.
+//
+// Shifting between Monotonic and Strong modes will keep a previously
+// reserved connection for the session unless refresh is true or the
+// connection is unsuitable (to a slave server in a Strong session).
+func (session *Session) SetMode(consistency mode, refresh bool) {
+	session.m.Lock()
+	debugf("Session %p: setting mode %d with refresh=%v (socket=%p)", session, consistency, refresh, session.socket)
+	session.consistency = consistency
+	if refresh {
+		session.slaveOk = session.consistency != Strong
+		session.setSocket(nil)
+	} else if session.consistency == Strong {
+		session.slaveOk = false
+	} else if session.socket == nil {
+		session.slaveOk = true
+	}
+	session.m.Unlock()
+}
+
+func (session *Session) GetMode() mode {
+	session.m.RLock()
+	mode := session.consistency
+	session.m.RUnlock()
+	return mode
 }
 
 // SetSyncTimeout sets the amount of time an operation with this session
@@ -543,22 +836,36 @@ func (session *Session) Prefetch(p float64) {
 	session.m.Unlock()
 }
 
-// Unsafe puts the session in unsafe mode. Writes will become fire-and-forget,
-// without error checking.  The unsafe mode is faster since operations won't
-// hold on waiting for a confirmation.  It's also unsafe, though! ;-)  In
-// addition to disabling it entirely, the parameters of safety can also be
-// tweaked via the Safe() method.  It's also possible to modify the safety
-// settings on a per-query basis, using the Safe and Unsafe methods of Query.
+// Unsafe puts the session in unsafe mode.
+//
+// In unsafe mode, writes will become fire-and-forget, without error checking.
+// The unsafe mode is faster since operations won't hold on waiting for a
+// confirmation.  It's also unsafe, though! ;-)  In addition to disabling it
+// entirely, the parameters of safety can also be tweaked via the Safe()
+// method.
 func (session *Session) Unsafe() {
 	session.m.Lock()
 	session.safe = nil
 	session.m.Unlock()
 }
 
-// Safe puts the session into safe mode.  Once in safe mode, any changing
-// query (insert, update, ...) will be followed by a getLastError command
-// with the specified parameters, to ensure the request was correctly
-// processed.
+// Safe puts the session into safe mode.
+//
+// Once in safe mode, any changing query (insert, update, ...) will be
+// followed by a getLastError command with the specified parameters, to
+// ensure the request was correctly processed.
+//
+// The w parameter determines how many servers should confirm a write
+// before the operation is considered successful.  If set to 0 or 1, the
+// command will return as soon as the master is done with the request.
+// If wtimeout is greater than zero, it determines how many milliseconds
+// to wait for the w servers to respond before returning an error.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Last+Error+Commands
+//     http://www.mongodb.org/display/DOCS/Verifying+Propagation+of+Writes+with+getLastError
+//
 func (session *Session) Safe(w, wtimeout int, fsync bool) {
 	session.m.Lock()
 	session.safe = &queryOp{
@@ -645,10 +952,12 @@ func (collection Collection) Find(query interface{}) *Query {
 	if query == nil {
 		query = bson.M{}
 	}
-	session := collection.Session
+	session := collection.DB.Session
+	session.m.RLock()
 	q := &Query{session: session, query: session.queryConfig}
+	session.m.RUnlock()
 	q.op.query = query
-	q.op.collection = collection.Name
+	q.op.collection = collection.FullName
 	return q
 }
 
@@ -677,7 +986,7 @@ func (err *QueryError) String() string {
 // happens while inserting the provided documents, the returned error will
 // be of type *LastError.
 func (collection Collection) Insert(docs ...interface{}) os.Error {
-	return collection.Session.writeQuery(&insertOp{collection.Name, docs})
+	return collection.DB.Session.writeQuery(&insertOp{collection.FullName, docs})
 }
 
 // Update finds a single document matching the provided selector document
@@ -685,7 +994,7 @@ func (collection Collection) Insert(docs ...interface{}) os.Error {
 // is in safe mode (see the Safe method) and an error happens when attempting
 // the change, the returned error will be of type *LastError.
 func (collection Collection) Update(selector interface{}, change interface{}) os.Error {
-	return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 0})
+	return collection.DB.Session.writeQuery(&updateOp{collection.FullName, selector, change, 0})
 }
 
 // Upsert finds a single document matching the provided selector document
@@ -695,7 +1004,7 @@ func (collection Collection) Update(selector interface{}, change interface{}) os
 // happens when attempting the change, the returned error will be of type
 // *LastError.
 func (collection Collection) Upsert(selector interface{}, change interface{}) os.Error {
-	return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 1})
+	return collection.DB.Session.writeQuery(&updateOp{collection.FullName, selector, change, 1})
 }
 
 // UpdateAll finds all documents matching the provided selector document
@@ -703,7 +1012,7 @@ func (collection Collection) Upsert(selector interface{}, change interface{}) os
 // is in safe mode (see the Safe method) and an error happens when attempting
 // the change, the returned error will be of type *LastError.
 func (collection Collection) UpdateAll(selector interface{}, change interface{}) os.Error {
-	return collection.Session.writeQuery(&updateOp{collection.Name, selector, change, 2})
+	return collection.DB.Session.writeQuery(&updateOp{collection.FullName, selector, change, 2})
 }
 
 // Remove finds a single document matching the provided selector document
@@ -711,7 +1020,7 @@ func (collection Collection) UpdateAll(selector interface{}, change interface{})
 // (see the Safe method) and an error happens when attempting the change,
 // the returned error will be of type *LastError.
 func (collection Collection) Remove(selector interface{}) os.Error {
-	return collection.Session.writeQuery(&deleteOp{collection.Name, selector, 1})
+	return collection.DB.Session.writeQuery(&deleteOp{collection.FullName, selector, 1})
 }
 
 // RemoveAll finds all documents matching the provided selector document
@@ -719,23 +1028,7 @@ func (collection Collection) Remove(selector interface{}) os.Error {
 // (see the Safe method) and an error happens when attempting the change,
 // the returned error will be of type *LastError.
 func (collection Collection) RemoveAll(selector interface{}) os.Error {
-	return collection.Session.writeQuery(&deleteOp{collection.Name, selector, 0})
-}
-
-// AddUser creates or updates the authentication credentials of user within
-// the database.
-func (database Database) AddUser(user, pass string, readOnly bool) os.Error {
-	psum := md5.New()
-	psum.Write([]byte(user + ":mongo:" + pass))
-	digest := hex.EncodeToString(psum.Sum())
-	c := database.C("system.users")
-	return c.Upsert(bson.M{"user": user}, bson.M{"$set": bson.M{"user": user, "pwd": digest, "readOnly": readOnly}})
-}
-
-// RemoveUser removes the authentication credentials of user from the database.
-func (database Database) RemoveUser(user string) os.Error {
-	c := database.C("system.users")
-	return c.Remove(bson.M{"user": user})
+	return collection.DB.Session.writeQuery(&deleteOp{collection.FullName, selector, 0})
 }
 
 // Batch sets the batch size used when fetching documents from the database.
@@ -1106,6 +1399,7 @@ func (iter *Iter) getMore() {
 		return
 	}
 	defer socket.Release()
+
 	debugf("Iter %p requesting more documents", iter)
 	iter.pendingDocs++
 	if iter.limit > 0 && iter.op.limit > iter.limit {
@@ -1152,63 +1446,66 @@ func (collection Collection) Count() (n int, err os.Error) {
 	return collection.Find(nil).Count()
 }
 
+
 // ---------------------------------------------------------------------------
 // Internal session handling helpers.
 
-func newSession(consistency int, cluster *mongoCluster, socket *mongoSocket) (session *Session) {
-	cluster.Acquire()
-	session = &Session{consistency: consistency, cluster: cluster}
-	session.setSocket(socket)
-	session.queryConfig.prefetch = defaultPrefetch
-	session.Safe(0, 0, false)
-	runtime.SetFinalizer(session, finalizeSession)
-	return session
-}
-
-func finalizeSession(session *Session) {
-	session.Close()
-}
-
 func (session *Session) acquireSocket(slaveOk bool) (s *mongoSocket, err os.Error) {
+
+	// Try to use a previously reserved socket, with a fast read-only lock.
 	session.m.RLock()
-	if session.consistency == Eventual {
-		s, err = session.cluster.AcquireSocket(slaveOk, session.syncTimeout)
-		session.m.RUnlock()
-		return
+	s = session.socket
+	sIsGood := s != nil && (slaveOk && session.slaveOk || session.socketIsMaster)
+	session.m.RUnlock()
+
+	if sIsGood {
+		s.Acquire()
+		return s, nil
 	}
+
+	// No go.  We may have to request a new socket and change the session,
+	// so try again but with an exclusive lock now.
+	session.m.Lock()
+	defer session.m.Unlock()
 
 	s = session.socket
-	if s == nil || !slaveOk && session.slaveOk {
-		session.m.RUnlock()
-		// Try again, with an exclusive lock now.
-		session.m.Lock()
-		s = session.socket
-		if swap := !slaveOk && session.slaveOk; swap || s == nil {
-			s, err = session.cluster.AcquireSocket(slaveOk && session.slaveOk, session.syncTimeout)
-			if err != nil {
-				session.m.Unlock()
-				return
-			}
-			for _, a := range session.auth {
-				err = s.Login(a.db, a.user, a.pass)
-				if err != nil {
-					s.Release()
-					s = nil
-					session.m.Unlock()
-					return
-				}
-			}
-			session.setSocket(s)
-			if swap {
-				session.slaveOk = false
-			}
-		}
-		session.m.Unlock()
-	} else {
-		session.m.RUnlock()
+	sIsGood = s != nil && (slaveOk && session.slaveOk || session.socketIsMaster)
+
+	if sIsGood {
 		s.Acquire()
+		return s, nil
 	}
-	return
+
+	// Still not good.  We need a new socket.
+	s, err = session.cluster.AcquireSocket(slaveOk && session.slaveOk, session.syncTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	// Authenticate the new socket.
+	for _, a := range session.auth {
+		err = s.Login(a.db, a.user, a.pass)
+		if err != nil {
+			s.Release()
+			return nil, err
+		}
+	}
+
+	// Keep track of the new socket, if necessary.
+	// Note that, as a special case, if the Eventual session was
+	// not refreshed (socket != nil), it means the developer asked
+	// to preserve an existing reserved socket, so we'll keep the
+	// master one around too before a Refresh happens.
+	if session.consistency != Eventual || session.socket != nil {
+		session.setSocket(s)
+	}
+
+	// Switch over a Monotonic session to the master.
+	if !slaveOk && session.consistency == Monotonic {
+		session.slaveOk = false
+	}
+
+	return s, nil
 }
 
 // Set the socket bound to this session.  With a bound socket, all operations
@@ -1218,7 +1515,9 @@ func (session *Session) acquireSocket(slaveOk bool) (s *mongoSocket, err os.Erro
 // and down when setting/releasing.
 func (session *Session) setSocket(socket *mongoSocket) {
 	if socket != nil {
-		socket.Acquire() // Hold a reference while the session is using it.
+		session.socketIsMaster = socket.Acquire()
+	} else {
+		session.socketIsMaster = false
 	}
 	if session.socket != nil {
 		session.socket.Release()
@@ -1266,8 +1565,11 @@ func (session *Session) writeQuery(op interface{}) os.Error {
 	}
 	defer socket.Release()
 
-	// Copy safe's address to avoid locking.
-	if safe := session.safe; safe == nil {
+	session.m.RLock()
+	safe := session.safe
+	session.m.RUnlock()
+
+	if safe == nil {
 		return socket.Query(op)
 	} else {
 		var mutex sync.Mutex

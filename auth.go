@@ -44,13 +44,13 @@ type authInfo struct {
 }
 
 type authCmd struct {
-	Authenticate int
+	Authenticate     int
 	Nonce, User, Key string
 }
 
 type authResult struct {
 	ErrMsg string
-	Ok bool
+	Ok     bool
 }
 
 type getNonceCmd struct {
@@ -59,8 +59,8 @@ type getNonceCmd struct {
 
 type getNonceResult struct {
 	Nonce string
-	Err string "$err"
-	Code int
+	Err   string "$err"
+	Code  int
 }
 
 type logoutCmd struct {
@@ -87,7 +87,7 @@ func (socket *mongoSocket) getNonce() (nonce string, err os.Error) {
 	return
 }
 
-func (socket *mongoSocket) resetNonce()  {
+func (socket *mongoSocket) resetNonce() {
 	debugf("Socket %p to %s: requesting a new nonce", socket, socket.addr)
 	op := &queryOp{}
 	op.query = &getNonceCmd{GetNonce: 1}
