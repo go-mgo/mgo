@@ -192,8 +192,8 @@ func (s *S) TestInsertFindOneMap(c *C) {
 	result := make(M)
 	err = coll.Find(M{"a": 1}).One(result)
 	c.Assert(err, IsNil)
-	c.Assert(result["a"], Equals, int32(1))
-	c.Assert(result["b"], Equals, int32(2))
+	c.Assert(result["a"], Equals, 1)
+	c.Assert(result["b"], Equals, 2)
 }
 
 func (s *S) TestSelect(c *C) {
@@ -231,7 +231,7 @@ func (s *S) TestUpdate(c *C) {
 	result := make(M)
 	err = coll.Find(M{"k": 42}).One(result)
 	c.Assert(err, IsNil)
-	c.Assert(result["n"], Equals, int32(43))
+	c.Assert(result["n"], Equals, 43)
 
 	err = coll.Update(M{"k": 47}, M{"k": 47, "n": 47})
 	c.Assert(err, Equals, nil)
@@ -259,14 +259,14 @@ func (s *S) TestUpsert(c *C) {
 	result := make(M)
 	err = coll.Find(M{"k": 42}).One(result)
 	c.Assert(err, IsNil)
-	c.Assert(result["n"], Equals, int32(24))
+	c.Assert(result["n"], Equals, 24)
 
 	err = coll.Upsert(M{"k": 47}, M{"k": 47, "n": 47})
 	c.Assert(err, IsNil)
 
 	err = coll.Find(M{"k": 47}).One(result)
 	c.Assert(err, IsNil)
-	c.Assert(result["n"], Equals, int32(47))
+	c.Assert(result["n"], Equals, 47)
 }
 
 func (s *S) TestUpdateAll(c *C) {
@@ -288,15 +288,15 @@ func (s *S) TestUpdateAll(c *C) {
 	result := make(M)
 	err = coll.Find(M{"k": 42}).One(result)
 	c.Assert(err, IsNil)
-	c.Assert(result["n"], Equals, int32(42))
+	c.Assert(result["n"], Equals, 42)
 
 	err = coll.Find(M{"k": 43}).One(result)
 	c.Assert(err, IsNil)
-	c.Assert(result["n"], Equals, int32(44))
+	c.Assert(result["n"], Equals, 44)
 
 	err = coll.Find(M{"k": 44}).One(result)
 	c.Assert(err, IsNil)
-	c.Assert(result["n"], Equals, int32(45))
+	c.Assert(result["n"], Equals, 45)
 }
 
 func (s *S) TestRemove(c *C) {
@@ -1106,20 +1106,20 @@ func (s *S) TestEnsureIndex(c *C) {
 
 	expected1 := M{
 		"name": "a_1",
-		"key": bson.M{"a": int32(1)},
+		"key": bson.M{"a": 1},
 		"ns": "mydb.mycoll",
-		"v": int32(0),
+		"v": 0,
 		"background": true,
 	}
 	c.Assert(result1, Equals, expected1)
 
 	expected2 := M{
 		"name": "a_1_b_-1",
-		"key": bson.M{"a": int32(1), "b": int32(-1)},
+		"key": bson.M{"a": 1, "b": -1},
 		"ns": "mydb.mycoll",
 		"unique": true,
 		"dropDups": true,
-		"v": int32(0),
+		"v": 0,
 	}
 	c.Assert(result2, Equals, expected2)
 
@@ -1194,17 +1194,17 @@ func (s *S) TestEnsureIndexKey(c *C) {
 
 	expected1 := M{
 		"name": "a_1",
-		"key": bson.M{"a": int32(1)},
+		"key": bson.M{"a": 1},
 		"ns": "mydb.mycoll",
-		"v": int32(0),
+		"v": 0,
 	}
 	c.Assert(result1, Equals, expected1)
 
 	expected2 := M{
 		"name": "a_1_b_-1",
-		"key": bson.M{"a": int32(1), "b": int32(-1)},
+		"key": bson.M{"a": 1, "b": -1},
 		"ns": "mydb.mycoll",
-		"v": int32(0),
+		"v": 0,
 	}
 	c.Assert(result2, Equals, expected2)
 }

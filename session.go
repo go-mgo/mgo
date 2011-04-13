@@ -650,9 +650,9 @@ func (collection Collection) GetIndexes() (indexes []Index, err os.Error) {
 func simpleIndexKey(realKey bson.D) (key []string) {
 	for i := range realKey {
 		field := realKey[i].Name
-		i, ok := realKey[i].Value.(int32)
+		i, ok := realKey[i].Value.(int)
 		if !ok {
-			panic("Got non-int32 for index key order")
+			panic("Got non-int for index key order")
 		}
 		if i == -1 {
 			field = "-" + field
