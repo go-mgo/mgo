@@ -431,37 +431,47 @@ type indexSpec struct {
 	DropDups bool "dropDups/c"
 	Background bool "/c"
 	Sparse bool "/c"
+	Bits, Min, Max int "/c"
 }
 
 type Index struct {
-	Key []string    // Index key fields; prefix name with dash (-) for descending order
-	Unique bool     // Prevent two documents from having the same index key
-	DropDups bool   // Drop documents with the same index key as a previously indexed one
-	Background bool // Build index in background and return immediately
-	Sparse bool     // Only index documents containing the Key fields
+	Key []string       // Index key fields; prefix name with dash (-) for descending order
+	Unique bool        // Prevent two documents from having the same index key
+	DropDups bool      // Drop documents with the same index key as a previously indexed one
+	Background bool    // Build index in background and return immediately
+	Sparse bool        // Only index documents containing the Key fields
 
-	Name string     // Index name, computed by EnsureIndex
+	Name string        // Index name, computed by EnsureIndex
+
+	Bits, Min, Max int // Properties for spatial indexes
 }
 
 func parseIndexKey(key []string) (name string, realKey bson.D, err os.Error) {
+	var order interface{}
 	for _, field := range key {
 		if name != "" {
 			name += "_"
 		}
-		order := 1
-		if field != "" && (field[0] == '+' || field[0] == '-') {
-			if field[0] == '-' {
+		if field != "" {
+			switch field[0] {
+			case '@':
+				order = "2d"
+				field = field[1:]
+				name += field + "_" // Why don't they put 2d here?
+			case '-':
 				order = -1
+				field = field[1:]
+				name += field + "_-1"
+			case '+':
+				field = field[1:]
+				fallthrough
+			default:
+				order = 1
+				name += field + "_1"
 			}
-			field = field[1:]
 		}
 		if field == "" {
 			return "", nil, os.ErrorString("Invalid index key: empty field name")
-		}
-		if order == 1 {
-			name += field + "_1"
-		} else {
-			name += field + "_-1"
 		}
 		realKey = append(realKey, bson.DocElem{field, order})
 	}
@@ -513,9 +523,27 @@ func (collection Collection) EnsureIndexKey(key []string) os.Error {
 // continue in background.  The index won't be used for queries until the build
 // is complete.
 //
-// If Sparse is true, only documents containing the indexed field will be
-// included in the results.  When using a sparse index for sorting, only indexed
+// If Sparse is true, only documents containing the provided Key fields will be
+// included in the index.  When using a sparse index for sorting, only indexed
 // documents will be returned.
+//
+// Spatial indexes are also supported through that API.  Here is an example:
+//
+//     index := Index{
+//         Key: []string{"@loc"},
+//         Bits: 26,
+//     }
+//     err := collection.EnsureIndex(index)
+//
+// The "@" prefix in the field name will request the creation of a "2d" index
+// for the given field.  The Bits parameter sets the precision of the 2D geohash
+// values, and by default 26 bits are used, which is roughly equivalent to 1 foot
+// of precision for (-180, 180) bounds.  These bounds for the 2D index may be
+// changed using the Min and Max attributes of the Index value.  They're set
+// to -180 and 180 respectivelly, proper for indexing latitude/longitude pairs.
+//
+// be set are useful only
+// if you're indexing 
 //
 // Once EnsureIndex returns successfully, following requests for the same index
 // will not contact the server unless Collection.DropIndex is used to drop the
@@ -550,6 +578,9 @@ func (collection Collection) EnsureIndex(index Index) os.Error {
 		DropDups: index.DropDups,
 		Background: index.Background,
 		Sparse: index.Sparse,
+		Bits: index.Bits,
+		Min: index.Min,
+		Max: index.Max,
 	}
 
 	session = session.Clone()

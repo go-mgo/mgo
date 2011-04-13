@@ -1086,12 +1086,22 @@ func (s *S) TestEnsureIndex(c *C) {
 		DropDups: true,
 	}
 
+	index3 := mgo.Index{
+		Key: []string{"@loc"},
+		Min: -500,
+		Max: 500,
+		Bits: 32,
+	}
+
 	coll := session.DB("mydb").C("mycoll")
 
 	err = coll.EnsureIndex(index1)
 	c.Assert(err, IsNil)
 
 	err = coll.EnsureIndex(index2)
+	c.Assert(err, IsNil)
+
+	err = coll.EnsureIndex(index3)
 	c.Assert(err, IsNil)
 
 	sysidx := session.DB("mydb").C("system.indexes")
@@ -1102,6 +1112,10 @@ func (s *S) TestEnsureIndex(c *C) {
 
 	result2 := M{}
 	err = sysidx.Find(M{"name": "a_1_b_-1"}).One(result2)
+	c.Assert(err, IsNil)
+
+	result3 := M{}
+	err = sysidx.Find(M{"name": "loc_"}).One(result3)
 	c.Assert(err, IsNil)
 
 	expected1 := M{
@@ -1122,6 +1136,16 @@ func (s *S) TestEnsureIndex(c *C) {
 		"v": 0,
 	}
 	c.Assert(result2, Equals, expected2)
+
+	expected3 := M{
+		"name": "loc_",
+		"key": bson.M{"loc": "2d"},
+		"ns": "mydb.mycoll",
+		"min": -500,
+		"max": 500,
+		"bits": 32,
+	}
+	c.Assert(result3, Equals, expected3)
 
 	// Ensure the index actually works for real.
 	err = coll.Insert(M{"a": 1, "b": 1})
