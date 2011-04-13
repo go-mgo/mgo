@@ -500,6 +500,10 @@ func (collection Collection) EnsureIndexKey(key []string) os.Error {
 // EnsureIndex ensures an index with the given key exists, creating it with
 // the provided parameters if necessary.
 //
+// Once EnsureIndex returns successfully, following requests for the same index
+// will not contact the server unless Collection.DropIndex is used to drop the
+// same index, or Session.ResetIndexCache is called.
+//
 // For example:
 //
 //     index := Index{
@@ -536,18 +540,15 @@ func (collection Collection) EnsureIndexKey(key []string) os.Error {
 //     err := collection.EnsureIndex(index)
 //
 // The "@" prefix in the field name will request the creation of a "2d" index
-// for the given field.  The Bits parameter sets the precision of the 2D geohash
-// values, and by default 26 bits are used, which is roughly equivalent to 1 foot
-// of precision for (-180, 180) bounds.  These bounds for the 2D index may be
-// changed using the Min and Max attributes of the Index value.  They're set
-// to -180 and 180 respectivelly, proper for indexing latitude/longitude pairs.
+// for the given field.
 //
-// be set are useful only
-// if you're indexing 
+// The 2D index bounds may be changed using the Min and Max attributes of the
+// Index value.  The default bound setting of (-180, 180) is suitable for
+// latitude/longitude pairs.
 //
-// Once EnsureIndex returns successfully, following requests for the same index
-// will not contact the server unless Collection.DropIndex is used to drop the
-// same index, or Session.ResetIndexCache is called.
+// The Bits parameter sets the precision of the 2D geohash values.  If not
+// provided, 26 bits are used, which is roughly equivalent to 1 foot of
+// precision for the default (-180, 180) index bounds.
 //
 // Relevant documentation:
 //
