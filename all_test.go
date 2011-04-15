@@ -31,7 +31,6 @@
 package mgo_test
 
 import (
-	"flag"
 	"launchpad.net/gobson/bson"
 	. "launchpad.net/gocheck"
 	"launchpad.net/mgo"
@@ -40,10 +39,6 @@ import (
 	"sync"
 	"time"
 )
-
-var fast = flag.Bool("fast", false, "Skip slow tests")
-
-type M bson.M
 
 // Connect to the master of a deployment with a single server,
 // run an insert, and then ensure the insert worked and that a

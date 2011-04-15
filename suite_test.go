@@ -32,16 +32,21 @@ package mgo_test
 
 import (
 	"exec"
-	. "launchpad.net/gocheck"
-	"testing"
-	"launchpad.net/mgo"
-	"time"
+	"flag"
 	"fmt"
 	"io/ioutil"
+	. "launchpad.net/gocheck"
+	"launchpad.net/gobson/bson"
+	"launchpad.net/mgo"
 	"os"
 	"strings"
+	"testing"
+	"time"
 )
 
+var fast = flag.Bool("fast", false, "Skip slow tests")
+
+type M bson.M
 
 type cLogger C
 
