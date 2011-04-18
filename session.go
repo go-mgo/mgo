@@ -55,7 +55,7 @@ const (
 
 type Session struct {
 	m              sync.RWMutex
-	cluster        *mongoCluster
+	cluster_       *mongoCluster
 	socket         *mongoSocket
 	socketIsMaster bool
 	slaveOk        bool
@@ -249,7 +249,7 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 
 func newSession(consistency mode, cluster *mongoCluster, socket *mongoSocket) (session *Session) {
 	cluster.Acquire()
-	session = &Session{cluster: cluster}
+	session = &Session{cluster_: cluster}
 	session.SetMode(consistency, true)
 	session.Safe(0, 0, false)
 	session.setSocket(socket)
@@ -259,7 +259,7 @@ func newSession(consistency mode, cluster *mongoCluster, socket *mongoSocket) (s
 }
 
 func copySession(session *Session, keepAuth bool) (s *Session) {
-	session.cluster.Acquire()
+	session.cluster().Acquire()
 	if session.socket != nil {
 		session.socket.Acquire()
 	}
@@ -272,7 +272,7 @@ func copySession(session *Session, keepAuth bool) (s *Session) {
 	}
 	// Copy everything but the mutex.
 	s = &Session{
-		cluster:        session.cluster,
+		cluster_:       session.cluster_,
 		socket:         session.socket,
 		socketIsMaster: session.socketIsMaster,
 		slaveOk:        session.slaveOk,
@@ -295,7 +295,7 @@ func finalizeSession(session *Session) {
 // currently known to be alive.
 func (session *Session) GetLiveServers() (addrs []string) {
 	session.m.RLock()
-	addrs = session.cluster.GetLiveServers()
+	addrs = session.cluster().GetLiveServers()
 	session.m.RUnlock()
 	return addrs
 }
@@ -567,7 +567,7 @@ func (collection Collection) EnsureIndex(index Index) os.Error {
 	db := collection.DB
 	session := db.Session
 	cacheKey := collection.FullName + "\x00" +  name
-	if session.cluster.HasCachedIndex(cacheKey) {
+	if session.cluster().HasCachedIndex(cacheKey) {
 		return nil
 	}
 
@@ -594,7 +594,7 @@ func (collection Collection) EnsureIndex(index Index) os.Error {
 	db.Session = session
 	err = db.C("system.indexes").Insert(&spec)
 	if err == nil {
-		session.cluster.CacheIndex(cacheKey, true)
+		session.cluster().CacheIndex(cacheKey, true)
 	}
 	return err
 }
@@ -619,7 +619,7 @@ func (collection Collection) DropIndex(key []string) os.Error {
 	db := collection.DB
 	session := db.Session
 	cacheKey := collection.FullName + "\x00" +  name
-	session.cluster.CacheIndex(cacheKey, false)
+	session.cluster().CacheIndex(cacheKey, false)
 
 	session = session.Clone()
 	defer session.Close()
@@ -704,7 +704,7 @@ func simpleIndexKey(realKey bson.D) (key []string) {
 // ResetIndexCache() clears the cache of previously ensured indexes.
 // Following requests to EnsureIndex will contact the server.
 func (session *Session) ResetIndexCache() {
-	session.cluster.ResetIndexCache()
+	session.cluster().ResetIndexCache()
 }
 
 // New creates a new session with the same parameters as the original
@@ -754,12 +754,19 @@ func (session *Session) Clone() *Session {
 // after it has been closed.
 func (session *Session) Close() {
 	session.m.Lock()
-	if session.cluster != nil {
+	if session.cluster_ != nil {
 		session.setSocket(nil)
-		session.cluster.Release()
-		session.cluster = nil
+		session.cluster_.Release()
+		session.cluster_ = nil
 	}
 	session.m.Unlock()
+}
+
+func (session *Session) cluster() *mongoCluster {
+	if session.cluster_ == nil {
+		panic("Session already closed")
+	}
+	return session.cluster_
 }
 
 // Refresh puts back any reserved sockets in use and restarts the consistency
@@ -1516,7 +1523,7 @@ func (session *Session) acquireSocket(slaveOk bool) (s *mongoSocket, err os.Erro
 	}
 
 	// Still not good.  We need a new socket.
-	s, err = session.cluster.AcquireSocket(slaveOk && session.slaveOk, session.syncTimeout)
+	s, err = session.cluster().AcquireSocket(slaveOk && session.slaveOk, session.syncTimeout)
 	if err != nil {
 		return nil, err
 	}
