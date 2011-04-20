@@ -37,6 +37,7 @@ import (
 	"launchpad.net/gobson/bson"
 	"sync"
 	"os"
+	"reflect"
 	"runtime"
 	"strings"
 	"time"
@@ -61,7 +62,7 @@ type Session struct {
 	slaveOk        bool
 	consistency    mode
 	queryConfig    query
-	safe           *queryOp
+	safeOp         *queryOp
 	syncTimeout    int64
 	urlauth        *authInfo
 	auth           []authInfo
@@ -251,7 +252,7 @@ func newSession(consistency mode, cluster *mongoCluster, socket *mongoSocket) (s
 	cluster.Acquire()
 	session = &Session{cluster_: cluster}
 	session.SetMode(consistency, true)
-	session.Safe(0, 0, false)
+	session.SetSafe(&Safe{})
 	session.setSocket(socket)
 	session.queryConfig.prefetch = defaultPrefetch
 	runtime.SetFinalizer(session, finalizeSession)
@@ -278,7 +279,7 @@ func copySession(session *Session, keepAuth bool) (s *Session) {
 		slaveOk:        session.slaveOk,
 		consistency:    session.consistency,
 		queryConfig:    session.queryConfig,
-		safe:           session.safe,
+		safeOp:         session.safeOp,
 		syncTimeout:    session.syncTimeout,
 		urlauth:        session.urlauth,
 		auth:		auth,
@@ -587,9 +588,7 @@ func (collection Collection) EnsureIndex(index Index) os.Error {
 	session = session.Clone()
 	defer session.Close()
 	session.SetMode(Strong, false)
-	if session.safe == nil {
-		session.Safe(0, 0, false)
-	}
+	session.EnsureSafe(&Safe{})
 
 	db.Session = session
 	err = db.C("system.indexes").Insert(&spec)
@@ -638,11 +637,11 @@ func (collection Collection) DropIndex(key []string) os.Error {
 	return nil
 }
 
-// GetIndexes returns a list of all indexes for the collection.
+// Indexes returns a list of all indexes for the collection.
 //
 // For example, this snippet would drop all available indexes:
 //
-//   indexes, err := collection.GetIndexes()
+//   indexes, err := collection.Indexes()
 //   if err != nil {
 //       panic(err.String())
 //   }
@@ -654,7 +653,7 @@ func (collection Collection) DropIndex(key []string) os.Error {
 //   }
 //
 // See the EnsureIndex method for more details on indexes.
-func (collection Collection) GetIndexes() (indexes []Index, err os.Error) {
+func (collection Collection) Indexes() (indexes []Index, err os.Error) {
 	query := collection.DB.C("system.indexes").Find(bson.M{"ns": collection.FullName})
 	iter, err := query.Sort(bson.D{{"name", 1}}).Iter()
 	for {
@@ -833,7 +832,8 @@ func (session *Session) SetMode(consistency mode, refresh bool) {
 	session.m.Unlock()
 }
 
-func (session *Session) GetMode() mode {
+// Mode returns the current consistency mode for the session.
+func (session *Session) Mode() mode {
 	session.m.RLock()
 	mode := session.consistency
 	session.m.RUnlock()
@@ -850,76 +850,157 @@ func (session *Session) SetSyncTimeout(nsec int64) {
 	session.m.Unlock()
 }
 
-// Batch sets the default batch size used when fetching documents from the
+// SetBatch sets the default batch size used when fetching documents from the
 // database. It's possible to change this setting on a per-query basis as
-// well, using the Batch method of Query.
+// well, using the Query.Batch method.
 //
 // The default batch size is defined by the database itself.  As of this
 // writing, MongoDB will use an initial size of min(100 docs, 4MB) on the
 // first batch, and 4MB on remaining ones.
-func (session *Session) Batch(n int) {
+func (session *Session) SetBatch(n int) {
 	session.m.Lock()
 	session.queryConfig.op.limit = int32(n)
 	session.m.Unlock()
 }
 
-// Prefetch sets the default point at which the next batch of results will be
+// SetPrefetch sets the default point at which the next batch of results will be
 // requested.  When there are p*batch_size remaining documents cached in an
 // Iter, the next batch will be requested in background. For instance, when
 // using this:
 //
-//     session.Batch(200)
-//     session.Prefetch(0.25)
+//     session.SetBatch(200)
+//     session.SetPrefetch(0.25)
 //
 // and there are only 50 documents cached in the Iter to be processed, the
 // next batch of 200 will be requested. It's possible to change this setting on
 // a per-query basis as well, using the Prefetch method of Query.
 //
 // The default prefetch value is 0.25.
-func (session *Session) Prefetch(p float64) {
+func (session *Session) SetPrefetch(p float64) {
 	session.m.Lock()
 	session.queryConfig.prefetch = p
 	session.m.Unlock()
 }
 
-// Unsafe puts the session in unsafe mode.
-//
-// In unsafe mode, writes will become fire-and-forget, without error checking.
-// The unsafe mode is faster since operations won't hold on waiting for a
-// confirmation.  It's also unsafe, though! ;-)  In addition to disabling it
-// entirely, the parameters of safety can also be tweaked via the Safe()
-// method.
-func (session *Session) Unsafe() {
-	session.m.Lock()
-	session.safe = nil
-	session.m.Unlock()
+type Safe struct {
+	W int        // Min # of servers that have to ack before success
+	WTimeout int // Milliseconds to wait for W before timing out
+	FSync bool   // Should servers sync to disk before returning success
 }
 
-// Safe puts the session into safe mode.
+// Safe returns the current safety mode for the session.
+func (session *Session) Safe() (safe *Safe) {
+	session.m.Lock()
+	defer session.m.Unlock()
+	if session.safeOp != nil {
+		cmd := session.safeOp.query.(*getLastError)
+		safe = &Safe{cmd.W, cmd.WTimeout, cmd.FSync}
+	}
+	return
+}
+
+// SetSafe changes the session safety mode.
 //
-// Once in safe mode, any changing query (insert, update, ...) will be
-// followed by a getLastError command with the specified parameters, to
-// ensure the request was correctly processed.
+// If the safe parameter is nil, the session is put in unsafe mode, and writes
+// become fire-and-forget, without error checking.  The unsafe mode is faster
+// since operations won't hold on waiting for a confirmation.
 //
-// The w parameter determines how many servers should confirm a write
+// If the safe parameter is not nil, any changing query (insert, update, ...)
+// will be followed by a getLastError command with the specified parameters,
+// to ensure the request was correctly processed.
+//
+// The safe.W parameter determines how many servers should confirm a write
 // before the operation is considered successful.  If set to 0 or 1, the
 // command will return as soon as the master is done with the request.
-// If wtimeout is greater than zero, it determines how many milliseconds
-// to wait for the w servers to respond before returning an error.
+// If safe.WTimeout is greater than zero, it determines how many milliseconds
+// to wait for the safe.W servers to respond before returning an error.
+// If safe.FSync is true, servers will synchronize the change to disk before
+// confirming its success.
+//
+// For example, the following statement will make the session check for
+// errors, without imposing further constraints:
+//
+//     session.SetSafe(&mgo.Safe{})
+//
+// The following statement, on the other hand, ensures that at least two
+// servers have flushed the change to disk before confirming the success
+// of operations:
+//
+//     session.EnsureSafe(&mgo.Safe{W: 2, FSync: true})
+//
+// The following statement, on the other hand, disables the verification
+// of errors entirely:
+//
+//     session.SetSafe(nil)
+//
+// See also the EnsureSafe method.
 //
 // Relevant documentation:
 //
 //     http://www.mongodb.org/display/DOCS/Last+Error+Commands
 //     http://www.mongodb.org/display/DOCS/Verifying+Propagation+of+Writes+with+getLastError
 //
-func (session *Session) Safe(w, wtimeout int, fsync bool) {
+func (session *Session) SetSafe(safe *Safe) {
 	session.m.Lock()
-	session.safe = &queryOp{
-		query:      &getLastError{1, w, wtimeout, fsync},
+	session.safeOp = nil
+	session.ensureSafe(safe)
+	session.m.Unlock()
+}
+
+// EnsureSafe compares the provided safety parameters with the ones
+// currently in use by the session and merges the most conservative choices
+// to be used in the session.  That is, if the provided safe.W is larger
+// than the one in use, the session will use it.  If safe.FSync is true,
+// it will necessarily be set in the session.  If safe.WTimeout is not
+// zero and is less than the value currently in the session, the session
+// value will be changed to that.
+//
+// For example, the following statement will ensure the session is
+// at least checking for errors, without enforcing further constraints.
+// If a more conservative SetSafe or EnsureSafe call was previously done,
+// the following call will be ignored.
+//
+//     session.EnsureSafe(&mgo.Safe{})
+//
+// See also the SetSafe method.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Last+Error+Commands
+//     http://www.mongodb.org/display/DOCS/Verifying+Propagation+of+Writes+with+getLastError
+//
+func (session *Session) EnsureSafe(safe *Safe) {
+	session.m.Lock()
+	session.ensureSafe(safe)
+	session.m.Unlock()
+}
+
+func (session *Session) ensureSafe(safe *Safe) {
+	if safe == nil {
+		return
+	}
+
+	var cmd getLastError
+	if session.safeOp == nil {
+		cmd = getLastError{1, safe.W, safe.WTimeout, safe.FSync}
+	} else {
+		// Copy.  We don't want to mutate the existing query.
+		cmd = *(session.safeOp.query.(*getLastError))
+		if safe.W > cmd.W {
+			cmd.W = safe.W
+		}
+		if safe.WTimeout > 0 && safe.WTimeout < cmd.WTimeout {
+			cmd.WTimeout = safe.WTimeout
+		}
+		if safe.FSync {
+			cmd.FSync = true
+		}
+	}
+	session.safeOp = &queryOp{
+		query:      &cmd,
 		collection: "admin.$cmd",
 		limit:      -1,
 	}
-	session.m.Unlock()
 }
 
 // Run issues the provided command against the "admin" database and
@@ -1028,7 +1109,7 @@ func (err *QueryError) String() string {
 }
 
 // Insert inserts one or more documents in the respective collection.  In
-// case the session is in safe mode (see the Safe method) and an error
+// case the session is in safe mode (see the SetSafe method) and an error
 // happens while inserting the provided documents, the returned error will
 // be of type *LastError.
 func (collection Collection) Insert(docs ...interface{}) os.Error {
@@ -1037,7 +1118,7 @@ func (collection Collection) Insert(docs ...interface{}) os.Error {
 
 // Update finds a single document matching the provided selector document
 // and modifies it according to the change document.  In case the session
-// is in safe mode (see the Safe method) and an error happens when attempting
+// is in safe mode (see the SetSafe method) and an error happens when attempting
 // the change, the returned error will be of type *LastError.
 func (collection Collection) Update(selector interface{}, change interface{}) os.Error {
 	return collection.DB.Session.writeQuery(&updateOp{collection.FullName, selector, change, 0})
@@ -1046,7 +1127,7 @@ func (collection Collection) Update(selector interface{}, change interface{}) os
 // Upsert finds a single document matching the provided selector document
 // and modifies it according to the change document.  If no document matching
 // the selector is found, the change document is newly inserted instead.
-// In case the session is in safe mode (see the Safe method) and an error
+// In case the session is in safe mode (see the SetSafe method) and an error
 // happens when attempting the change, the returned error will be of type
 // *LastError.
 func (collection Collection) Upsert(selector interface{}, change interface{}) os.Error {
@@ -1055,7 +1136,7 @@ func (collection Collection) Upsert(selector interface{}, change interface{}) os
 
 // UpdateAll finds all documents matching the provided selector document
 // and modifies them according to the change document.  In case the session
-// is in safe mode (see the Safe method) and an error happens when attempting
+// is in safe mode (see the SetSafe method) and an error happens when attempting
 // the change, the returned error will be of type *LastError.
 func (collection Collection) UpdateAll(selector interface{}, change interface{}) os.Error {
 	return collection.DB.Session.writeQuery(&updateOp{collection.FullName, selector, change, 2})
@@ -1063,7 +1144,7 @@ func (collection Collection) UpdateAll(selector interface{}, change interface{})
 
 // Remove finds a single document matching the provided selector document
 // and removes it from the database.  In case the session is in safe mode
-// (see the Safe method) and an error happens when attempting the change,
+// (see the SetSafe method) and an error happens when attempting the change,
 // the returned error will be of type *LastError.
 func (collection Collection) Remove(selector interface{}) os.Error {
 	return collection.DB.Session.writeQuery(&deleteOp{collection.FullName, selector, 1})
@@ -1071,7 +1152,7 @@ func (collection Collection) Remove(selector interface{}) os.Error {
 
 // RemoveAll finds all documents matching the provided selector document
 // and removes them from the database.  In case the session is in safe mode
-// (see the Safe method) and an error happens when attempting the change,
+// (see the SetSafe method) and an error happens when attempting the change,
 // the returned error will be of type *LastError.
 func (collection Collection) RemoveAll(selector interface{}) os.Error {
 	return collection.DB.Session.writeQuery(&deleteOp{collection.FullName, selector, 0})
@@ -1099,7 +1180,7 @@ func (query *Query) Batch(n int) *Query {
 //
 // and there are only 50 documents cached in the Iter to be processed, the
 // next batch of 200 will be requested. It's possible to change this setting on
-// a per-session basis as well, using the Prefetch method of Session.
+// a per-session basis as well, using the SetPrefetch method of Session.
 //
 // The default prefetch value is 0.25.
 func (query *Query) Prefetch(p float64) *Query {
@@ -1357,7 +1438,8 @@ func (session *Session) slaveOkFlag() (flag uint32) {
 // Next retrieves the next document from the result set, blocking if necessary.
 // This method will also automatically retrieve another batch of documents from
 // the server when the current one is exhausted, or before that in background
-// if pre-fetching is enabled (see the Prefetch method).
+// if pre-fetching is enabled (see the Query.Prefetch and Session.SetPrefetch
+// methods).
 //
 // Next returns NotFound at the end of the result set, or in case a tailable
 // iterator becomes invalid, and returns TailTimeout if a tailable iterator
@@ -1436,6 +1518,87 @@ func (iter *Iter) Next(result interface{}) (err os.Error) {
 
 	panic("Internal error: this should be unreachable")
 	return
+}
+
+// The For method unmarshals into result each document found through an
+// iterator obtained from query and calls f to handle it.  The result
+// value must necessarily be a pointer to a nil reference type.
+// If f returns a non-nil os.Error, iteration will stop and the error
+// will be returned as the result of For.
+//
+// For example:
+//
+//     var result *struct{ N int }
+//     err := collection.Find(nil).For(&result, func() os.Error {
+//         println(result.N)
+//         return nil
+//     })
+//     if err != mgo.NotFound {
+//         panic(err.String())
+//     }
+//
+// Note the way in which result is declared.  The following are also valid
+// declaration examples to be used with For.  With all of these, the variable
+// must still be passed by address (&result) in the For call.
+//
+//     var result *MyType
+//     var result bson.M
+//     var result map[string]interface{}
+//
+func (query *Query) For(result interface{}, f func() os.Error) (err os.Error) {
+	iter, err := query.Iter()
+	if err != nil {
+		return err
+	}
+	return iter.For(result, f)
+}
+
+// The For method unmarshals into result each document found through iter
+// and calls f to handle it.  The result value must necessarily be a
+// pointer to a nil reference type.  If f returns a non-nil os.Error,
+// iteration will stop and the error will be returned as the result of For.
+//
+// For example:
+//
+//     var result *struct{ N int }
+//     err := iter.For(&result, func() os.Error {
+//         println(result.N)
+//         return nil
+//     })
+//     if err != mgo.NotFound {
+//         panic(err.String())
+//     }
+//
+// Note the way in which result is declared.  The following are also valid
+// declaration examples to be used with For.  With all of these, the variable
+// must still be passed by address (&result) in the For call.
+//
+//     var result *MyType
+//     var result bson.M
+//     var result map[string]interface{}
+//
+func (iter *Iter) For(result interface{}, f func() os.Error) (err os.Error) {
+	valid := false
+	v := reflect.NewValue(result)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+		switch v.Kind() {
+		case reflect.Map, reflect.Ptr, reflect.Interface, reflect.Slice:
+			valid = v.IsNil()
+		}
+	}
+	if !valid {
+		panic("For needs a pointer to nil reference value.  See the documentation.")
+	}
+	zero := reflect.Zero(v.Type())
+	for err == nil {
+		v.Set(zero)
+		err = iter.Next(result)
+		if err == nil {
+			err = f()
+		}
+	}
+	return err
 }
 
 func (iter *Iter) getMore() {
@@ -1612,17 +1775,17 @@ func (session *Session) writeQuery(op interface{}) os.Error {
 	defer socket.Release()
 
 	session.m.RLock()
-	safe := session.safe
+	safeOp := session.safeOp
 	session.m.RUnlock()
 
-	if safe == nil {
+	if safeOp == nil {
 		return socket.Query(op)
 	} else {
 		var mutex sync.Mutex
 		var replyData []byte
 		var replyErr os.Error
 		mutex.Lock()
-		query := *safe // Copy the data.
+		query := *safeOp // Copy the data.
 		query.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
 			replyData = docData
 			replyErr = err
