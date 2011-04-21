@@ -995,13 +995,13 @@ func (s *S) TestFindForResetsResult(c *C) {
 		switch i {
 		case 0:
 			c.Assert(sresult.N1, Equals, 1)
-			c.Assert(sresult.N2 + sresult.N3, Equals, 0)
+			c.Assert(sresult.N2+sresult.N3, Equals, 0)
 		case 1:
 			c.Assert(sresult.N2, Equals, 2)
-			c.Assert(sresult.N1 + sresult.N3, Equals, 0)
+			c.Assert(sresult.N1+sresult.N3, Equals, 0)
 		case 2:
 			c.Assert(sresult.N3, Equals, 3)
-			c.Assert(sresult.N1 + sresult.N2, Equals, 0)
+			c.Assert(sresult.N1+sresult.N2, Equals, 0)
 		}
 		i++
 		return nil
@@ -1257,7 +1257,9 @@ func (s *S) TestQueryErrorOne(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
-	result := struct{ Err string "$err" }{}
+	result := struct {
+		Err string "$err"
+	}{}
 
 	err = coll.Find(M{"a": 1}).Select(M{"a": M{"b": 1}}).One(&result)
 	c.Assert(err, Matches, "Unsupported projection option: b")
@@ -1275,7 +1277,9 @@ func (s *S) TestQueryErrorNext(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
-	result := struct{ Err string "$err" }{}
+	result := struct {
+		Err string "$err"
+	}{}
 
 	iter, err := coll.Find(M{"a": 1}).Select(M{"a": M{"b": 1}}).Iter()
 	c.Assert(err, IsNil)
@@ -1295,20 +1299,20 @@ func (s *S) TestEnsureIndex(c *C) {
 	defer session.Close()
 
 	index1 := mgo.Index{
-		Key: []string{"a"},
+		Key:        []string{"a"},
 		Background: true,
 	}
 
 	index2 := mgo.Index{
-		Key: []string{"a", "-b"},
-		Unique: true,
+		Key:      []string{"a", "-b"},
+		Unique:   true,
 		DropDups: true,
 	}
 
 	index3 := mgo.Index{
-		Key: []string{"@loc"},
-		Min: -500,
-		Max: 500,
+		Key:  []string{"@loc"},
+		Min:  -500,
+		Max:  500,
 		Bits: 32,
 	}
 
@@ -1338,30 +1342,30 @@ func (s *S) TestEnsureIndex(c *C) {
 	c.Assert(err, IsNil)
 
 	expected1 := M{
-		"name": "a_1",
-		"key": bson.M{"a": 1},
-		"ns": "mydb.mycoll",
-		"v": 0,
+		"name":       "a_1",
+		"key":        bson.M{"a": 1},
+		"ns":         "mydb.mycoll",
+		"v":          0,
 		"background": true,
 	}
 	c.Assert(result1, Equals, expected1)
 
 	expected2 := M{
-		"name": "a_1_b_-1",
-		"key": bson.M{"a": 1, "b": -1},
-		"ns": "mydb.mycoll",
-		"unique": true,
+		"name":     "a_1_b_-1",
+		"key":      bson.M{"a": 1, "b": -1},
+		"ns":       "mydb.mycoll",
+		"unique":   true,
 		"dropDups": true,
-		"v": 0,
+		"v":        0,
 	}
 	c.Assert(result2, Equals, expected2)
 
 	expected3 := M{
 		"name": "loc_",
-		"key": bson.M{"loc": "2d"},
-		"ns": "mydb.mycoll",
-		"min": -500,
-		"max": 500,
+		"key":  bson.M{"loc": "2d"},
+		"ns":   "mydb.mycoll",
+		"min":  -500,
+		"max":  500,
 		"bits": 32,
 	}
 	c.Assert(result3, Equals, expected3)
@@ -1404,7 +1408,7 @@ func (s *S) TestEnsureIndexWithUnsafeSession(c *C) {
 
 	// Should fail since there are duplicated entries.
 	index := mgo.Index{
-		Key: []string{"a"},
+		Key:    []string{"a"},
 		Unique: true,
 	}
 
@@ -1437,17 +1441,17 @@ func (s *S) TestEnsureIndexKey(c *C) {
 
 	expected1 := M{
 		"name": "a_1",
-		"key": bson.M{"a": 1},
-		"ns": "mydb.mycoll",
-		"v": 0,
+		"key":  bson.M{"a": 1},
+		"ns":   "mydb.mycoll",
+		"v":    0,
 	}
 	c.Assert(result1, Equals, expected1)
 
 	expected2 := M{
 		"name": "a_1_b_-1",
-		"key": bson.M{"a": 1, "b": -1},
-		"ns": "mydb.mycoll",
-		"v": 0,
+		"key":  bson.M{"a": 1, "b": -1},
+		"ns":   "mydb.mycoll",
+		"v":    0,
 	}
 	c.Assert(result2, Equals, expected2)
 }
@@ -2192,10 +2196,10 @@ func (s *S) TestDirect(c *C) {
 }
 
 type OpCounters struct {
-	Insert int
-	Query int
-	Update int
-	Delete int
+	Insert  int
+	Query   int
+	Update  int
+	Delete  int
 	GetMore int
 	Command int
 }
@@ -2277,7 +2281,7 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 	}
 
 	c.Check(masterDelta, Equals, 0) // Just the counting itself.
-	c.Check(slaveDelta, Equals, 5) // The counting for both, plus 5 queries above.
+	c.Check(slaveDelta, Equals, 5)  // The counting for both, plus 5 queries above.
 }
 
 func (s *S) TestAuthLogin(c *C) {
@@ -2484,7 +2488,7 @@ func (s *S) TestAuthLoginSwitchUser(c *C) {
 	c.Assert(err, Matches, "unauthorized")
 
 	// But can read.
-	result := struct{N int}{}
+	result := struct{ N int }{}
 	err = coll.Find(nil).One(&result)
 	c.Assert(err, IsNil)
 	c.Assert(result.N, Equals, 1)
@@ -2683,7 +2687,7 @@ func (s *S) TestAuthLoginCachingAcrossPoolWithLogout(c *C) {
 	c.Assert(err, Matches, "unauthorized")
 
 	// But can read due to the revalidated myuser login.
-	result := struct{N int}{}
+	result := struct{ N int }{}
 	err = other.DB("mydb").C("mycoll").Find(nil).One(&result)
 	c.Assert(err, IsNil)
 	c.Assert(result.N, Equals, 1)
@@ -2706,7 +2710,7 @@ func (s *S) TestAuthEventual(c *C) {
 	var wg sync.WaitGroup
 	wg.Add(20)
 
-	result := struct{N int}{}
+	result := struct{ N int }{}
 	for i := 0; i != 10; i++ {
 		go func() {
 			defer wg.Done()
@@ -2762,4 +2766,17 @@ func (s *S) TestAuthURLWithNewSession(c *C) {
 
 	err = session.DB("mydb").C("mycoll").Insert(M{"n": 1})
 	c.Assert(err, IsNil)
+}
+
+func (s *S) TestInt64Conversion(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+	coll := session.DB("mydb").C("mycollection")
+	result := struct { A int64 }{128}
+	coll.Insert(&result)
+	result.A = 0
+	err = coll.Find(nil).One(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result.A, Equals, int64(128))
 }
