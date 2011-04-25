@@ -185,7 +185,7 @@ func (gfs GridFS) Create(name string) (file *GridFSFile, err os.Error) {
 //     fmt.Printf("%d bytes read\n", n)
 //
 // The io.Reader interface is implemented by *GridFSFile and may be used to
-// deal with it.  As an example, the following example will dump the whole
+// deal with it.  As an example, the following snippet will dump the whole
 // file into the standard output:
 //
 //     file, err := db.GridFS("fs").OpenId(objid)
@@ -233,7 +233,7 @@ func (gfs GridFS) OpenId(id interface{}) (file *GridFSFile, err os.Error) {
 //     fmt.Printf("%d bytes read\n", n)
 //
 // The io.Reader interface is implemented by *GridFSFile and may be used to
-// deal with it.  As an example, the following example will dump the whole
+// deal with it.  As an example, the following snippet will dump the whole
 // file into the standard output:
 //
 //     file, err := db.GridFS("fs").Open("myfile.txt")
