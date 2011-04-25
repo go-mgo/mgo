@@ -11,6 +11,7 @@ GOFILES=\
 	session.go\
 	socket.go\
 	stats.go\
+	gridfs.go\
 
 all: package
 

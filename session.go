@@ -317,6 +317,24 @@ func (database Database) C(name string) Collection {
 	return Collection{database, name, database.Name + "." + name}
 }
 
+// GridFS returns a GridFS value for interacting with collections in the
+// database which follow the standard GridFS specification.  The provided
+// prefix (sometimes known as root) will determine which collections to
+// use, and is usually set to "fs" when there is a single GridFS in the
+// database.
+//
+// See the GridFS Create, Open, and OpenId methods for more details.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/GridFS
+//     http://www.mongodb.org/display/DOCS/GridFS+Tools
+//     http://www.mongodb.org/display/DOCS/GridFS+Specification
+//
+func (database Database) GridFS(prefix string) *GridFS {
+	return newGridFS(database, prefix)
+}
+
 // Run issues the provided command against the database and unmarshals
 // its result in the respective argument. The cmd argument may be either
 // a string with the command name itself, in which case an empty document of
