@@ -146,7 +146,7 @@ func finalizeFile(file *GridFSFile) {
 //     messages, err := os.Open("/var/log/messages")
 //     check(err)
 //     defer messages.Close()
-//     err = ioutil.Copy(file, messages)
+//     err = io.Copy(file, messages)
 //     check(err)
 //     err = file.Close()
 //     check(err)
@@ -190,7 +190,7 @@ func (gfs GridFS) Create(name string) (file *GridFSFile, err os.Error) {
 //
 //     file, err := db.GridFS("fs").OpenId(objid)
 //     check(err)
-//     err = ioutil.Copy(os.Stdout, file)
+//     err = io.Copy(os.Stdout, file)
 //     check(err)
 //     err = file.Close()
 //     check(err)
@@ -238,7 +238,7 @@ func (gfs GridFS) OpenId(id interface{}) (file *GridFSFile, err os.Error) {
 //
 //     file, err := db.GridFS("fs").Open("myfile.txt")
 //     check(err)
-//     err = ioutil.Copy(os.Stdout, file)
+//     err = io.Copy(os.Stdout, file)
 //     check(err)
 //     err = file.Close()
 //     check(err)
