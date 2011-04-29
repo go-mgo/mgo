@@ -100,6 +100,12 @@ func (s *S) TestGridFSCreate(c *C) {
 		"data": []byte("some data"),
 	}
 	c.Assert(result, Equals, expected)
+
+	// Check that an index was created.
+	indexes, err := db.C("fs.chunks").Indexes()
+	c.Assert(err, IsNil)
+	c.Assert(len(indexes), Equals, 2)
+	c.Assert(indexes[1].Key, Equals, []string{"files_id", "n"})
 }
 
 func (s *S) TestGridFSFileDetails(c *C) {

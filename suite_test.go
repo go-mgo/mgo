@@ -70,8 +70,8 @@ type S struct {
 var _ = Suite(&S{})
 
 func (s *S) SetUpSuite(c *C) {
-	mgo.Debug(true)
-	mgo.CollectStats(true)
+	mgo.SetDebug(true)
+	mgo.SetStats(true)
 	s.StartAll()
 }
 

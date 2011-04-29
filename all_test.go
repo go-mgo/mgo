@@ -406,6 +406,52 @@ func (s *S) TestCountQuerySorted(c *C) {
 	c.Assert(n, Equals, 2)
 }
 
+func (s *S) TestQueryExplain(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{40, 41, 42}
+	for _, n := range ns {
+		err := coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
+	}
+
+	m := M{}
+	query := coll.Find(nil).Batch(1).Limit(2)
+	err = query.Batch(2).Explain(m)
+	c.Assert(err, IsNil)
+	c.Assert(m["cursor"], Equals, "BasicCursor")
+	c.Assert(m["nscanned"], Equals, 2)
+	c.Assert(m["n"], Equals, 2)
+
+	n := 0
+	var result M
+	err = query.For(&result, func() os.Error {
+		n++
+		return nil
+	})
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 2)
+}
+
+func (s *S) TestQueryHint(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	coll.EnsureIndexKey([]string{"a"})
+
+	m := M{}
+	err = coll.Find(nil).Hint([]string{"a"}).Explain(m)
+	c.Assert(err, IsNil)
+	c.Assert(m["indexBounds"], NotNil)
+	c.Assert(m["indexBounds"].(bson.M)["a"], NotNil)
+}
+
 func (s *S) TestFindOneNotFound(c *C) {
 	session, err := mgo.Mongo("localhost:40001")
 	c.Assert(err, IsNil)
@@ -896,7 +942,7 @@ func (s *S) TestFindForOnIter(c *C) {
 		i++
 		return nil
 	})
-	c.Assert(err == mgo.NotFound, Equals, true)
+	c.Assert(err, IsNil)
 
 	session.Refresh() // Release socket.
 
@@ -937,7 +983,7 @@ func (s *S) TestFindFor(c *C) {
 		i++
 		return nil
 	})
-	c.Assert(err == mgo.NotFound, Equals, true)
+	c.Assert(err, IsNil)
 
 	session.Refresh() // Release socket.
 
@@ -1006,7 +1052,7 @@ func (s *S) TestFindForResetsResult(c *C) {
 		i++
 		return nil
 	})
-	c.Assert(err == mgo.NotFound, Equals, true)
+	c.Assert(err, IsNil)
 
 	i = 0
 	var mresult M
@@ -1023,7 +1069,7 @@ func (s *S) TestFindForResetsResult(c *C) {
 		i++
 		return nil
 	})
-	c.Assert(err == mgo.NotFound, Equals, true)
+	c.Assert(err, IsNil)
 
 	i = 0
 	var iresult interface{}
@@ -1042,7 +1088,7 @@ func (s *S) TestFindForResetsResult(c *C) {
 		i++
 		return nil
 	})
-	c.Assert(err == mgo.NotFound, Equals, true)
+	c.Assert(err, IsNil)
 }
 
 func (s *S) TestSort(c *C) {

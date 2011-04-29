@@ -661,12 +661,12 @@ func (collection Collection) DropIndex(key []string) os.Error {
 //
 //   indexes, err := collection.Indexes()
 //   if err != nil {
-//       panic(err.String())
+//       panic(err)
 //   }
 //   for _, index := range indexes {
 //       err = collection.DropIndex(index.Key)
 //       if err != nil {
-//           panic(err.String())
+//           panic(err)
 //       }
 //   }
 //
@@ -1075,7 +1075,7 @@ func (session *Session) Ping() os.Error {
 //
 //    iter, err := collection.Find(nil).Iter()
 //    if err != nil {
-//        panic(err.String())
+//        panic(err)
 //    }
 //    for {
 //        err = iter.Next(&result)
@@ -1085,7 +1085,7 @@ func (session *Session) Ping() os.Error {
 //        fmt.Println(result.Id)
 //    }
 //    if err != nil {
-//        panic(err.String())
+//        panic(err)
 //    }
 //
 // Relevant documentation:
@@ -1248,6 +1248,8 @@ func (query *Query) Select(selector interface{}) *Query {
 type queryWrapper struct {
 	Query   interface{} "$query"
 	OrderBy interface{} "$orderby/c"
+	Hint interface{} "$hint/c"
+	Explain bool "$explain/c"
 }
 
 func (query *Query) wrap() *queryWrapper {
@@ -1261,11 +1263,77 @@ func (query *Query) wrap() *queryWrapper {
 
 // Sort asks the database to order returned documents according to the rules
 // provided in the given document.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Sorting+and+Natural+Order
+//
 func (query *Query) Sort(order interface{}) *Query {
 	query.m.Lock()
 	w := query.wrap()
 	w.OrderBy = order
 	query.m.Unlock()
+	return query
+}
+
+// Explain returns a number of details about how the MongoDB server would
+// execute the requested query, such as the number of objects examined,
+// the number of time the read lock was yielded to allow writes to go in,
+// and so on.
+//
+// For example:
+//
+//     m := bson.M{}
+//     err := collection.Find(bson.M{"filename": name}).Explain(m)
+//     if err == nil {
+//         fmt.Printf("Explain: %#v\n", m)
+//     }
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Optimization
+//     http://www.mongodb.org/display/DOCS/Query+Optimizer
+//     
+func (query *Query) Explain(result interface{}) os.Error {
+	query.m.Lock()
+	clone := &Query{session: query.session, query: query.query}
+	query.m.Unlock()
+	w := clone.wrap()
+	w.Explain = true
+	if clone.op.limit > 0 {
+		clone.op.limit = -query.op.limit
+	}
+	iter, err := clone.Iter()
+	if err != nil {
+		return err
+	}
+	return iter.Next(result)
+}
+
+// Hint will include an explicit "hint" in the query to force the server
+// to use a specified index, potentially improving performance in some
+// situations.  The indexKey parameter must be set to the key of the
+// index to be used.  For details on how the indexKey may be built, see
+// the EnsureIndex method.
+//
+// For example:
+//
+//     query := collection.Find(bson.M{"a": 4, "b": 5, "c": 6}).Hint([]string{"a", "b"})
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Optimization
+//     http://www.mongodb.org/display/DOCS/Query+Optimizer
+//     
+func (query *Query) Hint(indexKey []string) *Query {
+	query.m.Lock()
+	_, realKey, err := parseIndexKey(indexKey)
+	w := query.wrap()
+	w.Hint = realKey
+	query.m.Unlock()
+	if err != nil {
+		panic(err)
+	}
 	return query
 }
 
@@ -1402,7 +1470,7 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
 //             lastId = result.Id
 //         }
 //         if err != mgo.NotFound {
-//             panic(err.String())
+//             panic(err)
 //         }
 //         query = collection.Find(bson.M{"_id", bson.M{"$gt", lastId}})
 //    }
@@ -1479,7 +1547,7 @@ func (session *Session) slaveOkFlag() (flag uint32) {
 //        println(result.Id)
 //    }
 //    if err != mgo.NotFound {
-//        panic(err.String())
+//        panic(err)
 //    }
 //
 func (iter *Iter) Next(result interface{}) (err os.Error) {
@@ -1551,8 +1619,8 @@ func (iter *Iter) Next(result interface{}) (err os.Error) {
 //         println(result.N)
 //         return nil
 //     })
-//     if err != mgo.NotFound {
-//         panic(err.String())
+//     if err != nil {
+//         panic(err)
 //     }
 //
 // Note the way in which result is declared.  The following are also valid
@@ -1583,8 +1651,8 @@ func (query *Query) For(result interface{}, f func() os.Error) (err os.Error) {
 //         println(result.N)
 //         return nil
 //     })
-//     if err != mgo.NotFound {
-//         panic(err.String())
+//     if err != nil {
+//         panic(err)
 //     }
 //
 // Note the way in which result is declared.  The following are also valid
@@ -1597,7 +1665,7 @@ func (query *Query) For(result interface{}, f func() os.Error) (err os.Error) {
 //
 func (iter *Iter) For(result interface{}, f func() os.Error) (err os.Error) {
 	valid := false
-	v := reflect.NewValue(result)
+	v := reflect.ValueOf(result)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 		switch v.Kind() {
@@ -1615,6 +1683,9 @@ func (iter *Iter) For(result interface{}, f func() os.Error) (err os.Error) {
 		if err == nil {
 			err = f()
 		}
+	}
+	if err == NotFound {
+		return nil
 	}
 	return err
 }

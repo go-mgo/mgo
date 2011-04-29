@@ -52,7 +52,7 @@ type mongoServer struct {
 
 
 func newServer(addr string) (server *mongoServer, err os.Error) {
-	tcpaddr, err := net.ResolveTCPAddr(addr)
+	tcpaddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		log("Failed to resolve ", addr, ": ", err.String())
 		return nil, err

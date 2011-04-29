@@ -53,7 +53,7 @@ const (
 	gfsWriting gfsFileMode = 2
 )
 
-type GridFSFile struct {
+type GridFile struct {
 	m sync.Mutex
 	c sync.Cond
 	gfs GridFS
@@ -102,14 +102,14 @@ func newGridFS(db Database, prefix string) *GridFS {
 	return &GridFS{db.C(prefix + ".files"), db.C(prefix + ".chunks")}
 }
 
-func (gfs GridFS) newFile() *GridFSFile {
-	file := &GridFSFile{gfs: gfs}
+func (gfs GridFS) newFile() *GridFile {
+	file := &GridFile{gfs: gfs}
 	file.c.L = &file.m
 	runtime.SetFinalizer(file, finalizeFile)
 	return file
 }
 
-func finalizeFile(file *GridFSFile) {
+func finalizeFile(file *GridFile) {
 	file.Close()
 }
 
@@ -138,7 +138,7 @@ func finalizeFile(file *GridFSFile) {
 //     check(err)
 //     fmt.Printf("%d bytes written\n", n)
 //
-// The io.Writer interface is implemented by *GridFSFile and may be used to
+// The io.Writer interface is implemented by *GridFile and may be used to
 // help on the file creation.  For example:
 //
 //     file, err := db.GridFS("fs").Create("myfile.txt")
@@ -151,7 +151,7 @@ func finalizeFile(file *GridFSFile) {
 //     err = file.Close()
 //     check(err)
 //
-func (gfs GridFS) Create(name string) (file *GridFSFile, err os.Error) {
+func (gfs GridFS) Create(name string) (file *GridFile, err os.Error) {
 	file = gfs.newFile()
 	file.mode = gfsWriting
 	file.wsum = md5.New()
@@ -184,7 +184,7 @@ func (gfs GridFS) Create(name string) (file *GridFSFile, err os.Error) {
 //     check(err)
 //     fmt.Printf("%d bytes read\n", n)
 //
-// The io.Reader interface is implemented by *GridFSFile and may be used to
+// The io.Reader interface is implemented by *GridFile and may be used to
 // deal with it.  As an example, the following snippet will dump the whole
 // file into the standard output:
 //
@@ -195,7 +195,7 @@ func (gfs GridFS) Create(name string) (file *GridFSFile, err os.Error) {
 //     err = file.Close()
 //     check(err)
 //
-func (gfs GridFS) OpenId(id interface{}) (file *GridFSFile, err os.Error) {
+func (gfs GridFS) OpenId(id interface{}) (file *GridFile, err os.Error) {
 	var doc gfsFile
 	err = gfs.Files.Find(bson.M{"_id": id}).One(&doc)
 	if err != nil {
@@ -232,7 +232,7 @@ func (gfs GridFS) OpenId(id interface{}) (file *GridFSFile, err os.Error) {
 //     check(err)
 //     fmt.Printf("%d bytes read\n", n)
 //
-// The io.Reader interface is implemented by *GridFSFile and may be used to
+// The io.Reader interface is implemented by *GridFile and may be used to
 // deal with it.  As an example, the following snippet will dump the whole
 // file into the standard output:
 //
@@ -243,7 +243,7 @@ func (gfs GridFS) OpenId(id interface{}) (file *GridFSFile, err os.Error) {
 //     err = file.Close()
 //     check(err)
 //
-func (gfs GridFS) Open(name string) (file *GridFSFile, err os.Error) {
+func (gfs GridFS) Open(name string) (file *GridFile, err os.Error) {
 	var doc gfsFile
 	err = gfs.Files.Find(bson.M{"filename": name}).Sort(bson.M{"uploadDate": -1}).One(&doc)
 	if err != nil {
@@ -289,18 +289,18 @@ func (gfs GridFS) Remove(name string) (err os.Error) {
 	return err
 }
 
-func (file *GridFSFile) assertMode(mode gfsFileMode) {
+func (file *GridFile) assertMode(mode gfsFileMode) {
 	switch file.mode {
 	case mode:
 		return
 	case gfsWriting:
-		panic("GridFSFile is open for writing")
+		panic("GridFile is open for writing")
 	case gfsReading:
-		panic("GridFSFile is open for reading")
+		panic("GridFile is open for reading")
 	case gfsClosed:
-		panic("GridFSFile is closed")
+		panic("GridFile is closed")
 	default:
-		panic("Internal error: missing GridFSFile mode")
+		panic("Internal error: missing GridFile mode")
 	}
 }
 
@@ -310,16 +310,16 @@ func (file *GridFSFile) assertMode(mode gfsFileMode) {
 //
 // It is a runtime error to call this function once the file has started
 // being written to.
-func (file *GridFSFile) SetChunkSize(bytes int) {
+func (file *GridFile) SetChunkSize(bytes int) {
 	file.assertMode(gfsWriting)
-	debugf("GridFSFile %p: setting chunk size to %d", file, bytes)
+	debugf("GridFile %p: setting chunk size to %d", file, bytes)
 	file.m.Lock()
 	file.doc.ChunkSize = bytes
 	file.m.Unlock()
 }
 
 // Id returns the current file Id.
-func (file *GridFSFile) Id() interface{} {
+func (file *GridFile) Id() interface{} {
 	return file.doc.Id
 }
 
@@ -327,7 +327,7 @@ func (file *GridFSFile) Id() interface{} {
 //
 // It is a runtime error to call this function once the file has started
 // being written to, or when the file is not open for writing.
-func (file *GridFSFile) SetId(id interface{}) {
+func (file *GridFile) SetId(id interface{}) {
 	file.assertMode(gfsWriting)
 	file.m.Lock()
 	file.doc.Id = id
@@ -336,7 +336,7 @@ func (file *GridFSFile) SetId(id interface{}) {
 
 // Name returns the optional file name.  An empty string will be returned
 // in case it is unset.
-func (file *GridFSFile) Name() string {
+func (file *GridFile) Name() string {
 	return file.doc.Filename
 }
 
@@ -345,7 +345,7 @@ func (file *GridFSFile) Name() string {
 //
 // It is a runtime error to call this function when the file is not open
 // for writing.
-func (file *GridFSFile) SetName(name string) {
+func (file *GridFile) SetName(name string) {
 	file.assertMode(gfsWriting)
 	file.m.Lock()
 	file.doc.Filename = name
@@ -354,7 +354,7 @@ func (file *GridFSFile) SetName(name string) {
 
 // ContentType returns the optional file content type.  An empty string will be
 // returned in case it is unset.
-func (file *GridFSFile) ContentType() string {
+func (file *GridFile) ContentType() string {
 	return file.doc.ContentType
 }
 
@@ -363,7 +363,7 @@ func (file *GridFSFile) ContentType() string {
 //
 // It is a runtime error to call this function when the file is not open
 // for writing.
-func (file *GridFSFile) SetContentType(ctype string) {
+func (file *GridFile) SetContentType(ctype string) {
 	file.assertMode(gfsWriting)
 	file.m.Lock()
 	file.doc.ContentType = ctype
@@ -380,7 +380,7 @@ func (file *GridFSFile) SetContentType(ctype string) {
 //     }
 //     fmt.Printf("inode: %d\n", result.INode)
 //
-func (file *GridFSFile) GetInfo(result interface{}) (err os.Error) {
+func (file *GridFile) GetInfo(result interface{}) (err os.Error) {
 	file.m.Lock()
 	if file.doc.Metadata != nil {
 		err = bson.Unmarshal(file.doc.Metadata.Data, result)
@@ -396,7 +396,7 @@ func (file *GridFSFile) GetInfo(result interface{}) (err os.Error) {
 //
 // It is a runtime error to call this function when the file is not open
 // for writing.
-func (file *GridFSFile) SetInfo(metadata interface{}) {
+func (file *GridFile) SetInfo(metadata interface{}) {
 	file.assertMode(gfsWriting)
 	data, err := bson.Marshal(metadata)
 	file.m.Lock()
@@ -409,7 +409,7 @@ func (file *GridFSFile) SetInfo(metadata interface{}) {
 }
 
 // Size returns the file size in bytes.
-func (file *GridFSFile) Size() (bytes int64) {
+func (file *GridFile) Size() (bytes int64) {
 	file.m.Lock()
 	bytes = file.doc.Length
 	file.m.Unlock()
@@ -417,7 +417,7 @@ func (file *GridFSFile) Size() (bytes int64) {
 }
 
 // MD5 returns the file MD5 as a hex-encoded string.
-func (file *GridFSFile) MD5() (md5 string) {
+func (file *GridFile) MD5() (md5 string) {
 	return file.doc.MD5
 }
 
@@ -427,7 +427,7 @@ func (file *GridFSFile) MD5() (md5 string) {
 // It's important to Close files whether they are being written to
 // or read from, and to check the err result to ensure the operation
 // completed successfully.
-func (file *GridFSFile) Close() (err os.Error) {
+func (file *GridFile) Close() (err os.Error) {
 	file.m.Lock()
 	defer file.m.Unlock()
 	if file.mode == gfsWriting {
@@ -441,7 +441,7 @@ func (file *GridFSFile) Close() (err os.Error) {
 		file.rcache = nil
 	}
 	file.mode = gfsClosed
-	debugf("GridFSFile %p: closed", file)
+	debugf("GridFile %p: closed", file)
 	return file.err
 }
 
@@ -454,10 +454,10 @@ func (file *GridFSFile) Close() (err os.Error) {
 //
 // The parameters and behavior of this function turn the file
 // into an io.Writer.
-func (file *GridFSFile) Write(data []byte) (n int, err os.Error) {
+func (file *GridFile) Write(data []byte) (n int, err os.Error) {
 	file.assertMode(gfsWriting)
 	file.m.Lock()
-	debugf("GridFSFile %p: writing %d bytes", file, len(data))
+	debugf("GridFile %p: writing %d bytes", file, len(data))
 	defer file.m.Unlock()
 
 	if file.err != nil {
@@ -501,10 +501,10 @@ func (file *GridFSFile) Write(data []byte) (n int, err os.Error) {
 	return n, file.err
 }
 
-func (file *GridFSFile) insertChunk(data []byte) {
+func (file *GridFile) insertChunk(data []byte) {
 	n := file.chunk
 	file.chunk++
-	debugf("GridFSFile %p: adding to checksum: %q", file, string(data))
+	debugf("GridFile %p: adding to checksum: %q", file, string(data))
 	file.wsum.Write(data)
 
 	for file.doc.ChunkSize * file.wpending >= 1024 * 1024 {
@@ -517,7 +517,7 @@ func (file *GridFSFile) insertChunk(data []byte) {
 
 	file.wpending++
 
-	debugf("GridFSFile %p: inserting chunk %d with %d bytes", file, n, len(data))
+	debugf("GridFile %p: inserting chunk %d with %d bytes", file, n, len(data))
 
 	// We may not own the memory of data, so rather than
 	// simply copying it, we'll marshal the document ahead of time.
@@ -539,16 +539,17 @@ func (file *GridFSFile) insertChunk(data []byte) {
 	}()
 }
 
-func (file *GridFSFile) insertFile() {
+func (file *GridFile) insertFile() {
 	hexsum := hex.EncodeToString(file.wsum.Sum())
 	for file.wpending > 0 {
-		debugf("GridFSFile %p: waiting for %d pending chunks to insert file", file, file.wpending)
+		debugf("GridFile %p: waiting for %d pending chunks to insert file", file, file.wpending)
 		file.c.Wait()
 	}
 	if file.err == nil {
 		file.doc.UploadDate = bson.Now()
 		file.doc.MD5 = hexsum
 		file.err = file.gfs.Files.Insert(file.doc)
+		file.gfs.Chunks.EnsureIndexKey([]string{"files_id", "n"})
 	}
 }
 
@@ -559,10 +560,10 @@ func (file *GridFSFile) insertFile() {
 //
 // The parameters and behavior of this function turn the file
 // into an io.Reader.
-func (file *GridFSFile) Read(b []byte) (n int, err os.Error) {
+func (file *GridFile) Read(b []byte) (n int, err os.Error) {
 	file.assertMode(gfsReading)
 	file.m.Lock()
-	debugf("GridFSFile %p: reading at offset %d into buffer of length %d", file, file.offset, len(b))
+	debugf("GridFile %p: reading at offset %d into buffer of length %d", file, file.offset, len(b))
 	defer file.m.Unlock()
 	if file.offset == file.doc.Length {
 		return 0, os.EOF
@@ -581,17 +582,17 @@ func (file *GridFSFile) Read(b []byte) (n int, err os.Error) {
 	return n, err
 }
 
-func (file *GridFSFile) getChunk() (data []byte, err os.Error) {
+func (file *GridFile) getChunk() (data []byte, err os.Error) {
 	cache := file.rcache
 	file.rcache = nil
 	if cache != nil && cache.n == file.chunk {
-		debugf("GridFSFile %p: Getting chunk %d from cache", file, file.chunk)
+		debugf("GridFile %p: Getting chunk %d from cache", file, file.chunk)
 		cache.wait.Lock()
 		data, err = cache.data, cache.err
 	} else {
-		debugf("GridFSFile %p: Fetching chunk %d", file, file.chunk)
+		debugf("GridFile %p: Fetching chunk %d", file, file.chunk)
 		var doc gfsChunk
-		err = file.gfs.Chunks.Find(bson.M{"files_id": file.doc.Id, "n": file.chunk}).One(&doc)
+		err = file.gfs.Chunks.Find(bson.D{{"files_id", file.doc.Id}, {"n", file.chunk}}).One(&doc)
 		data = doc.Data
 	}
 	file.chunk++
@@ -599,10 +600,10 @@ func (file *GridFSFile) getChunk() (data []byte, err os.Error) {
 		// Read the next one in background.
 		cache = &gfsCachedChunk{n: file.chunk}
 		cache.wait.Lock()
-		debugf("GridFSFile %p: Scheduling chunk %d for background caching", file, file.chunk)
+		debugf("GridFile %p: Scheduling chunk %d for background caching", file, file.chunk)
 		go func(id interface{}, n int) {
 			var doc gfsChunk
-			cache.err = file.gfs.Chunks.Find(bson.M{"files_id": id, "n": n}).One(&doc)
+			cache.err = file.gfs.Chunks.Find(bson.D{{"files_id", id}, {"n", n}}).One(&doc)
 			cache.data = doc.Data
 			cache.wait.Unlock()
 		}(file.doc.Id, file.chunk)

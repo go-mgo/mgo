@@ -38,7 +38,7 @@ import (
 var stats *Stats
 var statsMutex sync.Mutex
 
-func CollectStats(enabled bool) {
+func SetStats(enabled bool) {
 	statsMutex.Lock()
 	if enabled {
 		if stats == nil {
