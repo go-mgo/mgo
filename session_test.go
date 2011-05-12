@@ -1809,8 +1809,8 @@ func (s *S) TestMapReduceVerbose(c *C) {
 	coll.Insert(M{"n": 1})
 
 	job := mgo.MapReduce{
-		Map:    "function() { emit(this.n, 1); }",
-		Reduce: "function(key, values) { return Array.sum(values); }",
+		Map:     "function() { emit(this.n, 1); }",
+		Reduce:  "function(key, values) { return Array.sum(values); }",
 		Verbose: true,
 	}
 

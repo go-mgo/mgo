@@ -77,7 +77,7 @@ type gfsFile struct {
 	Id          interface{}    "_id"
 	ChunkSize   int            "chunkSize"
 	UploadDate  bson.Timestamp "uploadDate"
-	Length      int64     "/s"
+	Length      int64          "/s"
 	MD5         string
 	Filename    string    "/c"
 	ContentType string    "contentType/c"
