@@ -46,9 +46,9 @@ import (
 type mode int
 
 const (
-	Eventual mode = 0
+	Eventual  mode = 0
 	Monotonic mode = 1
-	Strong mode = 2
+	Strong    mode = 2
 )
 
 // When changing the Session type, check if newSession and copySession
@@ -74,8 +74,8 @@ type Database struct {
 }
 
 type Collection struct {
-	DB	Database
-	Name    string  // "collection"
+	DB       Database
+	Name     string // "collection"
 	FullName string // "db.collection"
 }
 
@@ -180,7 +180,7 @@ func Mongo(url string) (session *Session, err os.Error) {
 				goto bad
 			}
 		default:
-bad:
+		bad:
 			err = os.ErrorString("Unsupported connection URL option: " + k + "=" + v)
 			return
 		}
@@ -214,7 +214,7 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 	if c := strings.Index(url, "@"); c != -1 {
 		pair := strings.Split(url[:c], ":", 2)
 		if len(pair) != 2 || pair[0] == "" {
-			err = os.ErrorString("Credentials must be provided as user:pass@host") 
+			err = os.ErrorString("Credentials must be provided as user:pass@host")
 			return
 		}
 		auth.user = pair[0]
@@ -223,7 +223,7 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 		auth.db = "admin"
 	}
 	if c := strings.Index(url, "/"); c != -1 {
-		if c != len(url) - 1 {
+		if c != len(url)-1 {
 			auth.db = url[c+1:]
 		}
 		url = url[:c]
@@ -282,7 +282,7 @@ func copySession(session *Session, keepAuth bool) (s *Session) {
 		safeOp:         session.safeOp,
 		syncTimeout:    session.syncTimeout,
 		urlauth:        session.urlauth,
-		auth:		auth,
+		auth:           auth,
 	}
 	runtime.SetFinalizer(s, finalizeSession)
 	return s
@@ -444,23 +444,23 @@ func (database Database) RemoveUser(user string) os.Error {
 }
 
 type indexSpec struct {
-	Name, NS string
-	Key bson.D
-	Unique bool "/c"
-	DropDups bool "dropDups/c"
-	Background bool "/c"
-	Sparse bool "/c"
-	Bits, Min, Max int "/c"
+	Name, NS       string
+	Key            bson.D
+	Unique         bool "/c"
+	DropDups       bool "dropDups/c"
+	Background     bool "/c"
+	Sparse         bool "/c"
+	Bits, Min, Max int  "/c"
 }
 
 type Index struct {
-	Key []string       // Index key fields; prefix name with dash (-) for descending order
-	Unique bool        // Prevent two documents from having the same index key
-	DropDups bool      // Drop documents with the same index key as a previously indexed one
-	Background bool    // Build index in background and return immediately
-	Sparse bool        // Only index documents containing the Key fields
+	Key        []string // Index key fields; prefix name with dash (-) for descending order
+	Unique     bool     // Prevent two documents from having the same index key
+	DropDups   bool     // Drop documents with the same index key as a previously indexed one
+	Background bool     // Build index in background and return immediately
+	Sparse     bool     // Only index documents containing the Key fields
 
-	Name string        // Index name, computed by EnsureIndex
+	Name string // Index name, computed by EnsureIndex
 
 	Bits, Min, Max int // Properties for spatial indexes
 }
@@ -513,7 +513,7 @@ func parseIndexKey(key []string) (name string, realKey bson.D, err os.Error) {
 //
 // See the EnsureIndex method for more details.
 func (collection Collection) EnsureIndexKey(key []string) os.Error {
-    return collection.EnsureIndex(Index{Key: key})
+	return collection.EnsureIndex(Index{Key: key})
 }
 
 // EnsureIndex ensures an index with the given key exists, creating it with
@@ -585,22 +585,22 @@ func (collection Collection) EnsureIndex(index Index) os.Error {
 
 	db := collection.DB
 	session := db.Session
-	cacheKey := collection.FullName + "\x00" +  name
+	cacheKey := collection.FullName + "\x00" + name
 	if session.cluster().HasCachedIndex(cacheKey) {
 		return nil
 	}
 
 	spec := indexSpec{
-		Name: name,
-		NS: collection.FullName,
-		Key: realKey,
-		Unique: index.Unique,
-		DropDups: index.DropDups,
+		Name:       name,
+		NS:         collection.FullName,
+		Key:        realKey,
+		Unique:     index.Unique,
+		DropDups:   index.DropDups,
 		Background: index.Background,
-		Sparse: index.Sparse,
-		Bits: index.Bits,
-		Min: index.Min,
-		Max: index.Max,
+		Sparse:     index.Sparse,
+		Bits:       index.Bits,
+		Min:        index.Min,
+		Max:        index.Max,
 	}
 
 	session = session.Clone()
@@ -635,7 +635,7 @@ func (collection Collection) DropIndex(key []string) os.Error {
 
 	db := collection.DB
 	session := db.Session
-	cacheKey := collection.FullName + "\x00" +  name
+	cacheKey := collection.FullName + "\x00" + name
 	session.cluster().CacheIndex(cacheKey, false)
 
 	session = session.Clone()
@@ -644,7 +644,10 @@ func (collection Collection) DropIndex(key []string) os.Error {
 
 	db.Session = session
 	defer db.Session.Close()
-	result := struct{ ErrMsg string; Ok bool }{}
+	result := struct {
+		ErrMsg string
+		Ok     bool
+	}{}
 	err = db.Run(bson.D{{"dropIndexes", collection.Name}, {"index", name}}, &result)
 	if err != nil {
 		return err
@@ -681,12 +684,12 @@ func (collection Collection) Indexes() (indexes []Index, err os.Error) {
 			break
 		}
 		index := Index{
-			Name: spec.Name,
-			Key: simpleIndexKey(spec.Key),
-			Unique: spec.Unique,
-			DropDups: spec.DropDups,
+			Name:       spec.Name,
+			Key:        simpleIndexKey(spec.Key),
+			Unique:     spec.Unique,
+			DropDups:   spec.DropDups,
 			Background: spec.Background,
-			Sparse: spec.Sparse,
+			Sparse:     spec.Sparse,
 		}
 		indexes = append(indexes, index)
 	}
@@ -705,12 +708,12 @@ func simpleIndexKey(realKey bson.D) (key []string) {
 			continue
 		}
 		if i == -1 {
-			key = append(key, "-" + field)
+			key = append(key, "-"+field)
 			continue
 		}
 		s, _ := realKey[i].Value.(string)
 		if s == "2d" {
-			key = append(key, "@" + field)
+			key = append(key, "@"+field)
 			continue
 		}
 		panic("Got unknown index key type for field " + field)
@@ -901,9 +904,9 @@ func (session *Session) SetPrefetch(p float64) {
 }
 
 type Safe struct {
-	W int        // Min # of servers that have to ack before success
-	WTimeout int // Milliseconds to wait for W before timing out
-	FSync bool   // Should servers sync to disk before returning success
+	W        int  // Min # of servers that have to ack before success
+	WTimeout int  // Milliseconds to wait for W before timing out
+	FSync    bool // Should servers sync to disk before returning success
 }
 
 // Safe returns the current safety mode for the session.
@@ -1117,13 +1120,22 @@ func (err *LastError) String() string {
 	return err.Err
 }
 
+type queryError struct {
+	Err           string "$err"
+	ErrMsg        string
+	Assertion     string
+	Code          int
+	AssertionCode int "assertionCode"
+}
+
 type QueryError struct {
-	Err string "$err"
-	Code int
+	Code      int
+	Message   string
+	Assertion bool
 }
 
 func (err *QueryError) String() string {
-	return err.Err
+	return err.Message
 }
 
 // Insert inserts one or more documents in the respective collection.  In
@@ -1248,8 +1260,8 @@ func (query *Query) Select(selector interface{}) *Query {
 type queryWrapper struct {
 	Query   interface{} "$query"
 	OrderBy interface{} "$orderby/c"
-	Hint interface{} "$hint/c"
-	Explain bool "$explain/c"
+	Hint    interface{} "$hint/c"
+	Explain bool        "$explain/c"
 }
 
 func (query *Query) wrap() *queryWrapper {
@@ -1337,18 +1349,25 @@ func (query *Query) Hint(indexKey []string) *Query {
 	return query
 }
 
-var errHint = []byte("\x02$err\x00")
+var errHint1 = []byte("\x02$err\x00")
+var errHint2 = []byte("\x02errmsg\x00")
 
 func checkQueryError(data []byte) os.Error {
-	if bytes.Index(data, errHint) < 0 {
+	if bytes.Index(data, errHint1) < 0 && bytes.Index(data, errHint2) < 0 {
 		return nil
 	}
-	result := &QueryError{}
-	err := bson.Unmarshal(data, result)
-	if err == nil && result.Err != "" {
-		return result
+	result := &queryError{}
+	bson.Unmarshal(data, result)
+	if result.Err == "" && result.ErrMsg == "" {
+		return nil
 	}
-	return nil
+	if result.AssertionCode != 0 && result.Assertion != "" {
+		return &QueryError{Code: result.AssertionCode, Message: result.Assertion, Assertion: true}
+	}
+	if result.Err != "" {
+		return &QueryError{Code: result.Code, Message: result.Err}
+	}
+	return &QueryError{Code: result.Code, Message: result.ErrMsg}
 }
 
 // One executes the query and unmarshals the first obtained document into the
@@ -1744,6 +1763,240 @@ func (collection Collection) Count() (n int, err os.Error) {
 	return collection.Find(nil).Count()
 }
 
+type distinctCmd struct {
+	Collection string "distinct"
+	Key        string
+	Query      interface{} "/c"
+}
+
+// Distinct returns a list of distinct values for the given key within
+// the result set.  The list of distinct values will be unmarshalled
+// in the "values" key of the provided result parameter.
+//
+// For example:
+//
+//     var result []int
+//     err := collection.Find(bson.M{"gender": "F"}).Distinct("age", &result)
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Aggregation
+//
+func (query *Query) Distinct(key string, result interface{}) os.Error {
+	query.m.Lock()
+	session := query.session
+	op := query.op // Copy.
+	query.m.Unlock()
+
+	c := strings.Index(op.collection, ".")
+	if c < 0 {
+		return os.ErrorString("Bad collection name: " + op.collection)
+	}
+
+	dbname := op.collection[:c]
+	cname := op.collection[c+1:]
+
+	q := op.query
+	if qw, ok := q.(*queryWrapper); ok {
+		q = qw.Query
+	}
+
+	var doc struct{ Values bson.Raw }
+	err := session.DB(dbname).Run(distinctCmd{cname, key, q}, &doc)
+	if err != nil {
+		return err
+	}
+	return doc.Values.Unmarshal(result)
+}
+
+
+type mapReduceCmd struct {
+	Collection string "mapreduce"
+	Map        string "/c"
+	Reduce     string "/c"
+	Finalize   string "/c"
+	Limit      int32  "/c"
+	Out        interface{}
+	Query      interface{} "/c"
+	Sort       interface{} "/c"
+	Scope      interface{} "/c"
+	Verbose    bool        "/c"
+}
+
+type mapReduceResult struct {
+	Results    bson.Raw
+	Result     bson.Raw
+	TimeMillis int64 "timeMillis"
+	Counts     struct{ Input, Emit, Output int }
+	Ok         bool
+	Err        string
+	Timing     *MapReduceTime
+}
+
+type MapReduce struct {
+	Map      string      // Map Javascript function code (required)
+	Reduce   string      // Reduce Javascript function code (required)
+	Finalize string      // Finalize Javascript function code (optional)
+	Out      interface{} // Output collection name or document. If nil, results are inlined into the result parameter.
+	Scope    interface{} // Optional global scope for Javascript functions
+	Verbose  bool
+}
+
+type MapReduceInfo struct {
+	InputCount  int            // Number of documents mapped
+	EmitCount   int            // Number of times reduce called emit
+	OutputCount int            // Number of documents in resulting collection
+	Database    string         // Output database, if results are not inlined
+	Collection  string         // Output collection, if results are not inlined
+	Time        int64          // Time to run the job, in nanoseconds
+	VerboseTime *MapReduceTime // Only defined if Verbose was true
+}
+
+type MapReduceTime struct {
+	Total    int64 // Total time, in nanoseconds
+	Map      int64 "mapTime"  // Time within map function, in nanoseconds
+	EmitLoop int64 "emitLoop" // Time within the emit/map loop, in nanoseconds
+}
+
+// MapReduce executes a map/reduce job for documents covered by the query.
+// That kind of job is suitable for very flexible bulk aggregation of data
+// performed at the server side via Javascript functions.
+//
+// Results from the job may be returned as a result of the query itself
+// through the result parameter in case they'll certainly fit in memory
+// and in a single document.  If there's the possibility that the amount
+// of data might be too large, results must be stored back in an alternative
+// collection or even a separate database, by setting the Out field of the
+// provided MapReduce job.  In that case, provide nil as the result parameter.
+//
+// These are some of the ways to set Out:
+//
+//     nil
+//         Inline results into the result parameter.
+//
+//     bson.M{"replace": "mycollection"}
+//         The output will be inserted into a collection which replaces any
+//         existing collection with the same name.
+//
+//     bson.M{"merge": "mycollection"}
+//         This option will merge new data into the old output collection. In
+//         other words, if the same key exists in both the result set and the
+//         old collection, the new key will overwrite the old one.
+//
+//     bson.M{"reduce": "mycollection"}
+//         If documents exist for a given key in the result set and in the old
+//         collection, then a reduce operation (using the specified reduce
+//         function) will be performed on the two values and the result will be
+//         written to the output collection. If a finalize function was
+//         provided, this will be run after the reduce as well.
+//
+//     bson.M{...., "db": "mydb"}
+//         Any of the above options can have the "db" key included for doing
+//         the respective action in a separate database.
+//
+// The following is a trivial example which will count the number of
+// occurrences of a field named n on each document in a collection, and
+// will return results inline:
+//
+//     job := mgo.MapReduce{
+//             Map:      "function() { emit(this.n, 1) }",
+//             Reduce:   "function(key, values) { return Array.sum(values) }",
+//     }
+//     var result []struct { Id int "_id"; Value int }
+//     _, err := collection.Find(nil).MapReduce(job, &result)
+//     if err != nil {
+//         panic(err)
+//     }
+//     for _, item := range result {
+//         fmt.Println(item.Value)
+//     }
+//     
+// This function is compatible with MongoDB 1.7.4+.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/MapReduce
+//
+func (query *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduceInfo, err os.Error) {
+	query.m.Lock()
+	session := query.session
+	op := query.op // Copy.
+	limit := query.limit
+	query.m.Unlock()
+
+	c := strings.Index(op.collection, ".")
+	if c < 0 {
+		return nil, os.ErrorString("Bad collection name: " + op.collection)
+	}
+
+	dbname := op.collection[:c]
+	cname := op.collection[c+1:]
+
+	q := op.query
+	var sort interface{}
+	if qw, ok := q.(*queryWrapper); ok {
+		q = qw.Query
+		sort = qw.OrderBy
+	}
+
+	cmd := mapReduceCmd{
+		Collection: cname,
+		Map:        job.Map,
+		Reduce:     job.Reduce,
+		Finalize:   job.Finalize,
+		Out:        job.Out,
+		Scope:      job.Scope,
+		Verbose:    job.Verbose,
+		Query:      q,
+		Sort:       sort,
+		Limit:      limit,
+	}
+
+	if cmd.Out == nil {
+		cmd.Out = bson.M{"inline": 1}
+	}
+
+	var doc mapReduceResult
+	err = session.DB(dbname).Run(&cmd, &doc)
+	if err != nil {
+		return nil, err
+	}
+	if doc.Err != "" {
+		return nil, os.ErrorString(doc.Err)
+	}
+
+	info = &MapReduceInfo{
+		InputCount:  doc.Counts.Input,
+		EmitCount:   doc.Counts.Emit,
+		OutputCount: doc.Counts.Output,
+		Time:        doc.TimeMillis * 1e6,
+	}
+
+	if doc.Result.Kind == 0x02 {
+		err = doc.Result.Unmarshal(&info.Collection)
+		info.Database = dbname
+	} else if doc.Result.Kind == 0x03 {
+		var v struct{ Collection, Db string }
+		err = doc.Result.Unmarshal(&v)
+		info.Collection = v.Collection
+		info.Database = v.Db
+	}
+
+	if doc.Timing != nil {
+		info.VerboseTime = doc.Timing
+		info.VerboseTime.Total *= 1e6
+		info.VerboseTime.Map *= 1e6
+		info.VerboseTime.EmitLoop *= 1e6
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	if result != nil {
+		return info, doc.Results.Unmarshal(result)
+	}
+	return info, nil
+}
 
 // ---------------------------------------------------------------------------
 // Internal session handling helpers.

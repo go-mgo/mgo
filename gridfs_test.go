@@ -75,11 +75,11 @@ func (s *S) TestGridFSCreate(c *C) {
 	result["uploadDate"] = "<timestamp>"
 
 	expected := M{
-		"_id": "<id>",
-		"length": 9,
-		"chunkSize": 262144,
+		"_id":        "<id>",
+		"length":     9,
+		"chunkSize":  262144,
 		"uploadDate": "<timestamp>",
-		"md5": "1e50210a0202497fb79bc38b6ade6c34",
+		"md5":        "1e50210a0202497fb79bc38b6ade6c34",
 	}
 	c.Assert(result, Equals, expected)
 
@@ -94,10 +94,10 @@ func (s *S) TestGridFSCreate(c *C) {
 	result["_id"] = "<id>"
 
 	expected = M{
-		"_id": "<id>",
+		"_id":      "<id>",
 		"files_id": fileId,
-		"n": 0,
-		"data": []byte("some data"),
+		"n":        0,
+		"data":     []byte("some data"),
 	}
 	c.Assert(result, Equals, expected)
 
@@ -167,14 +167,14 @@ func (s *S) TestGridFSFileDetails(c *C) {
 	result["uploadDate"] = "<timestamp>"
 
 	expected := M{
-		"_id": "myid",
-		"length": 9,
-		"chunkSize": 262144,
-		"uploadDate": "<timestamp>",
-		"md5": "1e50210a0202497fb79bc38b6ade6c34",
-		"filename": "myfile2.txt",
+		"_id":         "myid",
+		"length":      9,
+		"chunkSize":   262144,
+		"uploadDate":  "<timestamp>",
+		"md5":         "1e50210a0202497fb79bc38b6ade6c34",
+		"filename":    "myfile2.txt",
 		"contentType": "text/plain",
-		"metadata": bson.M{"any": "thing"},
+		"metadata":    bson.M{"any": "thing"},
 	}
 	c.Assert(result, Equals, expected)
 }
@@ -227,14 +227,13 @@ func (s *S) TestGridFSCreateWithChunking(c *C) {
 	result["uploadDate"] = "<timestamp>"
 
 	expected := M{
-		"_id": "<id>",
-		"length": 22,
-		"chunkSize": 5,
+		"_id":        "<id>",
+		"length":     22,
+		"chunkSize":  5,
 		"uploadDate": "<timestamp>",
-		"md5": "44a66044834cbe55040089cabfc102d5",
+		"md5":        "44a66044834cbe55040089cabfc102d5",
 	}
 	c.Assert(result, Equals, expected)
-
 
 	// Check the chunks.
 	iter, err := db.C("fs.chunks").Find(nil).Sort(M{"n": 1}).Iter()
@@ -255,10 +254,10 @@ func (s *S) TestGridFSCreateWithChunking(c *C) {
 		result["_id"] = "<id>"
 
 		expected = M{
-			"_id": "<id>",
+			"_id":      "<id>",
 			"files_id": fileId,
-			"n": i,
-			"data": []byte(dataChunks[i]),
+			"n":        i,
+			"data":     []byte(dataChunks[i]),
 		}
 		c.Assert(result, Equals, expected)
 	}

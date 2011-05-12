@@ -41,7 +41,7 @@ import (
 )
 
 type GridFS struct {
-	Files Collection
+	Files  Collection
 	Chunks Collection
 }
 
@@ -54,48 +54,48 @@ const (
 )
 
 type GridFile struct {
-	m sync.Mutex
-	c sync.Cond
-	gfs GridFS
+	m    sync.Mutex
+	c    sync.Cond
+	gfs  GridFS
 	mode gfsFileMode
-	err os.Error
+	err  os.Error
 
-	chunk int
+	chunk  int
 	offset int64
 
 	wpending int
-	wbuf []byte
-	wsum hash.Hash
+	wbuf     []byte
+	wsum     hash.Hash
 
-	rbuf []byte
+	rbuf   []byte
 	rcache *gfsCachedChunk
 
 	doc gfsFile
 }
 
 type gfsFile struct {
-	Id interface{} "_id"
-	ChunkSize int "chunkSize"
-	UploadDate bson.Timestamp "uploadDate"
-	Length int64
-	MD5 string
-	Filename string "/c"
-	ContentType string "contentType/c"
-	Metadata *bson.Raw "/c"
+	Id          interface{}    "_id"
+	ChunkSize   int            "chunkSize"
+	UploadDate  bson.Timestamp "uploadDate"
+	Length      int64     "/s"
+	MD5         string
+	Filename    string    "/c"
+	ContentType string    "contentType/c"
+	Metadata    *bson.Raw "/c"
 }
 
 type gfsChunk struct {
-	Id interface{} "_id"
+	Id      interface{} "_id"
 	FilesId interface{} "files_id"
-	N int
-	Data []byte
+	N       int
+	Data    []byte
 }
 
 type gfsCachedChunk struct {
 	wait sync.Mutex
-	n int
+	n    int
 	data []byte
-	err os.Error
+	err  os.Error
 }
 
 func newGridFS(db Database, prefix string) *GridFS {
@@ -468,7 +468,7 @@ func (file *GridFile) Write(data []byte) (n int, err os.Error) {
 	file.doc.Length += int64(n)
 	chunkSize := file.doc.ChunkSize
 
-	if len(file.wbuf) + len(data) < chunkSize {
+	if len(file.wbuf)+len(data) < chunkSize {
 		file.wbuf = append(file.wbuf, data...)
 		return
 	}
@@ -507,7 +507,7 @@ func (file *GridFile) insertChunk(data []byte) {
 	debugf("GridFile %p: adding to checksum: %q", file, string(data))
 	file.wsum.Write(data)
 
-	for file.doc.ChunkSize * file.wpending >= 1024 * 1024 {
+	for file.doc.ChunkSize*file.wpending >= 1024*1024 {
 		// Hold on.. we got a MB pending.
 		file.c.Wait()
 		if file.err != nil {
@@ -596,7 +596,7 @@ func (file *GridFile) getChunk() (data []byte, err os.Error) {
 		data = doc.Data
 	}
 	file.chunk++
-	if int64(file.chunk) * int64(file.doc.ChunkSize) < file.doc.Length {
+	if int64(file.chunk)*int64(file.doc.ChunkSize) < file.doc.Length {
 		// Read the next one in background.
 		cache = &gfsCachedChunk{n: file.chunk}
 		cache.wait.Lock()
@@ -612,5 +612,3 @@ func (file *GridFile) getChunk() (data []byte, err os.Error) {
 	debugf("Returning err: %#v", err)
 	return
 }
-
-
