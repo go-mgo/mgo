@@ -48,7 +48,7 @@ type log_Logger interface {
 var globalLogger log_Logger
 var globalDebug bool
 
-// Specify the *log.Logger object where log messages should be send to.
+// Specify the *log.Logger object where log messages should be sent to.
 func SetLogger(logger log_Logger) {
 	globalLogger = logger
 }

@@ -434,7 +434,8 @@ func (database Database) AddUser(user, pass string, readOnly bool) os.Error {
 	psum.Write([]byte(user + ":mongo:" + pass))
 	digest := hex.EncodeToString(psum.Sum())
 	c := database.C("system.users")
-	return c.Upsert(bson.M{"user": user}, bson.M{"$set": bson.M{"user": user, "pwd": digest, "readOnly": readOnly}})
+	_, err := c.Upsert(bson.M{"user": user}, bson.M{"$set": bson.M{"user": user, "pwd": digest, "readOnly": readOnly}})
+	return err
 }
 
 // RemoveUser removes the authentication credentials of user from the database.
@@ -1112,8 +1113,10 @@ func (collection Collection) Find(query interface{}) *Query {
 type LastError struct {
 	Err             string
 	Code, N, Waited int
-	WTimeout        bool
 	FSyncFiles      int "fsyncFiles"
+	WTimeout        bool
+	Updated         bool        "updatedExisting"
+	UpsertedId      interface{} "upserted"
 }
 
 func (err *LastError) String() string {
@@ -1143,49 +1146,116 @@ func (err *QueryError) String() string {
 // happens while inserting the provided documents, the returned error will
 // be of type *LastError.
 func (collection Collection) Insert(docs ...interface{}) os.Error {
-	return collection.DB.Session.writeQuery(&insertOp{collection.FullName, docs})
+	_, err := collection.DB.Session.writeQuery(&insertOp{collection.FullName, docs})
+	return err
 }
 
 // Update finds a single document matching the provided selector document
 // and modifies it according to the change document.  In case the session
-// is in safe mode (see the SetSafe method) and an error happens when attempting
-// the change, the returned error will be of type *LastError.
+// is in safe mode (see the SetSafe method) a getLastError command will
+// follow the update request and NotFound will be returned in case no
+// documents are updated, or a value of type *LastError in case some other
+// error is detected.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Updating
+//     http://www.mongodb.org/display/DOCS/Atomic+Operations
+//
 func (collection Collection) Update(selector interface{}, change interface{}) os.Error {
-	return collection.DB.Session.writeQuery(&updateOp{collection.FullName, selector, change, 0})
+	lerr, err := collection.DB.Session.writeQuery(&updateOp{collection.FullName, selector, change, 0})
+	if err == nil && lerr != nil && !lerr.Updated {
+		return NotFound
+	}
+	return err
+
 }
 
-// Upsert finds a single document matching the provided selector document
-// and modifies it according to the change document.  If no document matching
-// the selector is found, the change document is newly inserted instead.
-// In case the session is in safe mode (see the SetSafe method) and an error
-// happens when attempting the change, the returned error will be of type
-// *LastError.
-func (collection Collection) Upsert(selector interface{}, change interface{}) os.Error {
-	return collection.DB.Session.writeQuery(&updateOp{collection.FullName, selector, change, 1})
+type idType struct {
+	Id interface{} "_id"
 }
 
 // UpdateAll finds all documents matching the provided selector document
 // and modifies them according to the change document.  In case the session
-// is in safe mode (see the SetSafe method) and an error happens when attempting
-// the change, the returned error will be of type *LastError.
+// is in safe mode (see the SetSafe method) a getLastError command will
+// follow the update request and NotFound will be returned in case no
+// documents are updated, or a value of type *LastError in case some other
+// error is detected.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Updating
+//     http://www.mongodb.org/display/DOCS/Atomic+Operations
+//
 func (collection Collection) UpdateAll(selector interface{}, change interface{}) os.Error {
-	return collection.DB.Session.writeQuery(&updateOp{collection.FullName, selector, change, 2})
+	lerr, err := collection.DB.Session.writeQuery(&updateOp{collection.FullName, selector, change, 2})
+	if err == nil && lerr != nil && !lerr.Updated {
+		return NotFound
+	}
+	return err
+}
+
+// Upsert finds a single document matching the provided selector document
+// and modifies it according to the change document.  If no document matching
+// the selector is found, the change document is newly inserted and the
+// returned id value is set to the id of the inserted document.  In case the
+// session is in safe mode (see the SetSafe method) a getLastError command will
+// follow the upsert request and a value of type *LastError in case some error
+// is detected.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Updating
+//     http://www.mongodb.org/display/DOCS/Atomic+Operations
+//
+func (collection Collection) Upsert(selector interface{}, change interface{}) (id interface{}, err os.Error) {
+	data, err := bson.Marshal(change)
+	if err != nil {
+		return nil, err
+	}
+	change = bson.Raw{0x03, data}
+	lerr, err := collection.DB.Session.writeQuery(&updateOp{collection.FullName, selector, change, 1})
+	if lerr != nil {
+		id = lerr.UpsertedId
+		if id == nil && !lerr.Updated {
+			// Sad. Will unmarhsal the document to make the interface even.
+			var doc idType
+			err = bson.Unmarshal(data, &doc)
+			if err != nil {
+				return nil, err
+			}
+			id = doc.Id
+		}
+	}
+	return id, err
 }
 
 // Remove finds a single document matching the provided selector document
 // and removes it from the database.  In case the session is in safe mode
 // (see the SetSafe method) and an error happens when attempting the change,
 // the returned error will be of type *LastError.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Removing
+//
 func (collection Collection) Remove(selector interface{}) os.Error {
-	return collection.DB.Session.writeQuery(&deleteOp{collection.FullName, selector, 1})
+	_, err := collection.DB.Session.writeQuery(&deleteOp{collection.FullName, selector, 1})
+	return err
 }
 
 // RemoveAll finds all documents matching the provided selector document
 // and removes them from the database.  In case the session is in safe mode
 // (see the SetSafe method) and an error happens when attempting the change,
 // the returned error will be of type *LastError.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Removing
+//
 func (collection Collection) RemoveAll(selector interface{}) os.Error {
-	return collection.DB.Session.writeQuery(&deleteOp{collection.FullName, selector, 0})
+	_, err := collection.DB.Session.writeQuery(&deleteOp{collection.FullName, selector, 0})
+	return err
 }
 
 // Batch sets the batch size used when fetching documents from the database.
@@ -1998,6 +2068,90 @@ func (query *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduc
 	return info, nil
 }
 
+
+type Change struct {
+	Update interface{} // The change document
+	Upsert bool        // Whether to insert in case the document isn't found
+	Remove bool        // Whether to remove the document found rather than updating
+	New    bool        // Should the modified document be returned rather than the old one
+}
+
+type findModifyCmd struct {
+	Collection                  string      "findAndModify"
+	Query, Update, Sort, Fields interface{} "/c"
+	Upsert, Remove, New         bool        "/c"
+}
+
+type valueResult struct {
+	Value bson.Raw
+}
+
+// Modify allows updating, upserting or removing a document matching the query
+// and atomically returning either the old version (the default) or the new
+// version of the document (when change.New is true).  In case no objects are
+// found Modify returns NotFound.
+//
+// The Sort and Select query methods affect the result of Modify.  In case
+// multiple documents match the query, Sort enables selecting which document to
+// act upon by ordering it first.  Select enables retrieving only a selection
+// of fields of the new or old document.
+//
+// This simple example increments a counter and prints its new value:
+//
+//     change := mgo.Change{Update: bson.M{"$inc": bson.M{"n": 1}}, New: true}
+//     err = col.Find(M{"_id": id}).Modify(change, &doc)
+//     fmt.Println(doc.N)
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/findAndModify+Command
+//     http://www.mongodb.org/display/DOCS/Updating
+//     http://www.mongodb.org/display/DOCS/Atomic+Operations
+//
+func (query *Query) Modify(change Change, result interface{}) (err os.Error) {
+	query.m.Lock()
+	session := query.session
+	op := query.op // Copy.
+	query.m.Unlock()
+
+	c := strings.Index(op.collection, ".")
+	if c < 0 {
+		return os.ErrorString("Bad collection name: " + op.collection)
+	}
+
+	dbname := op.collection[:c]
+	cname := op.collection[c+1:]
+
+	q := op.query
+	var sort interface{}
+	if qw, ok := q.(*queryWrapper); ok {
+		q = qw.Query
+		sort = qw.OrderBy
+	}
+
+	cmd := findModifyCmd{
+		Collection: cname,
+		Update:     change.Update,
+		Upsert:     change.Upsert,
+		Remove:     change.Remove,
+		New:        change.New,
+		Query:      q,
+		Sort:       sort,
+		Fields:     op.selector,
+	}
+
+	var doc valueResult
+	err = session.DB(dbname).Run(&cmd, &doc)
+	if err != nil {
+		if qerr, ok := err.(*QueryError); ok && qerr.Message == "No matching object found" {
+			return NotFound
+		}
+		return err
+	}
+	return doc.Value.Unmarshal(result)
+}
+
+
 // ---------------------------------------------------------------------------
 // Internal session handling helpers.
 
@@ -2108,11 +2262,13 @@ func (iter *Iter) replyFunc() replyFunc {
 }
 
 // writeQuery runs the given modifying operation, potentially followed up
-// by a getLastError command in case the session is in safe mode.
-func (session *Session) writeQuery(op interface{}) os.Error {
+// by a getLastError command in case the session is in safe mode.  The
+// LastError result is made available in lerr, and if lerr.Err is set it
+// will also be returned as err.
+func (session *Session) writeQuery(op interface{}) (lerr *LastError, err os.Error) {
 	socket, err := session.acquireSocket(false)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer socket.Release()
 
@@ -2121,7 +2277,7 @@ func (session *Session) writeQuery(op interface{}) os.Error {
 	session.m.RUnlock()
 
 	if safeOp == nil {
-		return socket.Query(op)
+		return nil, socket.Query(op)
 	} else {
 		var mutex sync.Mutex
 		var replyData []byte
@@ -2135,18 +2291,19 @@ func (session *Session) writeQuery(op interface{}) os.Error {
 		}
 		err = socket.Query(op, &query)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		mutex.Lock() // Wait.
 		if replyErr != nil {
-			return replyErr // XXX TESTME
+			return nil, replyErr // XXX TESTME
 		}
 		result := &LastError{}
 		bson.Unmarshal(replyData, &result)
 		debugf("Result from writing query: %#v", result)
 		if result.Err != "" {
-			return result
+			return result, result
 		}
+		return result, nil
 	}
-	return nil
+	panic("unreachable")
 }

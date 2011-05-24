@@ -229,7 +229,7 @@ func (s *S) TestUpdate(c *C) {
 	c.Assert(result["n"], Equals, 43)
 
 	err = coll.Update(M{"k": 47}, M{"k": 47, "n": 47})
-	c.Assert(err, Equals, nil)
+	c.Assert(err, Equals, mgo.NotFound)
 
 	err = coll.Find(M{"k": 47}).One(result)
 	c.Assert(err, Equals, mgo.NotFound)
@@ -248,20 +248,39 @@ func (s *S) TestUpsert(c *C) {
 		c.Assert(err, IsNil)
 	}
 
-	err = coll.Upsert(M{"k": 42}, M{"k": 42, "n": 24})
+	id, err := coll.Upsert(M{"k": 42}, M{"k": 42, "n": 24})
 	c.Assert(err, IsNil)
+	c.Assert(id, IsNil)
 
 	result := make(M)
 	err = coll.Find(M{"k": 42}).One(result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 24)
 
-	err = coll.Upsert(M{"k": 47}, M{"k": 47, "n": 47})
+	// Insert with internally created id.
+	id, err = coll.Upsert(M{"k": 47}, M{"k": 47, "n": 47})
 	c.Assert(err, IsNil)
+	c.Assert(id, NotNil)
 
 	err = coll.Find(M{"k": 47}).One(result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 47)
+
+	result = make(M)
+	err = coll.Find(M{"_id": id}).One(result)
+	c.Assert(err, IsNil)
+	c.Assert(result["n"], Equals, 47)
+
+	// Insert with provided id.
+	id, err = coll.Upsert(M{"k": 48}, M{"k": 48, "n": 48, "_id": 48})
+	c.Assert(err, IsNil)
+	c.Assert(id, NotNil)
+
+	err = coll.Find(M{"k": 48}).One(result)
+	c.Assert(err, IsNil)
+	c.Assert(result["n"], Equals, 48)
+
+	c.Assert(id, Equals, 48)
 }
 
 func (s *S) TestUpdateAll(c *C) {
@@ -292,6 +311,9 @@ func (s *S) TestUpdateAll(c *C) {
 	err = coll.Find(M{"k": 44}).One(result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 45)
+
+	err = coll.UpdateAll(M{"k": 47}, M{"k": 47, "n": 47})
+	c.Assert(err, Equals, mgo.NotFound)
 }
 
 func (s *S) TestRemove(c *C) {
@@ -349,6 +371,47 @@ func (s *S) TestRemoveAll(c *C) {
 
 	err = coll.Find(M{"n": 44}).One(result)
 	c.Assert(err, Equals, mgo.NotFound)
+}
+
+func (s *S) TestFindAndModify(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"n": 42})
+
+	result := make(M)
+	err = coll.Find(M{"n": 42}).Modify(mgo.Change{Update: M{"$inc": M{"n": 1}}}, result)
+	c.Assert(err, IsNil)
+	c.Assert(result["n"], Equals, 42)
+
+	result = make(M)
+	err = coll.Find(M{"n": 43}).Modify(mgo.Change{Update: M{"$inc": M{"n": 1}}, New: true}, result)
+	c.Assert(err, IsNil)
+	c.Assert(result["n"], Equals, 44)
+
+	result = make(M)
+	err = coll.Find(M{"n": 50}).Modify(mgo.Change{Upsert: true, Update: M{"n": 51, "o": 52}}, result)
+	c.Assert(err, IsNil)
+	c.Assert(result["n"], IsNil)
+
+	result = make(M)
+	err = coll.Find(nil).Sort(M{"n": -1}).Modify(mgo.Change{Update: M{"$inc": M{"n": 1}}, New: true}, result)
+	c.Assert(err, IsNil)
+	c.Assert(result["n"], Equals, 52)
+
+	result = make(M)
+	err = coll.Find(M{"n": 52}).Select(M{"o": 1}).Modify(mgo.Change{Remove: true}, result)
+	c.Assert(err, IsNil)
+	c.Assert(result["n"], IsNil)
+	c.Assert(result["o"], Equals, 52)
+
+	result = make(M)
+	err = coll.Find(M{"n": 60}).Modify(mgo.Change{Remove: true}, result)
+	c.Assert(err, Equals, mgo.NotFound)
+	c.Assert(len(result), Equals, 0)
 }
 
 func (s *S) TestCountCollection(c *C) {
@@ -617,6 +680,9 @@ func (s *S) TestFindIterLimitWithBatch(c *C) {
 	for _, n := range ns {
 		coll.Insert(M{"n": n})
 	}
+
+	// Ping the database to ensure the nonce has been received already.
+	c.Assert(session.Ping(), IsNil)
 
 	session.Refresh() // Release socket.
 
