@@ -1063,34 +1063,15 @@ func (session *Session) Ping() os.Error {
 // is equivalent to providing an empty document such as bson.M{}.
 //
 // Further details of the query may be tweaked using the resulting Query value,
-// and then executed using methods such as One, Iter, or Tail.
+// and then executed to retrieve results using methods such as One, For,
+// Iter, or Tail.
 //
-// In case the resulting document includes a field named $err, which is a
-// standard way for MongoDB to return query errors, the returned err will be
-// set to a *QueryError value including the Err message and the Code.  In those
-// cases, the result argument is still unmarshalled into with the received
-// document so that any other custom values may be obtained if desired.
-//
-// For example:
-//
-//     err := collection.Find(bson.M{"a", 1}).One(result)
-//
-// Or, for iterating over all results:
-//
-//    iter, err := collection.Find(nil).Iter()
-//    if err != nil {
-//        panic(err)
-//    }
-//    for {
-//        err = iter.Next(&result)
-//        if err != nil {
-//            break
-//        }
-//        fmt.Println(result.Id)
-//    }
-//    if err != nil {
-//        panic(err)
-//    }
+// In case the resulting document includes a field named $err or errmsg, which
+// are standard ways for MongoDB to return query errors, the returned err will
+// be set to a *QueryError value including the Err message and the Code.  In
+// those cases, the result argument is still unmarshalled into with the
+// received document so that any other custom values may be obtained if
+// desired.
 //
 // Relevant documentation:
 //
@@ -1627,7 +1608,10 @@ func (session *Session) slaveOkFlag() (flag uint32) {
 //
 // For example:
 //
-//    iter := collection.Find(nil).Iter()
+//    iter, err := collection.Find(nil).Iter()
+//    if err != nil {
+//        panic(err)
+//    }
 //    for {
 //        err := iter.Next(&result)
 //        if err != nil {
