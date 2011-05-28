@@ -1428,11 +1428,12 @@ func checkQueryError(data []byte) os.Error {
 //
 //     err := collection.Find(bson.M{"a", 1}).One(&result)
 //
-// In case the resulting document includes a field named $err, which is a
-// standard way for MongoDB to return query errors, the returned err will be
-// set to a *QueryError value including the Err message and the Code.  In those
-// cases, the result argument is still unmarshalled into with the received
-// document so that any other custom values may be obtained if desired.
+// In case the resulting document includes a field named $err or errmsg, which
+// are standard ways for MongoDB to return query errors, the returned err will
+// be set to a *QueryError value including the Err message and the Code.  In
+// those cases, the result argument is still unmarshalled into with the
+// received document so that any other custom values may be obtained if
+// desired.
 //
 func (query *Query) One(result interface{}) (err os.Error) {
 	query.m.Lock()
@@ -1600,11 +1601,11 @@ func (session *Session) slaveOkFlag() (flag uint32) {
 // Next returns NotFound at the end of the result set, or in case a tailable
 // iterator becomes invalid, and returns TailTimeout if a tailable iterator
 // times out (see the Tail method of Query).  Also, in case the resulting
-// document includes a field named $err, which is a standard way for MongoDB
-// to return query errors, the returned err will be set to a *QueryError value
-// including the Err message and the Code.  In those cases, the result argument
-// is still unmarshalled into with the received document so that any other
-// custom values may be obtained if desired.
+// document includes a field named $err or errmsg, which are standard ways for
+// MongoDB to return query errors, the returned err will be set to a
+// *QueryError value including the Err message and the Code.  In those cases,
+// the result argument is still unmarshalled into with the received document so
+// that any other custom values may be obtained if desired.
 //
 // For example:
 //
