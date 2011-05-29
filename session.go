@@ -1528,9 +1528,12 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
 //
 //    query := collection.Find(nil)
 //    for {
-//         iter := query.Sort("$natural").Tail(-1)
+//         iter, err := query.Sort("$natural").Tail(-1)
+//         if err != nil {
+//             panic(err)
+//         }
 //         for {
-//             err := iter.Next(&result)
+//             err = iter.Next(&result)
 //             if err == mgo.TailTimeout {
 //                 continue
 //             }
@@ -1614,7 +1617,7 @@ func (session *Session) slaveOkFlag() (flag uint32) {
 //        panic(err)
 //    }
 //    for {
-//        err := iter.Next(&result)
+//        err = iter.Next(&result)
 //        if err != nil {
 //            break
 //        }
