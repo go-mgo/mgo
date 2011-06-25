@@ -34,7 +34,6 @@ import (
 	"exec"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	. "launchpad.net/gocheck"
 	"launchpad.net/gobson/bson"
 	"launchpad.net/mgo"
@@ -120,25 +119,10 @@ func (s *S) StartAll() {
 }
 
 func run(command string) os.Error {
-	name := "/bin/sh"
-	argv := []string{name, "-c", command}
-	envv := os.Environ()
-
-	p, err := exec.Run(name, argv, envv, "", exec.PassThrough, exec.Pipe, exec.PassThrough)
+	output, err := exec.Command("/bin/sh", "-c", command).CombinedOutput()
 	if err != nil {
-		msg := fmt.Sprintf("Failed to execute: %s: %s", command, err.String())
-		return os.ErrorString(msg)
-	}
-	output, _ := ioutil.ReadAll(p.Stdout)
-	p.Stdout.Close()
-	w, err := p.Wait(0)
-	if err != nil {
-		return os.ErrorString(fmt.Sprintf("Error waiting for: %s: %s", command))
-	}
-	rc := w.ExitStatus()
-	if rc != 0 {
-		msg := fmt.Sprintf("%s returned non-zero exit code (%d):\n%s", command, rc, output)
-		return os.ErrorString(msg)
+		msg := fmt.Sprintf("Failed to execute: %s: %s\n%s", command, err.String(), string(output))
+		return os.NewError(msg)
 	}
 	return nil
 }

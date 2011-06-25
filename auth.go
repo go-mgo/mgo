@@ -75,7 +75,7 @@ func (socket *mongoSocket) getNonce() (nonce string, err os.Error) {
 	}
 	if socket.cachedNonce == "mongos" {
 		socket.Unlock()
-		return "", os.ErrorString("Can't authenticate with mongos; see http://j.mp/mongos-auth")
+		return "", os.NewError("Can't authenticate with mongos; see http://j.mp/mongos-auth")
 	}
 	debugf("Socket %p to %s: got nonce", socket, socket.addr)
 	nonce, err = socket.cachedNonce, socket.dead
@@ -95,13 +95,13 @@ func (socket *mongoSocket) resetNonce() {
 	op.limit = -1
 	op.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
 		if err != nil {
-			socket.kill(os.ErrorString("getNonce: " + err.String()))
+			socket.kill(os.NewError("getNonce: " + err.String()))
 			return
 		}
 		result := &getNonceResult{}
 		err = bson.Unmarshal(docData, &result)
 		if err != nil {
-			socket.kill(os.ErrorString("Failed to unmarshal nonce: " + err.String()))
+			socket.kill(os.NewError("Failed to unmarshal nonce: " + err.String()))
 			return
 		}
 		debugf("Socket %p to %s: nonce unmarshalled: %#v", socket, socket.addr, result)
@@ -115,7 +115,7 @@ func (socket *mongoSocket) resetNonce() {
 			} else {
 				msg = "Got an empty nonce"
 			}
-			socket.kill(os.ErrorString(msg))
+			socket.kill(os.NewError(msg))
 			return
 		}
 		socket.Lock()
@@ -129,7 +129,7 @@ func (socket *mongoSocket) resetNonce() {
 	}
 	err := socket.Query(op)
 	if err != nil {
-		socket.kill(os.ErrorString("resetNonce: " + err.String()))
+		socket.kill(os.NewError("resetNonce: " + err.String()))
 	}
 }
 
@@ -198,7 +198,7 @@ func (socket *mongoSocket) Login(db string, user string, pass string) os.Error {
 			return
 		}
 		if !result.Ok {
-			replyErr = os.ErrorString(result.ErrMsg)
+			replyErr = os.NewError(result.ErrMsg)
 		}
 
 		socket.Lock()

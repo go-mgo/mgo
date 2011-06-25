@@ -1078,7 +1078,7 @@ func (s *S) TestFindForStopOnError(c *C) {
 		c.Assert(i < 4, Equals, true)
 		c.Assert(result.N, Equals, ns[i])
 		if i == 3 {
-			return os.ErrorString("stop!")
+			return os.NewError("stop!")
 		}
 		i++
 		return nil
@@ -1681,11 +1681,11 @@ func (s *S) TestDistinct(c *C) {
 		coll.Insert(M{"n": i})
 	}
 
-	var result sort.IntArray
+	var result []int
 	err = coll.Find(M{"n": M{"$gt": 2}}).Sort(M{"n": 1}).Distinct("n", &result)
 
-	result.Sort()
-	c.Assert(result, Equals, sort.IntArray{3, 4, 6})
+	sort.SortInts(result)
+	c.Assert(result, Equals, []int{3, 4, 6})
 }
 
 func (s *S) TestMapReduce(c *C) {

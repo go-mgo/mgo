@@ -112,8 +112,8 @@ type Iter struct {
 	timeout        int
 }
 
-var NotFound = os.ErrorString("Document not found")
-var TailTimeout = os.ErrorString("Tail timed out")
+var NotFound = os.NewError("Document not found")
+var TailTimeout = os.NewError("Tail timed out")
 
 const defaultPrefetch = 0.25
 
@@ -176,12 +176,14 @@ func Mongo(url string) (session *Session, err os.Error) {
 		case "connect":
 			if v == "direct" {
 				direct = true
-			} else if v != "replicaSet" {
-				goto bad
+				break
 			}
+			if v == "replicaSet" {
+				break
+			}
+			fallthrough
 		default:
-		bad:
-			err = os.ErrorString("Unsupported connection URL option: " + k + "=" + v)
+			err = os.NewError("Unsupported connection URL option: " + k + "=" + v)
 			return
 		}
 	}
@@ -204,7 +206,7 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 		for _, pair := range strings.Split(url[c+1:], ";", -1) {
 			l := strings.Split(pair, "=", 2)
 			if len(l) != 2 || l[0] == "" || l[1] == "" {
-				err = os.ErrorString("Connection option must be key=value: " + pair)
+				err = os.NewError("Connection option must be key=value: " + pair)
 				return
 			}
 			options[l[0]] = l[1]
@@ -214,7 +216,7 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 	if c := strings.Index(url, "@"); c != -1 {
 		pair := strings.Split(url[:c], ":", 2)
 		if len(pair) != 2 || pair[0] == "" {
-			err = os.ErrorString("Credentials must be provided as user:pass@host")
+			err = os.NewError("Credentials must be provided as user:pass@host")
 			return
 		}
 		auth.user = pair[0]
@@ -230,7 +232,7 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 	}
 	if auth.user == "" {
 		if auth.db != "" {
-			err = os.ErrorString("Database name only makes sense with credentials")
+			err = os.NewError("Database name only makes sense with credentials")
 			return
 		}
 	} else if auth.db == "" {
@@ -491,12 +493,12 @@ func parseIndexKey(key []string) (name string, realKey bson.D, err os.Error) {
 			}
 		}
 		if field == "" {
-			return "", nil, os.ErrorString("Invalid index key: empty field name")
+			return "", nil, os.NewError("Invalid index key: empty field name")
 		}
 		realKey = append(realKey, bson.DocElem{field, order})
 	}
 	if name == "" {
-		return "", nil, os.ErrorString("Invalid index key: no fields provided")
+		return "", nil, os.NewError("Invalid index key: no fields provided")
 	}
 	return
 }
@@ -654,7 +656,7 @@ func (collection Collection) DropIndex(key []string) os.Error {
 		return err
 	}
 	if !result.Ok {
-		return os.ErrorString(result.ErrMsg)
+		return os.NewError(result.ErrMsg)
 	}
 	return nil
 }
@@ -1800,7 +1802,7 @@ func (query *Query) Count() (n int, err os.Error) {
 
 	c := strings.Index(op.collection, ".")
 	if c < 0 {
-		return 0, os.ErrorString("Bad collection name: " + op.collection)
+		return 0, os.NewError("Bad collection name: " + op.collection)
 	}
 
 	dbname := op.collection[:c]
@@ -1848,7 +1850,7 @@ func (query *Query) Distinct(key string, result interface{}) os.Error {
 
 	c := strings.Index(op.collection, ".")
 	if c < 0 {
-		return os.ErrorString("Bad collection name: " + op.collection)
+		return os.NewError("Bad collection name: " + op.collection)
 	}
 
 	dbname := op.collection[:c]
@@ -1984,7 +1986,7 @@ func (query *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduc
 
 	c := strings.Index(op.collection, ".")
 	if c < 0 {
-		return nil, os.ErrorString("Bad collection name: " + op.collection)
+		return nil, os.NewError("Bad collection name: " + op.collection)
 	}
 
 	dbname := op.collection[:c]
@@ -2020,7 +2022,7 @@ func (query *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduc
 		return nil, err
 	}
 	if doc.Err != "" {
-		return nil, os.ErrorString(doc.Err)
+		return nil, os.NewError(doc.Err)
 	}
 
 	info = &MapReduceInfo{
@@ -2104,7 +2106,7 @@ func (query *Query) Modify(change Change, result interface{}) (err os.Error) {
 
 	c := strings.Index(op.collection, ".")
 	if c < 0 {
-		return os.ErrorString("Bad collection name: " + op.collection)
+		return os.NewError("Bad collection name: " + op.collection)
 	}
 
 	dbname := op.collection[:c]

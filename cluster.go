@@ -377,7 +377,7 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout int64) (s *
 			}
 			if syncTimeout > 0 && time.Nanoseconds()-started > syncTimeout {
 				cluster.RUnlock()
-				return nil, os.ErrorString("no reachable servers")
+				return nil, os.NewError("no reachable servers")
 			}
 			log("Waiting for servers to synchronize...")
 			if !cluster.syncing {

@@ -173,7 +173,7 @@ func (socket *mongoSocket) Release() {
 
 // Close terminates the socket use.
 func (socket *mongoSocket) Close() {
-	socket.kill(os.ErrorString("Closed explicitly"))
+	socket.kill(os.NewError("Closed explicitly"))
 }
 
 func (socket *mongoSocket) kill(err os.Error) {
@@ -390,7 +390,7 @@ func (socket *mongoSocket) readLoop() {
 		_ = totalLen
 
 		if opCode != 1 {
-			socket.kill(os.ErrorString("opcode != 1, corrupted data?"))
+			socket.kill(os.NewError("opcode != 1, corrupted data?"))
 			return
 		}
 
