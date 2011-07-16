@@ -36,7 +36,6 @@ import (
 	"hash"
 	"launchpad.net/gobson/bson"
 	"os"
-	"runtime"
 	"sync"
 )
 
@@ -105,7 +104,7 @@ func newGridFS(db Database, prefix string) *GridFS {
 func (gfs GridFS) newFile() *GridFile {
 	file := &GridFile{gfs: gfs}
 	file.c.L = &file.m
-	runtime.SetFinalizer(file, finalizeFile)
+	//runtime.SetFinalizer(file, finalizeFile)
 	return file
 }
 
