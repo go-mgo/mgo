@@ -715,6 +715,60 @@ func (s *S) TestFindIterLimitWithBatch(c *C) {
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
+func (s *S) TestFindIterSortWithBatch(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{40, 41, 42, 43, 44, 45, 46}
+	for _, n := range ns {
+		coll.Insert(M{"n": n})
+	}
+
+	// Without this, the logic above breaks because Mongo refuses to
+	// return a cursor with an in-memory sort.
+	coll.EnsureIndexKey([]string{"n"})
+
+	// Ping the database to ensure the nonce has been received already.
+	c.Assert(session.Ping(), IsNil)
+
+	session.Refresh() // Release socket.
+
+	mgo.ResetStats()
+
+	query := coll.Find(M{"n": M{"$lte": 44}}).Sort(M{"n": -1}).Batch(2)
+	iter, err := query.Iter()
+	c.Assert(err, IsNil)
+
+	ns = []int{46, 45, 44, 43, 42, 41, 40}
+
+	result := struct{ N int }{}
+	for i := 2; i < len(ns); i++ {
+		err = iter.Next(&result)
+		c.Logf("i=%d", i)
+		c.Assert(err, IsNil)
+		c.Assert(result.N, Equals, ns[i])
+		if i == 3 {
+			stats := mgo.GetStats()
+			c.Assert(stats.ReceivedDocs, Equals, 2)
+		}
+	}
+
+	err = iter.Next(&result)
+	c.Assert(err == mgo.NotFound, Equals, true)
+
+	session.Refresh() // Release socket.
+
+	stats := mgo.GetStats()
+	c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 2*GET_MORE_OP
+	c.Assert(stats.ReceivedOps, Equals, 3) // and its REPLY_OPs
+	c.Assert(stats.ReceivedDocs, Equals, 5)
+	c.Assert(stats.SocketsInUse, Equals, 0)
+}
+
+
 // Test tailable cursors in a situation where Next has to sleep to
 // respect the timeout requested on Tail.
 func (s *S) TestFindTailTimeoutWithSleep(c *C) {

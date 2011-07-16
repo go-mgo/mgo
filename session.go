@@ -2257,7 +2257,7 @@ func (iter *Iter) replyFunc() replyFunc {
 				iter.op.cursorId = op.cursorId
 			}
 			// XXX Handle errors and flags.
-			debugf("Iter %p received reply document %d/%d", iter, docNum+1, rdocs)
+			debugf("Iter %p received reply document %d/%d (cursor=%d)", iter, docNum+1, rdocs, op.cursorId)
 			iter.docData.Push(docData)
 		}
 		iter.gotReply.Broadcast()
