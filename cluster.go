@@ -60,7 +60,7 @@ type mongoCluster struct {
 
 func newCluster(userSeeds []string, direct bool) *mongoCluster {
 	cluster := &mongoCluster{userSeeds: userSeeds, references: 1, direct: direct}
-	cluster.serverSynced.L = &cluster.RWMutex
+	cluster.serverSynced.L = cluster.RWMutex.RLocker()
 	go cluster.syncServers()
 	return cluster
 }
