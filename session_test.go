@@ -191,6 +191,49 @@ func (s *S) TestInsertFindOneMap(c *C) {
 	c.Assert(result["b"], Equals, 2)
 }
 
+func (s *S) TestGetRef(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	db1 := session.DB("db1")
+	db1col1 := db1.C("col1")
+
+	db2 := session.DB("db2")
+	db2col1 := db2.C("col1")
+
+	db1col1.Insert(M{"_id": 1, "n": 1})
+	db1col1.Insert(M{"_id": 2, "n": 2})
+	db2col1.Insert(M{"_id": 2, "n": 3})
+
+	result := struct{ N int }{}
+
+	ref1 := mgo.DBRef{C: "col1", ID: 1}
+	ref2 := mgo.DBRef{C: "col1", ID: 2, DB: "db2"}
+
+	err = db1.GetRef(ref1, &result)
+	c.Assert(err, IsNil)
+	c.Assert(result.N, Equals, 1)
+
+	err = db1.GetRef(ref2, &result)
+	c.Assert(err, IsNil)
+	c.Assert(result.N, Equals, 3)
+
+	err = db2.GetRef(ref1, &result)
+	c.Assert(err, Equals, mgo.NotFound)
+
+	err = db2.GetRef(ref2, &result)
+	c.Assert(err, IsNil)
+	c.Assert(result.N, Equals, 3)
+
+	err = session.GetRef(ref2, &result)
+	c.Assert(err, IsNil)
+	c.Assert(result.N, Equals, 3)
+
+	err = session.GetRef(ref1, &result)
+	c.Assert(err, Matches, "Can't resolve database for mgo.DBRef{C:\"col1\", ID:1, DB:\"\"}")
+}
+
 func (s *S) TestSelect(c *C) {
 	session, err := mgo.Mongo("localhost:40001")
 	c.Assert(err, IsNil)

@@ -33,6 +33,7 @@ package mgo
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
 	"launchpad.net/gobson/bson"
 	"sync"
 	"os"
@@ -115,7 +116,6 @@ var NotFound = os.NewError("Document not found")
 var TailTimeout = os.NewError("Tail timed out")
 
 const defaultPrefetch = 0.25
-
 
 // Mongo establishes a new session to the cluster identified by the given seed
 // server(s).  The session will enable communication with all of the servers in
@@ -1483,6 +1483,62 @@ func (query *Query) One(result interface{}) (err os.Error) {
 	}
 
 	return checkQueryError(data)
+}
+
+// The DBRef type implements support for the database reference MongoDB
+// convention as supported by multiple drivers.  This convention enables
+// cross-referencing documents between collections and databases using
+// a structure which includes a collection name, a document id, and
+// optionally a database name.
+//
+// See the GetRef methods on Session and on Database.
+// 
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/Database+References
+//
+type DBRef struct {
+	C string "$ref"
+	ID interface{} "$id"
+	DB string "$db/c"
+}
+
+type id struct {
+	Id interface{} "_id"
+}
+
+// GetRef retrieves the document in the provided reference and stores it
+// in result.  If the reference includes the DB field, the document will
+// be retrieved from the respective database.
+//
+// See also the DBRef type and the GetRef method on Session.
+//
+// Relevant documentation:
+// 
+//     http://www.mongodb.org/display/DOCS/Database+References
+//
+func (database Database) GetRef(ref DBRef, result interface{}) os.Error {
+	if ref.DB == "" {
+		return database.C(ref.C).Find(id{ref.ID}).One(result)
+	}
+	return database.Session.DB(ref.DB).C(ref.C).Find(id{ref.ID}).One(result)
+}
+
+// GetRef retrieves the document in the provided reference and stores it
+// in result.  For a DBRef to be resolved correctly at the session level
+// it must necessarily have the optional DB field defined.
+//
+// See also the DBRef type and the GetRef method on Database.
+//
+// Relevant documentation:
+// 
+//     http://www.mongodb.org/display/DOCS/Database+References
+//
+func (session *Session) GetRef(ref DBRef, result interface{}) os.Error {
+	if ref.DB == "" {
+		return os.NewError(fmt.Sprintf("Can't resolve database for %#v", ref))
+	}
+	return session.DB(ref.DB).C(ref.C).Find(id{ref.ID}).One(result)
 }
 
 // Iter executes the query and returns an iterator capable of going over all
