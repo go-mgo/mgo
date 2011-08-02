@@ -94,9 +94,9 @@ type query struct {
 
 type getLastError struct {
 	CmdName  int  "getLastError"
-	W        int  "w,c"
-	WTimeout int  "wtimeout,c"
-	FSync    bool "fsync,c"
+	W        int  "w,omitempty"
+	WTimeout int  "wtimeout,omitempty"
+	FSync    bool "fsync,omitempty"
 }
 
 type Iter struct {
@@ -449,11 +449,11 @@ func (database Database) RemoveUser(user string) os.Error {
 type indexSpec struct {
 	Name, NS       string
 	Key            bson.D
-	Unique         bool ",c"
-	DropDups       bool "dropDups,c"
-	Background     bool ",c"
-	Sparse         bool ",c"
-	Bits, Min, Max int  ",c"
+	Unique         bool ",omitempty"
+	DropDups       bool "dropDups,omitempty"
+	Background     bool ",omitempty"
+	Sparse         bool ",omitempty"
+	Bits, Min, Max int  ",omitempty"
 }
 
 type Index struct {
@@ -1312,9 +1312,9 @@ func (query *Query) Select(selector interface{}) *Query {
 
 type queryWrapper struct {
 	Query   interface{} "$query"
-	OrderBy interface{} "$orderby,c"
-	Hint    interface{} "$hint,c"
-	Explain bool        "$explain,c"
+	OrderBy interface{} "$orderby,omitempty"
+	Hint    interface{} "$hint,omitempty"
+	Explain bool        "$explain,omitempty"
 }
 
 func (query *Query) wrap() *queryWrapper {
@@ -1501,7 +1501,7 @@ func (query *Query) One(result interface{}) (err os.Error) {
 type DBRef struct {
 	C  string      `bson:"$ref"`
 	ID interface{} `bson:"$id"`
-	DB string      `bson:"$db,c"`
+	DB string      `bson:"$db,omitempty"`
 }
 
 type id struct {
@@ -1936,7 +1936,7 @@ func (collection Collection) Count() (n int, err os.Error) {
 type distinctCmd struct {
 	Collection string "distinct"
 	Key        string
-	Query      interface{} ",c"
+	Query      interface{} ",omitempty"
 }
 
 // Distinct returns a list of distinct values for the given key within
@@ -1982,15 +1982,15 @@ func (query *Query) Distinct(key string, result interface{}) os.Error {
 
 type mapReduceCmd struct {
 	Collection string "mapreduce"
-	Map        string ",c"
-	Reduce     string ",c"
-	Finalize   string ",c"
-	Limit      int32  ",c"
+	Map        string ",omitempty"
+	Reduce     string ",omitempty"
+	Finalize   string ",omitempty"
+	Limit      int32  ",omitempty"
 	Out        interface{}
-	Query      interface{} ",c"
-	Sort       interface{} ",c"
-	Scope      interface{} ",c"
-	Verbose    bool        ",c"
+	Query      interface{} ",omitempty"
+	Sort       interface{} ",omitempty"
+	Scope      interface{} ",omitempty"
+	Verbose    bool        ",omitempty"
 }
 
 type mapReduceResult struct {
@@ -2178,8 +2178,8 @@ type Change struct {
 
 type findModifyCmd struct {
 	Collection                  string      "findAndModify"
-	Query, Update, Sort, Fields interface{} ",c"
-	Upsert, Remove, New         bool        ",c"
+	Query, Update, Sort, Fields interface{} ",omitempty"
+	Upsert, Remove, New         bool        ",omitempty"
 }
 
 type valueResult struct {
