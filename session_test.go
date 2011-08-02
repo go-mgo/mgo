@@ -1781,7 +1781,7 @@ func (s *S) TestDistinct(c *C) {
 	var result []int
 	err = coll.Find(M{"n": M{"$gt": 2}}).Sort(M{"n": 1}).Distinct("n", &result)
 
-	sort.SortInts(result)
+	sort.IntSlice(result).Sort()
 	c.Assert(result, Equals, []int{3, 4, 6})
 }
 

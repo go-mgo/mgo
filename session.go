@@ -93,9 +93,9 @@ type query struct {
 
 type getLastError struct {
 	CmdName  int  "getLastError"
-	W        int  "w/c"
-	WTimeout int  "wtimeout/c"
-	FSync    bool "fsync/c"
+	W        int  "w,c"
+	WTimeout int  "wtimeout,c"
+	FSync    bool "fsync,c"
 }
 
 type Iter struct {
@@ -202,8 +202,8 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 	}
 	options = make(map[string]string)
 	if c := strings.Index(url, "?"); c != -1 {
-		for _, pair := range strings.Split(url[c+1:], ";", -1) {
-			l := strings.Split(pair, "=", 2)
+		for _, pair := range strings.Split(url[c+1:], ";") {
+			l := strings.SplitN(pair, "=", 2)
 			if len(l) != 2 || l[0] == "" || l[1] == "" {
 				err = os.NewError("Connection option must be key=value: " + pair)
 				return
@@ -213,7 +213,7 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 		url = url[:c]
 	}
 	if c := strings.Index(url, "@"); c != -1 {
-		pair := strings.Split(url[:c], ":", 2)
+		pair := strings.SplitN(url[:c], ":", 2)
 		if len(pair) != 2 || pair[0] == "" {
 			err = os.NewError("Credentials must be provided as user:pass@host")
 			return
@@ -237,7 +237,7 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 	} else if auth.db == "" {
 		auth.db = "admin"
 	}
-	servers = strings.Split(url, ",", -1)
+	servers = strings.Split(url, ",")
 	// XXX This is untested. The test suite doesn't use the standard port.
 	for i, server := range servers {
 		p := strings.LastIndexAny(server, "]:")
@@ -448,11 +448,11 @@ func (database Database) RemoveUser(user string) os.Error {
 type indexSpec struct {
 	Name, NS       string
 	Key            bson.D
-	Unique         bool "/c"
-	DropDups       bool "dropDups/c"
-	Background     bool "/c"
-	Sparse         bool "/c"
-	Bits, Min, Max int  "/c"
+	Unique         bool ",c"
+	DropDups       bool "dropDups,c"
+	Background     bool ",c"
+	Sparse         bool ",c"
+	Bits, Min, Max int  ",c"
 }
 
 type Index struct {
@@ -1311,9 +1311,9 @@ func (query *Query) Select(selector interface{}) *Query {
 
 type queryWrapper struct {
 	Query   interface{} "$query"
-	OrderBy interface{} "$orderby/c"
-	Hint    interface{} "$hint/c"
-	Explain bool        "$explain/c"
+	OrderBy interface{} "$orderby,c"
+	Hint    interface{} "$hint,c"
+	Explain bool        "$explain,c"
 }
 
 func (query *Query) wrap() *queryWrapper {
@@ -1498,9 +1498,9 @@ func (query *Query) One(result interface{}) (err os.Error) {
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
 type DBRef struct {
-	C string "$ref"
-	ID interface{} "$id"
-	DB string "$db/c"
+	C string `bson:"$ref"`
+	ID interface{} `bson:"$id"`
+	DB string `bson:"$db,c"`
 }
 
 type id struct {
@@ -1896,7 +1896,7 @@ func (collection Collection) Count() (n int, err os.Error) {
 type distinctCmd struct {
 	Collection string "distinct"
 	Key        string
-	Query      interface{} "/c"
+	Query      interface{} ",c"
 }
 
 // Distinct returns a list of distinct values for the given key within
@@ -1942,15 +1942,15 @@ func (query *Query) Distinct(key string, result interface{}) os.Error {
 
 type mapReduceCmd struct {
 	Collection string "mapreduce"
-	Map        string "/c"
-	Reduce     string "/c"
-	Finalize   string "/c"
-	Limit      int32  "/c"
+	Map        string ",c"
+	Reduce     string ",c"
+	Finalize   string ",c"
+	Limit      int32  ",c"
 	Out        interface{}
-	Query      interface{} "/c"
-	Sort       interface{} "/c"
-	Scope      interface{} "/c"
-	Verbose    bool        "/c"
+	Query      interface{} ",c"
+	Sort       interface{} ",c"
+	Scope      interface{} ",c"
+	Verbose    bool        ",c"
 }
 
 type mapReduceResult struct {
@@ -2138,8 +2138,8 @@ type Change struct {
 
 type findModifyCmd struct {
 	Collection                  string      "findAndModify"
-	Query, Update, Sort, Fields interface{} "/c"
-	Upsert, Remove, New         bool        "/c"
+	Query, Update, Sort, Fields interface{} ",c"
+	Upsert, Remove, New         bool        ",c"
 }
 
 type valueResult struct {
