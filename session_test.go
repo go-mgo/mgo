@@ -234,6 +234,35 @@ func (s *S) TestGetRef(c *C) {
 	c.Assert(err, Matches, "Can't resolve database for mgo.DBRef{C:\"col1\", ID:1, DB:\"\"}")
 }
 
+func (s *S) TestDatabaseAndCollectionNames(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	db1 := session.DB("db1")
+	db1col1 := db1.C("col1")
+	db1col2 := db1.C("col2")
+
+	db2 := session.DB("db2")
+	db2col1 := db2.C("col3")
+
+	db1col1.Insert(M{"_id": 1})
+	db1col2.Insert(M{"_id": 1})
+	db2col1.Insert(M{"_id": 1})
+
+	names, err := session.DatabaseNames()
+	c.Assert(err, IsNil)
+	c.Assert(names, Equals, []string{"db1", "db2"})
+
+	names, err = db1.CollectionNames()
+	c.Assert(err, IsNil)
+	c.Assert(names, Equals, []string{"col1", "col2", "system.indexes"})
+
+	names, err = db2.CollectionNames()
+	c.Assert(err, IsNil)
+	c.Assert(names, Equals, []string{"col3", "system.indexes"})
+}
+
 func (s *S) TestSelect(c *C) {
 	session, err := mgo.Mongo("localhost:40001")
 	c.Assert(err, IsNil)

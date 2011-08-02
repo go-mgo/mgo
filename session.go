@@ -39,6 +39,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 )
@@ -1498,9 +1499,9 @@ func (query *Query) One(result interface{}) (err os.Error) {
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
 type DBRef struct {
-	C string `bson:"$ref"`
+	C  string      `bson:"$ref"`
 	ID interface{} `bson:"$id"`
-	DB string `bson:"$db,c"`
+	DB string      `bson:"$db,c"`
 }
 
 type id struct {
@@ -1539,6 +1540,45 @@ func (session *Session) GetRef(ref DBRef, result interface{}) os.Error {
 		return os.NewError(fmt.Sprintf("Can't resolve database for %#v", ref))
 	}
 	return session.DB(ref.DB).C(ref.C).Find(id{ref.ID}).One(result)
+}
+
+// CollectionNames returns the collection names present in database.
+func (database *Database) CollectionNames() (names []string, err os.Error) {
+	c := len(database.Name) + 1
+	var result *struct{ Name string }
+	err = database.C("system.namespaces").Find(nil).For(&result, func() os.Error {
+		if strings.Index(result.Name, "$") < 0 || strings.Index(result.Name, ".oplog.$") >= 0 {
+			names = append(names, result.Name[c:])
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.StringSlice(names).Sort()
+	return names, nil
+}
+
+type dbNames struct {
+	Databases []struct {
+		Name  string
+		Empty bool
+	}
+}
+
+// DatabaseNames returns the names of non-empty databases present in the cluster.
+func (session *Session) DatabaseNames() (names []string, err os.Error) {
+	var result dbNames
+	err = session.Run("listDatabases", &result)
+	if err != nil {
+		return nil, err
+	}
+	for _, db := range result.Databases {
+		if !db.Empty {
+			names = append(names, db.Name)
+		}
+	}
+	return names, nil
 }
 
 // Iter executes the query and returns an iterator capable of going over all
