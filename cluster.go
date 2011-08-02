@@ -88,7 +88,7 @@ func (cluster *mongoCluster) Release() {
 	cluster.Unlock()
 }
 
-func (cluster *mongoCluster) GetLiveServers() (servers []string) {
+func (cluster *mongoCluster) LiveServers() (servers []string) {
 	cluster.RLock()
 	for _, serv := range cluster.servers.Slice() {
 		servers = append(servers, serv.Addr)

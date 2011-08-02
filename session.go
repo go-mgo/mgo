@@ -294,11 +294,11 @@ func finalizeSession(session *Session) {
 	session.Close()
 }
 
-// GetLiveServers returns a list of server addresses which are
+// LiveServers returns a list of server addresses which are
 // currently known to be alive.
-func (session *Session) GetLiveServers() (addrs []string) {
+func (session *Session) LiveServers() (addrs []string) {
 	session.m.RLock()
-	addrs = session.cluster().GetLiveServers()
+	addrs = session.cluster().LiveServers()
 	session.m.RUnlock()
 	return addrs
 }
@@ -1492,7 +1492,7 @@ func (query *Query) One(result interface{}) (err os.Error) {
 // a structure which includes a collection name, a document id, and
 // optionally a database name.
 //
-// See the GetRef methods on Session and on Database.
+// See the FindRef methods on Session and on Database.
 // 
 // Relevant documentation:
 //
@@ -1508,34 +1508,34 @@ type id struct {
 	Id interface{} "_id"
 }
 
-// GetRef retrieves the document in the provided reference and stores it
+// FindRef retrieves the document in the provided reference and stores it
 // in result.  If the reference includes the DB field, the document will
 // be retrieved from the respective database.
 //
-// See also the DBRef type and the GetRef method on Session.
+// See also the DBRef type and the FindRef method on Session.
 //
 // Relevant documentation:
 // 
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
-func (database Database) GetRef(ref DBRef, result interface{}) os.Error {
+func (database Database) FindRef(ref DBRef, result interface{}) os.Error {
 	if ref.DB == "" {
 		return database.C(ref.C).Find(id{ref.ID}).One(result)
 	}
 	return database.Session.DB(ref.DB).C(ref.C).Find(id{ref.ID}).One(result)
 }
 
-// GetRef retrieves the document in the provided reference and stores it
+// FindRef retrieves the document in the provided reference and stores it
 // in result.  For a DBRef to be resolved correctly at the session level
 // it must necessarily have the optional DB field defined.
 //
-// See also the DBRef type and the GetRef method on Database.
+// See also the DBRef type and the FindRef method on Database.
 //
 // Relevant documentation:
 // 
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
-func (session *Session) GetRef(ref DBRef, result interface{}) os.Error {
+func (session *Session) FindRef(ref DBRef, result interface{}) os.Error {
 	if ref.DB == "" {
 		return os.NewError(fmt.Sprintf("Can't resolve database for %#v", ref))
 	}
