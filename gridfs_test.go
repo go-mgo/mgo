@@ -35,6 +35,7 @@ import (
 	. "launchpad.net/gocheck"
 	"launchpad.net/mgo"
 	"os"
+	"time"
 )
 
 func (s *S) TestGridFSCreate(c *C) {
@@ -159,6 +160,9 @@ func (s *S) TestGridFSFileDetails(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(file.MD5(), Equals, "1e50210a0202497fb79bc38b6ade6c34")
+
+	c.Assert(file.UploadDate() < time.Nanoseconds(), Equals, true)
+	c.Assert(file.UploadDate() > time.Nanoseconds() - 3e9, Equals, true)
 
 	result := M{}
 	err = db.C("fs.files").Find(nil).One(result)

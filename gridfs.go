@@ -420,6 +420,11 @@ func (file *GridFile) MD5() (md5 string) {
 	return file.doc.MD5
 }
 
+// UploadDate returns the file upload time in nanoseconds.
+func (file *GridFile) UploadDate() int64 {
+	return int64(file.doc.UploadDate)
+}
+
 // Close flushes any pending changes in case the file is being written
 // to, waits for any background operations to finish, and closes the file.
 //

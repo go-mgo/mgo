@@ -347,7 +347,7 @@ func (database Database) GridFS(prefix string) *GridFS {
 // use an ordering-preserving document, such as a struct value or an
 // instance of bson.D.  For instance:
 //
-//     db.Run(mgo.D{{"create", "mycollection"}, {"size", 1024}})
+//     db.Run(bson.D{{"create", "mycollection"}, {"size", 1024}})
 //
 // For privilleged commands typically run against the "admin" database, see
 // the Run method in the Session type.
