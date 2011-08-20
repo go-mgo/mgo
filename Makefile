@@ -41,3 +41,8 @@ endif
 endif
 
 include $(GOROOT)/src/Make.pkg
+
+runexample: _obj/launchpad.net/mgo.a
+	$(GC) -I _obj -o example.$(O) example.go
+	$(LD) -L _obj -o example example.$(O)
+	./example
