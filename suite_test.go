@@ -111,7 +111,6 @@ func (s *S) Stop(host string) {
 func (s *S) StartAll() {
 	// Restart any stopped nodes.
 	run("cd _testdb && supervisorctl start all")
-	time.Sleep(1e9)
 	err := run("cd testdb && mongo --nodb wait.js")
 	if err != nil {
 		panic(err.String())

@@ -1578,25 +1578,26 @@ func (s *S) TestEnsureIndex(c *C) {
 	err = sysidx.Find(M{"name": "loc_"}).One(result3)
 	c.Assert(err, IsNil)
 
+	result1["v"] = nil, false
 	expected1 := M{
 		"name":       "a_1",
 		"key":        bson.M{"a": 1},
 		"ns":         "mydb.mycoll",
-		"v":          0,
 		"background": true,
 	}
 	c.Assert(result1, Equals, expected1)
 
+	result2["v"] = nil, false
 	expected2 := M{
 		"name":     "a_1_b_-1",
 		"key":      bson.M{"a": 1, "b": -1},
 		"ns":       "mydb.mycoll",
 		"unique":   true,
 		"dropDups": true,
-		"v":        0,
 	}
 	c.Assert(result2, Equals, expected2)
 
+	result3["v"] = nil, false
 	expected3 := M{
 		"name": "loc_",
 		"key":  bson.M{"loc": "2d"},
@@ -1676,19 +1677,19 @@ func (s *S) TestEnsureIndexKey(c *C) {
 	err = sysidx.Find(M{"name": "a_1_b_-1"}).One(result2)
 	c.Assert(err, IsNil)
 
+	result1["v"] = nil, false
 	expected1 := M{
 		"name": "a_1",
 		"key":  bson.M{"a": 1},
 		"ns":   "mydb.mycoll",
-		"v":    0,
 	}
 	c.Assert(result1, Equals, expected1)
 
+	result2["v"] = nil, false
 	expected2 := M{
 		"name": "a_1_b_-1",
 		"key":  bson.M{"a": 1, "b": -1},
 		"ns":   "mydb.mycoll",
-		"v":    0,
 	}
 	c.Assert(result2, Equals, expected2)
 }
@@ -1850,9 +1851,10 @@ func (s *S) TestMapReduce(c *C) {
 		expected[item.Id] = -1
 	}
 
-	// Ensure proper delivery of Sort request.
+	// Weak attempt of testing that Sort gets delivered.
 	_, err = coll.Find(nil).Sort(M{"n": -1}).MapReduce(job, &result)
-	c.Assert(err, Matches, "best guess plan requested, but scan and order .*")
+	_, isQueryError := err.(*mgo.QueryError)
+	c.Assert(isQueryError, Equals, true)
 }
 
 func (s *S) TestMapReduceFinalize(c *C) {

@@ -2248,6 +2248,9 @@ func (query *Query) Modify(change Change, result interface{}) (err os.Error) {
 		}
 		return err
 	}
+	if doc.Value.Kind == 0x0A {
+		return NotFound
+	}
 	return doc.Value.Unmarshal(result)
 }
 
