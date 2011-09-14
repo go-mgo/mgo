@@ -2254,6 +2254,24 @@ func (query *Query) Modify(change Change, result interface{}) (err os.Error) {
 	return doc.Value.Unmarshal(result)
 }
 
+// The BuildInfo type encapsulates details about the running MongoDB server.
+type BuildInfo struct {
+	Version string
+	VersionArray []int `bson:"versionArray"`
+	GitVersion string `bson:"gitVersion"`
+	SysInfo string `bson:"sysInfo"`
+	Bits int
+	Debug bool
+	MaxObjectSize int `bson:"maxBsonObjectSize"`
+}
+
+// BuildInfo retrieves the version and other details about the
+// running MongoDB server.
+func (session *Session) BuildInfo() (info BuildInfo, err os.Error) {
+	err = session.Run(bson.D{{"buildInfo", "1"}}, &info)
+	return
+}
+
 
 // ---------------------------------------------------------------------------
 // Internal session handling helpers.

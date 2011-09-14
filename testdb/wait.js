@@ -13,6 +13,7 @@ for (var i = 0; i != 30; i++) {
 	try {
 		rs1a = new Mongo("127.0.0.1:40011").getDB("admin")
 		rs2a = new Mongo("127.0.0.1:40021").getDB("admin")
+		break
 	} catch(err) {
 		print("Can't connect yet...")
 	}

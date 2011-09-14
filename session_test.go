@@ -37,6 +37,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -2035,4 +2036,33 @@ func (s *S) TestMapReduceLimit(c *C) {
 	_, err = coll.Find(nil).Limit(3).MapReduce(job, &result)
 	c.Assert(err, IsNil)
 	c.Assert(len(result), Equals, 3)
+}
+
+func (s *S) TestBuildInfo(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	info, err := session.BuildInfo()
+	c.Assert(err, IsNil)
+
+	var v []int
+	for _, a := range strings.Split(info.Version, ".") {
+		i, err := strconv.Atoi(a)
+		c.Assert(err, IsNil)
+		v = append(v, i)
+	}
+	for len(v) < 4 {
+		v = append(v, 0)
+	}
+	c.Assert(err, IsNil)
+	c.Assert(info.VersionArray, Equals, v)
+	c.Assert(info.GitVersion, Matches, "[a-z0-9]+")
+	c.Assert(info.SysInfo, Matches, ".*[0-9:]+.*")
+	if info.Bits != 32 && info.Bits != 64 {
+		c.Fatalf("info.Bits is %d", info.Bits)
+	}
+	if info.MaxObjectSize < 8192 {
+		c.Fatalf("info.MaxObjectSize seems too small: %d", info.MaxObjectSize)
+	}
 }
