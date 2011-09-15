@@ -93,10 +93,11 @@ type query struct {
 }
 
 type getLastError struct {
-	CmdName  int  "getLastError"
-	W        int  "w,omitempty"
-	WTimeout int  "wtimeout,omitempty"
-	FSync    bool "fsync,omitempty"
+	CmdName  int         "getLastError"
+	W        interface{} "w,omitempty"
+	WTimeout int         "wtimeout,omitempty"
+	FSync    bool        "fsync,omitempty"
+	J        bool        "j,omitempty"
 }
 
 type Iter struct {
@@ -248,7 +249,6 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 	}
 	return
 }
-
 
 func newSession(consistency mode, cluster *mongoCluster, socket *mongoSocket) (session *Session) {
 	cluster.Acquire()
@@ -906,10 +906,13 @@ func (session *Session) SetPrefetch(p float64) {
 	session.m.Unlock()
 }
 
+// See SetSafe for details on the Safe type.
 type Safe struct {
-	W        int  // Min # of servers that have to ack before success
-	WTimeout int  // Milliseconds to wait for W before timing out
-	FSync    bool // Should servers sync to disk before returning success
+	W        int    // Min # of servers to ack before success
+	WMode    string // Write mode for MongoDB 2.0+ (e.g. "majority")
+	WTimeout int    // Milliseconds to wait for W before timing out
+	FSync    bool   // Should servers sync to disk before returning success
+	J        bool   // Wait for next group commit if journaling; no effect otherwise
 }
 
 // Safe returns the current safety mode for the session.
@@ -918,7 +921,13 @@ func (session *Session) Safe() (safe *Safe) {
 	defer session.m.Unlock()
 	if session.safeOp != nil {
 		cmd := session.safeOp.query.(*getLastError)
-		safe = &Safe{cmd.W, cmd.WTimeout, cmd.FSync}
+		safe = &Safe{WTimeout: cmd.WTimeout, FSync: cmd.FSync, J: cmd.J}
+		switch w := cmd.W.(type) {
+		case string:
+			safe.WMode = w
+		case int:
+			safe.W = w
+		}
 	}
 	return
 }
@@ -938,13 +947,33 @@ func (session *Session) Safe() (safe *Safe) {
 // command will return as soon as the master is done with the request.
 // If safe.WTimeout is greater than zero, it determines how many milliseconds
 // to wait for the safe.W servers to respond before returning an error.
-// If safe.FSync is true, servers will synchronize the change to disk before
-// confirming its success.
+//
+// Starting with MongoDB 2.0.0 the safe.WMode parameter can be used instead
+// of W to request for richer semantics. If set to "majority" the server will
+// wait for a majority of members from the replica set to respond before
+// returning. Custom modes may also be defined within the server to create
+// very detailed placement schemas. See the data awareness documentation in
+// the links below for more details (note that MongoDB internally reuses the
+// "w" field name for WMode).
+//
+// If safe.FSync is true and journaling is disabled, the servers will be
+// forced to sync all files to disk immediately before returning. If the
+// same option is true but journaling is enabled, the server will instead
+// await for the next group commit before returning.
+//
+// Since MongoDB 2.0.0, the safe.J option can also be used instead of FSync
+// to force the server to wait for a group commit in case journaling is
+// enabled. The option has no effect if the server has journaling disabled.
 //
 // For example, the following statement will make the session check for
 // errors, without imposing further constraints:
 //
 //     session.SetSafe(&mgo.Safe{})
+//
+// The following statement will force the server to wait for a majority of
+// members of a replica set to return (MongoDB 2.0+ only):
+//
+//     session.SetSafe(&mgo.Safe{WMode: "majority"})
 //
 // The following statement, on the other hand, ensures that at least two
 // servers have flushed the change to disk before confirming the success
@@ -961,8 +990,9 @@ func (session *Session) Safe() (safe *Safe) {
 //
 // Relevant documentation:
 //
-//     http://www.mongodb.org/display/DOCS/Last+Error+Commands
+//     http://www.mongodb.org/display/DOCS/getLastError+Command
 //     http://www.mongodb.org/display/DOCS/Verifying+Propagation+of+Writes+with+getLastError
+//     http://www.mongodb.org/display/DOCS/Data+Center+Awareness
 //
 func (session *Session) SetSafe(safe *Safe) {
 	session.m.Lock()
@@ -972,12 +1002,16 @@ func (session *Session) SetSafe(safe *Safe) {
 }
 
 // EnsureSafe compares the provided safety parameters with the ones
-// currently in use by the session and merges the most conservative choices
-// to be used in the session.  That is, if the provided safe.W is larger
-// than the one in use, the session will use it.  If safe.FSync is true,
-// it will necessarily be set in the session.  If safe.WTimeout is not
-// zero and is less than the value currently in the session, the session
-// value will be changed to that.
+// currently in use by the session and picks the most conservative
+// choice for each setting.
+//
+// That is:
+//
+//     - safe.WMode is always used if set.
+//     - safe.W is used if larger than the current W and WMode is empty.
+//     - safe.FSync is always used if true.
+//     - safe.J is used if FSync is false.
+//     - safe.WTimeout is used if set and smaller than the current WTimeout.
 //
 // For example, the following statement will ensure the session is
 // at least checking for errors, without enforcing further constraints.
@@ -986,12 +1020,13 @@ func (session *Session) SetSafe(safe *Safe) {
 //
 //     session.EnsureSafe(&mgo.Safe{})
 //
-// See also the SetSafe method.
+// See also the SetSafe method for details on what each option means.
 //
 // Relevant documentation:
 //
-//     http://www.mongodb.org/display/DOCS/Last+Error+Commands
+//     http://www.mongodb.org/display/DOCS/getLastError+Command
 //     http://www.mongodb.org/display/DOCS/Verifying+Propagation+of+Writes+with+getLastError
+//     http://www.mongodb.org/display/DOCS/Data+Center+Awareness
 //
 func (session *Session) EnsureSafe(safe *Safe) {
 	session.m.Lock()
@@ -1004,13 +1039,24 @@ func (session *Session) ensureSafe(safe *Safe) {
 		return
 	}
 
+	var w interface{}
+	if safe.WMode != "" {
+		w = safe.WMode
+	} else if safe.W > 0 {
+		w = safe.W
+	}
+
 	var cmd getLastError
 	if session.safeOp == nil {
-		cmd = getLastError{1, safe.W, safe.WTimeout, safe.FSync}
+		cmd = getLastError{1, w, safe.WTimeout, safe.FSync, safe.J}
 	} else {
 		// Copy.  We don't want to mutate the existing query.
 		cmd = *(session.safeOp.query.(*getLastError))
-		if safe.W > cmd.W {
+		if cmd.W == nil {
+			cmd.W = w
+		} else if safe.WMode != "" {
+			cmd.W = safe.WMode
+		} else if i, ok := cmd.W.(int); ok && safe.W > i {
 			cmd.W = safe.W
 		}
 		if safe.WTimeout > 0 && safe.WTimeout < cmd.WTimeout {
@@ -1018,6 +1064,9 @@ func (session *Session) ensureSafe(safe *Safe) {
 		}
 		if safe.FSync {
 			cmd.FSync = true
+			cmd.J = false
+		} else if safe.J && !cmd.FSync {
+			cmd.J = true
 		}
 	}
 	session.safeOp = &queryOp{
@@ -1979,7 +2028,6 @@ func (query *Query) Distinct(key string, result interface{}) os.Error {
 	return doc.Values.Unmarshal(result)
 }
 
-
 type mapReduceCmd struct {
 	Collection string "mapreduce"
 	Map        string ",omitempty"
@@ -2168,7 +2216,6 @@ func (query *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduc
 	return info, nil
 }
 
-
 type Change struct {
 	Update interface{} // The change document
 	Upsert bool        // Whether to insert in case the document isn't found
@@ -2256,12 +2303,12 @@ func (query *Query) Modify(change Change, result interface{}) (err os.Error) {
 
 // The BuildInfo type encapsulates details about the running MongoDB server.
 type BuildInfo struct {
-	Version string
-	VersionArray []int `bson:"versionArray"`
-	GitVersion string `bson:"gitVersion"`
-	SysInfo string `bson:"sysInfo"`
-	Bits int
-	Debug bool
+	Version       string
+	VersionArray  []int  `bson:"versionArray"`
+	GitVersion    string `bson:"gitVersion"`
+	SysInfo       string `bson:"sysInfo"`
+	Bits          int
+	Debug         bool
 	MaxObjectSize int `bson:"maxBsonObjectSize"`
 }
 
@@ -2271,7 +2318,6 @@ func (session *Session) BuildInfo() (info BuildInfo, err os.Error) {
 	err = session.Run(bson.D{{"buildInfo", "1"}}, &info)
 	return
 }
-
 
 // ---------------------------------------------------------------------------
 // Internal session handling helpers.

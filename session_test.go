@@ -1387,57 +1387,89 @@ func (s *S) TestSafeSetting(c *C) {
 	// Check the default
 	safe := session.Safe()
 	c.Assert(safe.W, Equals, 0)
+	c.Assert(safe.WMode, Equals, "")
 	c.Assert(safe.WTimeout, Equals, 0)
 	c.Assert(safe.FSync, Equals, false)
+	c.Assert(safe.J, Equals, false)
 
 	// Tweak it
 	session.SetSafe(&mgo.Safe{W: 1, WTimeout: 2, FSync: true})
 	safe = session.Safe()
 	c.Assert(safe.W, Equals, 1)
+	c.Assert(safe.WMode, Equals, "")
 	c.Assert(safe.WTimeout, Equals, 2)
 	c.Assert(safe.FSync, Equals, true)
+	c.Assert(safe.J, Equals, false)
 
 	// Reset it again.
 	session.SetSafe(&mgo.Safe{})
 	safe = session.Safe()
 	c.Assert(safe.W, Equals, 0)
+	c.Assert(safe.WMode, Equals, "")
 	c.Assert(safe.WTimeout, Equals, 0)
 	c.Assert(safe.FSync, Equals, false)
+	c.Assert(safe.J, Equals, false)
 
-	// Ensure safety to something higher.
-	session.SetSafe(&mgo.Safe{W: 5, WTimeout: 6, FSync: true})
+	// Ensure safety to something more conservative.
+	session.SetSafe(&mgo.Safe{W: 5, WTimeout: 6, J: true})
 	safe = session.Safe()
 	c.Assert(safe.W, Equals, 5)
+	c.Assert(safe.WMode, Equals, "")
 	c.Assert(safe.WTimeout, Equals, 6)
-	c.Assert(safe.FSync, Equals, true)
+	c.Assert(safe.FSync, Equals, false)
+	c.Assert(safe.J, Equals, true)
 
 	// Ensure safety to something less conservative won't change it.
-	session.EnsureSafe(&mgo.Safe{W: 4, WTimeout: 7, FSync: false})
+	session.EnsureSafe(&mgo.Safe{W: 4, WTimeout: 7})
 	safe = session.Safe()
 	c.Assert(safe.W, Equals, 5)
+	c.Assert(safe.WMode, Equals, "")
 	c.Assert(safe.WTimeout, Equals, 6)
-	c.Assert(safe.FSync, Equals, true)
+	c.Assert(safe.FSync, Equals, false)
+	c.Assert(safe.J, Equals, true)
 
 	// But to something more conservative will.
-	session.EnsureSafe(&mgo.Safe{W: 6, WTimeout: 4})
+	session.EnsureSafe(&mgo.Safe{W: 6, WTimeout: 4, FSync: true})
 	safe = session.Safe()
 	c.Assert(safe.W, Equals, 6)
+	c.Assert(safe.WMode, Equals, "")
 	c.Assert(safe.WTimeout, Equals, 4)
 	c.Assert(safe.FSync, Equals, true)
+	c.Assert(safe.J, Equals, false)
+
+	// Even more conservative.
+	session.EnsureSafe(&mgo.Safe{WMode: "majority", WTimeout: 2})
+	safe = session.Safe()
+	c.Assert(safe.W, Equals, 0)
+	c.Assert(safe.WMode, Equals, "majority")
+	c.Assert(safe.WTimeout, Equals, 2)
+	c.Assert(safe.FSync, Equals, true)
+	c.Assert(safe.J, Equals, false)
+
+	// WMode always overrides, whatever it is, but J doesn't.
+	session.EnsureSafe(&mgo.Safe{WMode: "something", J: true})
+	safe = session.Safe()
+	c.Assert(safe.W, Equals, 0)
+	c.Assert(safe.WMode, Equals, "something")
+	c.Assert(safe.WTimeout, Equals, 2)
+	c.Assert(safe.FSync, Equals, true)
+	c.Assert(safe.J, Equals, false)
 
 	// EnsureSafe with nil does nothing.
 	session.EnsureSafe(nil)
 	safe = session.Safe()
-	c.Assert(safe.W, Equals, 6)
-	c.Assert(safe.WTimeout, Equals, 4)
+	c.Assert(safe.W, Equals, 0)
+	c.Assert(safe.WMode, Equals, "something")
+	c.Assert(safe.WTimeout, Equals, 2)
 	c.Assert(safe.FSync, Equals, true)
+	c.Assert(safe.J, Equals, false)
 
 	// Changing the safety of a cloned session doesn't touch the original.
 	clone := session.Clone()
 	defer clone.Close()
-	clone.EnsureSafe(&mgo.Safe{W: 100})
+	clone.EnsureSafe(&mgo.Safe{WMode: "foo"})
 	safe = session.Safe()
-	c.Assert(safe.W, Equals, 6)
+	c.Assert(safe.WMode, Equals, "something")
 }
 
 func (s *S) TestSafeInsert(c *C) {
@@ -1482,7 +1514,7 @@ func (s *S) TestSafeParameters(c *C) {
 	coll := session.DB("mydb").C("mycoll")
 
 	// Tweak the safety parameters to something unachievable.
-	session.SetSafe(&mgo.Safe{4, 100, false})
+	session.SetSafe(&mgo.Safe{W: 4, WTimeout: 100})
 	err = coll.Insert(M{"_id": 1})
 	c.Assert(err, Matches, "timeout")
 	c.Assert(err.(*mgo.LastError).WTimeout, Equals, true)

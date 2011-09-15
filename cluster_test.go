@@ -53,7 +53,7 @@ func (s *S) TestNewSession(c *C) {
 	session.SetBatch(-1)
 	other := session.New()
 	defer other.Close()
-	session.SetSafe(&mgo.Safe{0, 0, false})
+	session.SetSafe(&mgo.Safe{})
 
 	// Clone was copied while session was unsafe, so no errors.
 	otherColl := other.DB("mydb").C("mycoll")
@@ -105,7 +105,7 @@ func (s *S) TestCloneSession(c *C) {
 	session.SetBatch(-1)
 	clone := session.Clone()
 	defer clone.Close()
-	session.SetSafe(&mgo.Safe{0, 0, false})
+	session.SetSafe(&mgo.Safe{})
 
 	// Clone was copied while session was unsafe, so no errors.
 	cloneColl := clone.DB("mydb").C("mycoll")
