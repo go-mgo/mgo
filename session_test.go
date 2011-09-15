@@ -446,6 +446,56 @@ func (s *S) TestRemoveAll(c *C) {
 	c.Assert(err, Equals, mgo.NotFound)
 }
 
+func (s *S) TestDropDatabase(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	db1 := session.DB("db1")
+	db1.C("col").Insert(M{"_id": 1})
+
+	db2 := session.DB("db2")
+	db2.C("col").Insert(M{"_id": 1})
+
+	err = db1.DropDatabase()
+	c.Assert(err, IsNil)
+
+	names, err := session.DatabaseNames()
+	c.Assert(err, IsNil)
+	c.Assert(names, Equals, []string{"db2"})
+
+	err = db2.DropDatabase()
+	c.Assert(err, IsNil)
+
+	names, err = session.DatabaseNames()
+	c.Assert(err, IsNil)
+	c.Assert(names, Equals, []string{})
+}
+
+func (s *S) TestDropCollection(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	db := session.DB("db1")
+	db.C("col1").Insert(M{"_id": 1})
+	db.C("col2").Insert(M{"_id": 1})
+
+	err = db.C("col1").DropCollection()
+	c.Assert(err, IsNil)
+
+	names, err := db.CollectionNames()
+	c.Assert(err, IsNil)
+	c.Assert(names, Equals, []string{"col2", "system.indexes"})
+
+	err = db.C("col2").DropCollection()
+	c.Assert(err, IsNil)
+
+	names, err = db.CollectionNames()
+	c.Assert(err, IsNil)
+	c.Assert(names, Equals, []string{"system.indexes"})
+}
+
 func (s *S) TestFindAndModify(c *C) {
 	session, err := mgo.Mongo("localhost:40001")
 	c.Assert(err, IsNil)

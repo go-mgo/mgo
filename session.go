@@ -1291,6 +1291,16 @@ func (collection Collection) RemoveAll(selector interface{}) os.Error {
 	return err
 }
 
+// DropDatabase removes the entire database including all of its collections.
+func (database Database) DropDatabase() os.Error {
+	return database.Run(bson.D{{"dropDatabase", 1}}, nil)
+}
+
+// DropCollection removes the entire collection including all of its documents.
+func (collection Collection) DropCollection() os.Error {
+	return collection.DB.Run(bson.D{{"drop", collection.Name}}, nil)
+}
+
 // Batch sets the batch size used when fetching documents from the database.
 // It's possible to change this setting on a per-session basis as well, using
 // the Batch method of Session.
@@ -1523,6 +1533,9 @@ func (query *Query) One(result interface{}) (err os.Error) {
 	}
 	if data == nil {
 		return NotFound
+	}
+	if result == nil {
+		return nil
 	}
 
 	err = bson.Unmarshal(data, result)
