@@ -1606,7 +1606,7 @@ func (session *Session) FindRef(ref DBRef, result interface{}) os.Error {
 }
 
 // CollectionNames returns the collection names present in database.
-func (database *Database) CollectionNames() (names []string, err os.Error) {
+func (database Database) CollectionNames() (names []string, err os.Error) {
 	c := len(database.Name) + 1
 	var result *struct{ Name string }
 	err = database.C("system.namespaces").Find(nil).For(&result, func() os.Error {
