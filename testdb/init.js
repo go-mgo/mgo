@@ -20,11 +20,19 @@ var rs2cfg = {_id: "rs2",
                         {_id: 3, host: "127.0.0.1:40023", priority: 1}],
               settings: settings}
 
-rs1a = new Mongo("127.0.0.1:40011").getDB("admin")
-rs1a.runCommand({replSetInitiate: rs1cfg})
+for (var i = 0; i != 30; i++) {
+	try {
+		rs1a = new Mongo("127.0.0.1:40011").getDB("admin")
+		rs2a = new Mongo("127.0.0.1:40021").getDB("admin")
+		break
+	} catch(err) {
+		print("Can't connect yet...")
+	}
+	sleep(1000)
+}
 
-rs2a = new Mongo("127.0.0.1:40021").getDB("admin")
 rs2a.runCommand({replSetInitiate: rs2cfg})
+rs1a.runCommand({replSetInitiate: rs1cfg})
 
 function configShards() {
     cfg1 = new Mongo("127.0.0.1:40201").getDB("admin")

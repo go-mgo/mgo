@@ -40,6 +40,7 @@ import (
 	"reflect"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -2302,9 +2303,13 @@ func (query *Query) Modify(change Change, result interface{}) (err os.Error) {
 }
 
 // The BuildInfo type encapsulates details about the running MongoDB server.
+//
+// Note that the VersionArray field was introduced in MongoDB 2.0+, but it is
+// internally assembled from the Version information for previous versions.
+// In both cases, VersionArray is guaranteed to have at least 4 entries.
 type BuildInfo struct {
 	Version       string
-	VersionArray  []int  `bson:"versionArray"`
+	VersionArray  []int  `bson:"versionArray"` // On MongoDB 2.0+; assembled from Version otherwise
 	GitVersion    string `bson:"gitVersion"`
 	SysInfo       string `bson:"sysInfo"`
 	Bits          int
@@ -2316,6 +2321,18 @@ type BuildInfo struct {
 // running MongoDB server.
 func (session *Session) BuildInfo() (info BuildInfo, err os.Error) {
 	err = session.Run(bson.D{{"buildInfo", "1"}}, &info)
+	if len(info.VersionArray) == 0 {
+		for _, a := range strings.Split(info.Version, ".") {
+			i, err := strconv.Atoi(a)
+			if err != nil {
+				break
+			}
+			info.VersionArray = append(info.VersionArray, i)
+		}
+	}
+	for len(info.VersionArray) < 4 {
+		info.VersionArray = append(info.VersionArray, 0)
+	}
 	return
 }
 

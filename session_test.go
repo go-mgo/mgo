@@ -2087,7 +2087,7 @@ func (s *S) TestBuildInfo(c *C) {
 	for len(v) < 4 {
 		v = append(v, 0)
 	}
-	c.Assert(err, IsNil)
+
 	c.Assert(info.VersionArray, Equals, v)
 	c.Assert(info.GitVersion, Matches, "[a-z0-9]+")
 	c.Assert(info.SysInfo, Matches, ".*[0-9:]+.*")
