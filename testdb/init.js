@@ -1,6 +1,14 @@
 
 // Setup auth on db2.
-db2 = new Mongo("127.0.0.1:40002").getDB("admin")
+for (var i = 0; i != 30; i++) {
+	try {
+        db2 = new Mongo("127.0.0.1:40002").getDB("admin")
+		break
+	} catch(err) {
+		print("Can't connect yet...")
+	}
+	sleep(1000)
+}
 db2.addUser("root", "rapadura")
 db2.auth("root", "rapadura")
 db2.addUser("reader", "rapadura", true)

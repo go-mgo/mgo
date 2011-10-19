@@ -2027,7 +2027,7 @@ func (s *S) TestMapReduceToOtherDb(c *C) {
 	job := mgo.MapReduce{
 		Map:    "function() { emit(this.n, 1); }",
 		Reduce: "function(key, values) { return Array.sum(values); }",
-		Out:    M{"replace": "mr", "db": "otherdb"},
+		Out:    bson.D{{"replace", "mr"}, {"db", "otherdb"}},
 	}
 
 	info, err := coll.Find(nil).MapReduce(job, nil)
