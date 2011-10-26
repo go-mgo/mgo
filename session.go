@@ -113,10 +113,10 @@ type Iter struct {
 	pendingDocs    int
 	docsBeforeMore int
 	timeout        int
+	timedout       bool
 }
 
 var NotFound = os.NewError("Document not found")
-var TailTimeout = os.NewError("Tail timed out")
 
 const defaultPrefetch = 0.25
 
@@ -360,7 +360,7 @@ func (database Database) GridFS(prefix string) *GridFS {
 //
 func (database Database) Run(cmd interface{}, result interface{}) os.Error {
 	if name, ok := cmd.(string); ok {
-		cmd = bson.M{name: 1}
+		cmd = bson.D{{name, 1}}
 	}
 	return database.C("$cmd").Find(cmd).One(result)
 }
@@ -680,11 +680,10 @@ func (collection Collection) DropIndex(key []string) os.Error {
 // See the EnsureIndex method for more details on indexes.
 func (collection Collection) Indexes() (indexes []Index, err os.Error) {
 	query := collection.DB.C("system.indexes").Find(bson.M{"ns": collection.FullName})
-	iter, err := query.Sort(bson.D{{"name", 1}}).Iter()
+	iter := query.Sort(bson.D{{"name", 1}}).Iter()
 	for {
 		var spec indexSpec
-		err = iter.Next(&spec)
-		if err != nil {
+		if !iter.Next(&spec) {
 			break
 		}
 		index := Index{
@@ -697,9 +696,7 @@ func (collection Collection) Indexes() (indexes []Index, err os.Error) {
 		}
 		indexes = append(indexes, index)
 	}
-	if err == NotFound {
-		err = nil
-	}
+	err = iter.Err()
 	return
 }
 
@@ -1131,9 +1128,6 @@ func (session *Session) Ping() os.Error {
 //     http://www.mongodb.org/display/DOCS/Advanced+Queries
 //
 func (collection Collection) Find(query interface{}) *Query {
-	if query == nil {
-		query = bson.M{}
-	}
 	session := collection.DB.Session
 	session.m.RLock()
 	q := &Query{session: session, query: session.queryConfig}
@@ -1380,7 +1374,12 @@ type queryWrapper struct {
 func (query *Query) wrap() *queryWrapper {
 	w, ok := query.op.query.(*queryWrapper)
 	if !ok {
-		w = &queryWrapper{Query: query.op.query}
+		if query.op.query == nil {
+			var empty bson.D
+			w = &queryWrapper{Query: empty}
+		} else {
+			w = &queryWrapper{Query: query.op.query}
+		}
 		query.op.query = w
 	}
 	return w
@@ -1428,11 +1427,11 @@ func (query *Query) Explain(result interface{}) os.Error {
 	if clone.op.limit > 0 {
 		clone.op.limit = -query.op.limit
 	}
-	iter, err := clone.Iter()
-	if err != nil {
-		return err
+	iter := clone.Iter()
+	if iter.Next(result) {
+		return nil
 	}
-	return iter.Next(result)
+	return iter.Err()
 }
 
 // Hint will include an explicit "hint" in the query to force the server
@@ -1647,8 +1646,8 @@ func (session *Session) DatabaseNames() (names []string, err os.Error) {
 // Iter executes the query and returns an iterator capable of going over all
 // the results. Results will be returned in batches of configurable
 // size (see the Batch method) and more documents will be requested when a
-// configurable threshold is reached (see the Prefetch method).
-func (query *Query) Iter() (iter *Iter, err os.Error) {
+// configurable number of documents is iterated over (see the Prefetch method).
+func (query *Query) Iter() *Iter {
 	query.m.Lock()
 	session := query.session
 	op := query.op
@@ -1656,13 +1655,7 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
 	limit := query.limit
 	query.m.Unlock()
 
-	socket, err := session.acquireSocket(true)
-	if err != nil {
-		return nil, err
-	}
-	defer socket.Release()
-
-	iter = &Iter{session: session, prefetch: prefetch, limit: limit}
+	iter := &Iter{session: session, prefetch: prefetch, limit: limit}
 	iter.gotReply.L = &iter.m
 	iter.op.collection = op.collection
 	iter.op.limit = op.limit
@@ -1671,57 +1664,54 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
 	op.replyFunc = iter.op.replyFunc
 	op.flags |= session.slaveOkFlag()
 
-	err = socket.Query(&op)
+	socket, err := session.acquireSocket(true)
 	if err != nil {
-		return nil, err
+		iter.err = err
+	} else {
+		iter.err = socket.Query(&op)
+		socket.Release()
 	}
-
-	return iter, nil
+	return iter
 }
 
-// Tail returns a tailable iterator.  Unlike a normal iterator, a
-// tailable iterator will wait for new values to be inserted in the
-// collection once the end of the current result set is reached.
+// Tail returns a tailable iterator. Unlike a normal iterator, a
+// tailable iterator may wait for new values to be inserted in the
+// collection once the end of the current result set is reached,
 // A tailable iterator may only be used with capped collections.
 //
 // The timeoutSecs parameter indicates how long Next will block
-// waiting for a result before returning TailTimeout.  If set to -1,
-// Next will not timeout, and will continue waiting for a result
-// for as long as the cursor is valid and the session is not closed.
-// If set to 0, Next will return TailTimeout as soon as it reaches
-// the end of the result set.  Otherwise, Next will wait for at
-// least the given number of seconds for a new document to be
-// available before aborting and returning TailTimeout.
+// waiting for a result before timing out.  If set to -1, Next will
+// not timeout, and will continue waiting for a result for as long
+// as the cursor is valid and the session is not closed. If set
+// to 0, Next times out as soon as it reaches the end of the result
+// set. Otherwise, Next will wait for at least the given number of
+// seconds for a new document to be available before timing out.
 //
-// When Next returns TailTimeout, it may still be called again to
-// check if a new value is available. If Next returns NotFound,
-// though, it means the cursor became invalid, and the query must
-// be restarted.
+// On timeouts, Next will unblock and return false, and the Timeout
+// method will return true if called. In these cases, Next may still
+// be called again on the same iterator to check if a new value is
+// available at the current cursor position, and again it will block
+// according to the specified timeoutSecs. If the cursor becomes
+// invalid, though, both Next and Timeout will return false and
+// the query must be restarted.
 //
-// This example demonstrates query restarting in case the cursor
-// becomes invalid:
+// The following example demonstrates timeout handling and query
+// restarting:
 //
-//    query := collection.Find(nil)
+//    iter := collection.Find(nil).Sort("$natural").Tail(5)
 //    for {
-//         iter, err := query.Sort("$natural").Tail(-1)
-//         if err != nil {
-//             panic(err)
-//         }
-//         for {
-//             err = iter.Next(&result)
-//             if err == mgo.TailTimeout {
-//                 continue
-//             }
-//             if err != nil {
-//                 break
-//             }
+//         for iter.Next(&result) {
 //             fmt.Println(result.Id)
 //             lastId = result.Id
 //         }
-//         if err != mgo.NotFound {
+//         if iter.Err() != nil {
 //             panic(err)
 //         }
-//         query = collection.Find(bson.M{"_id", bson.M{"$gt", lastId}})
+//         if iter.Timeout() {
+//             continue
+//         }
+//         query := collection.Find(bson.M{"_id", bson.M{"$gt", lastId}})
+//         iter = query.Sort("$natural").Tail(5)
 //    }
 //
 // Relevant documentation:
@@ -1730,20 +1720,14 @@ func (query *Query) Iter() (iter *Iter, err os.Error) {
 //     http://www.mongodb.org/display/DOCS/Capped+Collections
 //     http://www.mongodb.org/display/DOCS/Sorting+and+Natural+Order
 //
-func (query *Query) Tail(timeoutSecs int) (iter *Iter, err os.Error) {
+func (query *Query) Tail(timeoutSecs int) *Iter {
 	query.m.Lock()
 	session := query.session
 	op := query.op
 	prefetch := query.prefetch
 	query.m.Unlock()
 
-	socket, err := session.acquireSocket(true)
-	if err != nil {
-		return nil, err
-	}
-	defer socket.Release()
-
-	iter = &Iter{session: session, prefetch: prefetch}
+	iter := &Iter{session: session, prefetch: prefetch}
 	iter.gotReply.L = &iter.m
 	iter.timeout = timeoutSecs
 	iter.op.collection = op.collection
@@ -1753,12 +1737,14 @@ func (query *Query) Tail(timeoutSecs int) (iter *Iter, err os.Error) {
 	op.replyFunc = iter.op.replyFunc
 	op.flags |= 2 | 32 | session.slaveOkFlag() // Tailable | AwaitData [| SlaveOk]
 
-	err = socket.Query(&op)
+	socket, err := session.acquireSocket(true)
 	if err != nil {
-		return nil, err
+		iter.err = err
+	} else {
+		iter.err = socket.Query(&op)
+		socket.Release()
 	}
-
-	return iter, nil
+	return iter
 }
 
 func (session *Session) slaveOkFlag() (flag uint32) {
@@ -1770,59 +1756,75 @@ func (session *Session) slaveOkFlag() (flag uint32) {
 	return
 }
 
+// Err returns nil if no errors happened during iteration, or the actual
+// error otherwise.
+//
+// In case a resulting document included a field named $err or errmsg, which are
+// standard ways for MongoDB to report an improper query, the returned value has
+// a *QueryError type, and includes the Err message and the Code.
+func (iter *Iter) Err() os.Error {
+	iter.m.Lock()
+	err := iter.err
+	iter.m.Unlock()
+	if err == NotFound {
+		return nil
+	}
+	return err
+}
+
+// Timeout returns true if Next returned false due to a timeout of
+// a tailable cursor. In those cases, Next may be called again to continue
+// the iteration at the previous cursor position.
+func (iter *Iter) Timeout() bool {
+	iter.m.Lock()
+	result := iter.timedout
+	iter.m.Unlock()
+	return result
+}
+
 // Next retrieves the next document from the result set, blocking if necessary.
 // This method will also automatically retrieve another batch of documents from
 // the server when the current one is exhausted, or before that in background
 // if pre-fetching is enabled (see the Query.Prefetch and Session.SetPrefetch
 // methods).
 //
-// Next returns NotFound at the end of the result set, or in case a tailable
-// iterator becomes invalid, and returns TailTimeout if a tailable iterator
-// times out (see the Tail method of Query).  Also, in case the resulting
-// document includes a field named $err or errmsg, which are standard ways for
-// MongoDB to return query errors, the returned err will be set to a
-// *QueryError value including the Err message and the Code.  In those cases,
-// the result argument is still unmarshalled into with the received document so
-// that any other custom values may be obtained if desired.
+// Next returns true if a document was successfully unmarshalled onto result,
+// and false at the end of the result set or if an error happened.
+// When Next returns false, the Err method should be called to verify if
+// there was an error during iteration.
 //
 // For example:
 //
-//    iter, err := collection.Find(nil).Iter()
-//    if err != nil {
-//        panic(err)
-//    }
-//    for {
-//        err = iter.Next(&result)
-//        if err != nil {
-//            break
-//        }
+//    iter := collection.Find(nil).Iter()
+//    for iter.Next(&result) {
 //        println(result.Id)
 //    }
-//    if err != mgo.NotFound {
-//        panic(err)
+//    if iter.Err() != nil {
+//        panic(iter.Err())
 //    }
 //
-func (iter *Iter) Next(result interface{}) (err os.Error) {
+func (iter *Iter) Next(result interface{}) bool {
 	timeout := int64(-1)
 	if iter.timeout >= 0 {
 		timeout = time.Nanoseconds() + int64(iter.timeout)*1e9
 	}
 
 	iter.m.Lock()
-
+	iter.timedout = false
 	for iter.err == nil && iter.docData.Len() == 0 && (iter.pendingDocs > 0 || iter.op.cursorId != 0) {
 		if iter.pendingDocs == 0 && iter.op.cursorId != 0 {
 			// Tailable cursor exhausted.
 			if timeout >= 0 && time.Nanoseconds() > timeout {
+				iter.timedout = true
 				iter.m.Unlock()
-				return TailTimeout
+				return false
 			}
 			iter.getMore()
 		}
 		iter.gotReply.Wait()
 	}
 
-	// Exhaust available data before returning any errors.
+	// Exhaust available data before reporting any errors.
 	if docData, ok := iter.docData.Pop().([]byte); ok {
 		iter.limit--
 		if iter.limit == 0 {
@@ -1836,85 +1838,94 @@ func (iter *Iter) Next(result interface{}) (err os.Error) {
 			}
 		}
 		iter.m.Unlock()
-		err = bson.Unmarshal(docData, result)
-		if err == nil {
-			debugf("Iter %p document unmarshaled: %#v", iter, result)
-		} else {
+		err := bson.Unmarshal(docData, result)
+		if err != nil {
 			debugf("Iter %p document unmarshaling failed: %#v", iter, err)
+			iter.err = err
+			return false
 		}
-		return checkQueryError(docData)
+		debugf("Iter %p document unmarshaled: %#v", iter, result)
+		// XXX Only have to check first document for a query error.
+		err = checkQueryError(docData)
+		if err != nil {
+			iter.err = err
+			return false
+		}
+		return true
 	} else if iter.err != nil {
-		err := iter.err
-		debugf("Iter %p returning error: %s", iter, err)
+		debugf("Iter %p returning false: %s", iter, iter.err)
 		iter.m.Unlock()
-		return err
+		return false
 	} else if iter.op.cursorId == 0 {
-		debugf("Iter %p returning NotFound with cursor=0", iter)
+		iter.err = NotFound
+		debugf("Iter %p exhausted with cursor=0", iter)
 		iter.m.Unlock()
-		return NotFound
+		return false
 	}
 
-	panic("Internal error: this should be unreachable")
-	return
+	panic("unreachable")
 }
 
-// The For method unmarshals into result each document found through an
-// iterator obtained from query and calls f to handle it.  The result
-// value must necessarily be a pointer to a nil reference type.
-// If f returns a non-nil os.Error, iteration will stop and the error
-// will be returned as the result of For.
+// All retrieves all documents from the result set into the provided slice.
 //
-// For example:
+// The result argument must necessarily be the address for a slice. The slice
+// may be nil or previously allocated.
 //
-//     var result *struct{ N int }
-//     err := collection.Find(nil).For(&result, func() os.Error {
-//         println(result.N)
-//         return nil
-//     })
-//     if err != nil {
-//         panic(err)
-//     }
+// WARNING: Obviously, All must not be used with result sets that may be
+// potentially large, since it may consume all memory until the system
+// crashes. Consider building the query with a Limit clause to ensure the
+// result size is bounded.
+// 
+// For instance:
 //
-// Note the way in which result is declared.  The following are also valid
-// declaration examples to be used with For.  With all of these, the variable
-// must still be passed by address (&result) in the For call.
+//    var result []struct{ Value int }
+//    iter := collection.Find(nil).Limit(100).Iter()
+//    err := iter.All(&result)
+//    if err != nil {
+//        panic(iter.Err())
+//    }
 //
-//     var result *MyType
-//     var result bson.M
-//     var result map[string]interface{}
-//
-func (query *Query) For(result interface{}, f func() os.Error) (err os.Error) {
-	iter, err := query.Iter()
-	if err != nil {
-		return err
+func (iter *Iter) All(result interface{}) os.Error {
+	resultv := reflect.ValueOf(result)
+	if resultv.Kind() != reflect.Ptr || resultv.Elem().Kind() != reflect.Slice {
+		panic("result argument must be a slice address")
 	}
-	return iter.For(result, f)
+	slicev := resultv.Elem()
+	slicev = slicev.Slice(0, slicev.Cap())
+	elemt := slicev.Type().Elem()
+	i := 0
+	for {
+		if slicev.Len() == i {
+			elemp := reflect.New(elemt)
+			if !iter.Next(elemp.Interface()) {
+				break
+			}
+			slicev = reflect.Append(slicev, elemp.Elem())
+			slicev = slicev.Slice(0, slicev.Cap())
+		} else {
+			if !iter.Next(slicev.Index(i).Addr().Interface()) {
+				break
+			}
+		}
+		i++
+	}
+	resultv.Elem().Set(slicev.Slice(0, i))
+	return iter.Err()
 }
 
-// The For method unmarshals into result each document found through iter
-// and calls f to handle it.  The result value must necessarily be a
-// pointer to a nil reference type.  If f returns a non-nil os.Error,
-// iteration will stop and the error will be returned as the result of For.
-//
-// For example:
-//
-//     var result *struct{ N int }
-//     err := iter.For(&result, func() os.Error {
-//         println(result.N)
-//         return nil
-//     })
-//     if err != nil {
-//         panic(err)
-//     }
-//
-// Note the way in which result is declared.  The following are also valid
-// declaration examples to be used with For.  With all of these, the variable
-// must still be passed by address (&result) in the For call.
-//
-//     var result *MyType
-//     var result bson.M
-//     var result map[string]interface{}
-//
+// All calls All on an Iter for query. See Iter.All.
+func (query *Query) All(result interface{}) os.Error {
+	return query.Iter().All(result)
+}
+
+// The For method is obsolete and will be removed in a future release.
+// See Iter as an elegant replacement.
+func (query *Query) For(result interface{}, f func() os.Error) os.Error {
+	return query.Iter().For(result, f)
+}
+
+// The For method is obsolete and will be removed in a future release.
+// See Iter as an elegant replacement.
 func (iter *Iter) For(result interface{}, f func() os.Error) (err os.Error) {
 	valid := false
 	v := reflect.ValueOf(result)
@@ -1929,17 +1940,17 @@ func (iter *Iter) For(result interface{}, f func() os.Error) (err os.Error) {
 		panic("For needs a pointer to nil reference value.  See the documentation.")
 	}
 	zero := reflect.Zero(v.Type())
-	for err == nil {
+	for {
 		v.Set(zero)
-		err = iter.Next(result)
-		if err == nil {
-			err = f()
+		if !iter.Next(result) {
+			break
+		}
+		err = f()
+		if err != nil {
+			return err
 		}
 	}
-	if err == NotFound {
-		return nil
-	}
-	return err
+	return iter.Err()
 }
 
 func (iter *Iter) getMore() {

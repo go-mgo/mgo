@@ -78,11 +78,13 @@ func (s *S) TestNewSession(c *C) {
 
 	mgo.ResetStats()
 
-	iter, err := otherColl.Find(M{}).Iter()
+	iter := otherColl.Find(M{}).Iter()
 	c.Assert(err, IsNil)
 
 	m := M{}
-	err = iter.Next(m)
+	ok := iter.Next(m)
+	c.Assert(ok, Equals, true)
+	err = iter.Err()
 	c.Assert(err, IsNil)
 
 	// If Batch(-1) is in effect, a single document must have been received.
@@ -141,11 +143,13 @@ func (s *S) TestCloneSession(c *C) {
 
 	mgo.ResetStats()
 
-	iter, err := cloneColl.Find(M{}).Iter()
+	iter := cloneColl.Find(M{}).Iter()
 	c.Assert(err, IsNil)
 
 	m := M{}
-	err = iter.Next(m)
+	ok := iter.Next(m)
+	c.Assert(ok, Equals, true)
+	err = iter.Err()
 	c.Assert(err, IsNil)
 
 	// If Batch(-1) is in effect, a single document must have been received.

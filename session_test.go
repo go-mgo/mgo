@@ -192,6 +192,50 @@ func (s *S) TestInsertFindOneMap(c *C) {
 	c.Assert(result["b"], Equals, 2)
 }
 
+func (s *S) TestInsertFindAll(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	coll.Insert(M{"a": 1, "b": 2})
+	coll.Insert(M{"a": 3, "b": 4})
+
+	type R struct{ A, B int }
+	var result []R
+
+	assertResult := func() {
+		c.Assert(len(result), Equals, 2)
+		c.Assert(result[0].A, Equals, 1)
+		c.Assert(result[0].B, Equals, 2)
+		c.Assert(result[1].A, Equals, 3)
+		c.Assert(result[1].B, Equals, 4)
+	}
+
+	// nil slice
+	err = coll.Find(nil).Sort(M{"a": 1}).All(&result)
+	c.Assert(err, IsNil)
+	assertResult()
+
+	// Previously allocated slice
+	allocd := make([]R, 5)
+	result = allocd
+	err = coll.Find(nil).Sort(M{"a": 1}).All(&result)
+	c.Assert(err, IsNil)
+	assertResult()
+
+	// Ensure result is backed by the originally allocated array
+	c.Assert(&result[0], Equals, &allocd[0])
+
+	// Non-pointer slice error
+	f := func() { coll.Find(nil).All(result) }
+	c.Assert(f, Panics, "result argument must be a slice address")
+
+	// Non-slice error
+	f = func() { coll.Find(nil).All(new(int)) }
+	c.Assert(f, Panics, "result argument must be a slice address")
+}
+
 func (s *S) TestFindRef(c *C) {
 	session, err := mgo.Mongo("localhost:40001")
 	c.Assert(err, IsNil)
@@ -306,6 +350,37 @@ func (s *S) TestUpdate(c *C) {
 
 	err = coll.Find(M{"k": 47}).One(result)
 	c.Assert(err, Equals, mgo.NotFound)
+}
+
+func (s *S) TestUpdateNil(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"k": 42, "n": 42})
+	c.Assert(err, IsNil)
+	err = coll.Update(nil, M{"$inc": M{"n": 1}})
+	c.Assert(err, IsNil)
+
+	result := make(M)
+	err = coll.Find(M{"k": 42}).One(result)
+	c.Assert(err, IsNil)
+	c.Assert(result["n"], Equals, 43)
+
+	err = coll.Insert(M{"k": 45, "n": 45})
+	c.Assert(err, IsNil)
+	err = coll.UpdateAll(nil, M{"$inc": M{"n": 1}})
+	c.Assert(err, IsNil)
+
+	err = coll.Find(M{"k": 42}).One(result)
+	c.Assert(err, IsNil)
+	c.Assert(result["n"], Equals, 44)
+	err = coll.Find(M{"k": 45}).One(result)
+	c.Assert(err, IsNil)
+	c.Assert(result["n"], Equals, 46)
+
 }
 
 func (s *S) TestUpsert(c *C) {
@@ -683,13 +758,11 @@ func (s *S) TestFindIterAll(c *C) {
 	mgo.ResetStats()
 
 	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
-	iter, err := query.Iter()
-	c.Assert(err, IsNil)
-
+	iter := query.Iter()
 	result := struct{ N int }{}
 	for i := 2; i < 7; i++ {
-		err = iter.Next(&result)
-		c.Assert(err, IsNil)
+		ok := iter.Next(&result)
+		c.Assert(ok, Equals, true)
 		c.Assert(result.N, Equals, ns[i])
 		if i == 1 {
 			stats := mgo.GetStats()
@@ -697,8 +770,9 @@ func (s *S) TestFindIterAll(c *C) {
 		}
 	}
 
-	err = iter.Next(&result)
-	c.Assert(err == mgo.NotFound, Equals, true)
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Err(), IsNil)
 
 	session.Refresh() // Release socket.
 
@@ -722,17 +796,15 @@ func (s *S) TestFindIterTwiceWithSameQuery(c *C) {
 
 	query := coll.Find(M{}).Sort(M{"n": 1})
 
-	result1, err := query.Skip(1).Iter()
-	c.Assert(err, IsNil)
-	result2, err := query.Skip(2).Iter()
-	c.Assert(err, IsNil)
+	result1 := query.Skip(1).Iter()
+	result2 := query.Skip(2).Iter()
 
 	result := struct{ N int }{}
-	err = result2.Next(&result)
-	c.Assert(err, IsNil)
+	ok := result2.Next(&result)
+	c.Assert(ok, Equals, true)
 	c.Assert(result.N, Equals, 42)
-	err = result1.Next(&result)
-	c.Assert(err, IsNil)
+	ok = result1.Next(&result)
+	c.Assert(ok, Equals, true)
 	c.Assert(result.N, Equals, 41)
 }
 
@@ -744,13 +816,13 @@ func (s *S) TestFindIterWithoutResults(c *C) {
 	coll := session.DB("mydb").C("mycoll")
 	coll.Insert(M{"n": 42})
 
-	iter, err := coll.Find(M{"n": 0}).Iter()
-	c.Assert(err, IsNil)
+	iter := coll.Find(M{"n": 0}).Iter()
 
 	result := struct{ N int }{}
-	err = iter.Next(&result)
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Err(), IsNil)
 	c.Assert(result.N, Equals, 0)
-	c.Assert(err == mgo.NotFound, Equals, true)
 }
 
 func (s *S) TestFindIterLimit(c *C) {
@@ -770,18 +842,18 @@ func (s *S) TestFindIterLimit(c *C) {
 	mgo.ResetStats()
 
 	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Limit(3)
-	iter, err := query.Iter()
-	c.Assert(err, IsNil)
+	iter := query.Iter()
 
 	result := struct{ N int }{}
 	for i := 2; i < 5; i++ {
-		err = iter.Next(&result)
-		c.Assert(err, IsNil)
+		ok := iter.Next(&result)
+		c.Assert(ok, Equals, true)
 		c.Assert(result.N, Equals, ns[i])
 	}
 
-	err = iter.Next(&result)
-	c.Assert(err == mgo.NotFound, Equals, true)
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Err(), IsNil)
 
 	session.Refresh() // Release socket.
 
@@ -812,13 +884,11 @@ func (s *S) TestFindIterLimitWithBatch(c *C) {
 	mgo.ResetStats()
 
 	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Limit(3).Batch(2)
-	iter, err := query.Iter()
-	c.Assert(err, IsNil)
-
+	iter := query.Iter()
 	result := struct{ N int }{}
 	for i := 2; i < 5; i++ {
-		err = iter.Next(&result)
-		c.Assert(err, IsNil)
+		ok := iter.Next(&result)
+		c.Assert(ok, Equals, true)
 		c.Assert(result.N, Equals, ns[i])
 		if i == 3 {
 			stats := mgo.GetStats()
@@ -826,8 +896,9 @@ func (s *S) TestFindIterLimitWithBatch(c *C) {
 		}
 	}
 
-	err = iter.Next(&result)
-	c.Assert(err == mgo.NotFound, Equals, true)
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Err(), IsNil)
 
 	session.Refresh() // Release socket.
 
@@ -862,16 +933,13 @@ func (s *S) TestFindIterSortWithBatch(c *C) {
 	mgo.ResetStats()
 
 	query := coll.Find(M{"n": M{"$lte": 44}}).Sort(M{"n": -1}).Batch(2)
-	iter, err := query.Iter()
-	c.Assert(err, IsNil)
-
+	iter := query.Iter()
 	ns = []int{46, 45, 44, 43, 42, 41, 40}
-
 	result := struct{ N int }{}
 	for i := 2; i < len(ns); i++ {
-		err = iter.Next(&result)
 		c.Logf("i=%d", i)
-		c.Assert(err, IsNil)
+		ok := iter.Next(&result)
+		c.Assert(ok, Equals, true)
 		c.Assert(result.N, Equals, ns[i])
 		if i == 3 {
 			stats := mgo.GetStats()
@@ -879,8 +947,9 @@ func (s *S) TestFindIterSortWithBatch(c *C) {
 		}
 	}
 
-	err = iter.Next(&result)
-	c.Assert(err == mgo.NotFound, Equals, true)
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Err(), IsNil)
 
 	session.Refresh() // Release socket.
 
@@ -923,14 +992,15 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	const timeout = 3
 
 	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
-	iter, err := query.Tail(timeout)
-	c.Assert(err, IsNil)
+	iter := query.Tail(timeout)
 
 	n := len(ns)
 	result := struct{ N int }{}
 	for i := 2; i != n; i++ {
-		err = iter.Next(&result)
-		c.Assert(err, IsNil)
+		ok := iter.Next(&result)
+		c.Assert(ok, Equals, true)
+		c.Assert(iter.Err(), IsNil)
+		c.Assert(iter.Timeout(), Equals, false)
 		c.Assert(result.N, Equals, ns[i])
 		if i == 3 { // The batch boundary.
 			stats := mgo.GetStats()
@@ -953,8 +1023,10 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	}()
 
 	c.Log("Will wait for Next with N=47...")
-	err = iter.Next(&result)
-	c.Assert(err, IsNil)
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, true)
+	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 47)
 	c.Log("Got Next with N=47!")
 
@@ -971,9 +1043,20 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	c.Log("Will wait for a result which will never come...")
 
 	started := time.Nanoseconds()
-	err = iter.Next(&result)
+	ok = iter.Next(&result)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Timeout(), Equals, true)
 	c.Assert(time.Nanoseconds()-started > timeout*1e9, Equals, true)
-	c.Assert(err == mgo.TailTimeout, Equals, true)
+
+	c.Log("Will now reuse the timed out tail cursor...")
+
+	coll.Insert(M{"n": 48})
+	ok = iter.Next(&result)
+	c.Assert(ok, Equals, true)
+	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Timeout(), Equals, false)
+	c.Assert(result.N, Equals, 48)
 }
 
 // Test tailable cursors in a situation where Next never gets to sleep once
@@ -1003,14 +1086,15 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	const timeout = 1
 
 	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
-	iter, err := query.Tail(timeout)
-	c.Assert(err, IsNil)
+	iter := query.Tail(timeout)
 
 	n := len(ns)
 	result := struct{ N int }{}
 	for i := 2; i != n; i++ {
-		err = iter.Next(&result)
-		c.Assert(err, IsNil)
+		ok := iter.Next(&result)
+		c.Assert(ok, Equals, true)
+		c.Assert(iter.Err(), IsNil)
+		c.Assert(iter.Timeout(), Equals, false)
 		c.Assert(result.N, Equals, ns[i])
 		if i == 3 { // The batch boundary.
 			stats := mgo.GetStats()
@@ -1032,8 +1116,10 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	}()
 
 	c.Log("Will wait for Next with N=47...")
-	err = iter.Next(&result)
-	c.Assert(err, IsNil)
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, true)
+	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 47)
 	c.Log("Got Next with N=47!")
 
@@ -1050,9 +1136,20 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	c.Log("Will wait for a result which will never come...")
 
 	started := time.Nanoseconds()
-	err = iter.Next(&result)
+	ok = iter.Next(&result)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Timeout(), Equals, true)
 	c.Assert(time.Nanoseconds()-started > timeout*1e9, Equals, true)
-	c.Assert(err == mgo.TailTimeout, Equals, true)
+
+	c.Log("Will now reuse the timed out tail cursor...")
+
+	coll.Insert(M{"n": 48})
+	ok = iter.Next(&result)
+	c.Assert(ok, Equals, true)
+	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Timeout(), Equals, false)
+	c.Assert(result.N, Equals, 48)
 }
 
 // Test tailable cursors in a situation where Next never gets to sleep once
@@ -1084,14 +1181,14 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	mgo.ResetStats()
 
 	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
-	iter, err := query.Tail(-1)
+	iter := query.Tail(-1)
 	c.Assert(err, IsNil)
 
 	n := len(ns)
 	result := struct{ N int }{}
 	for i := 2; i != n; i++ {
-		err = iter.Next(&result)
-		c.Assert(err, IsNil)
+		ok := iter.Next(&result)
+		c.Assert(ok, Equals, true)
 		c.Assert(result.N, Equals, ns[i])
 		if i == 3 { // The batch boundary.
 			stats := mgo.GetStats()
@@ -1111,8 +1208,10 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	}()
 
 	c.Log("Will wait for Next with N=47...")
-	err = iter.Next(&result)
-	c.Assert(err, IsNil)
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, true)
+	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 47)
 	c.Log("Got Next with N=47!")
 
@@ -1128,15 +1227,15 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 
 	c.Log("Will wait for a result which will never come...")
 
-	gotNext := make(chan os.Error)
+	gotNext := make(chan bool)
 	go func() {
-		err := iter.Next(&result)
-		gotNext <- err
+		ok := iter.Next(&result)
+		gotNext <- ok
 	}()
 
 	select {
-	case err := <-gotNext:
-		c.Fatal("Next returned: " + err.String())
+	case ok := <-gotNext:
+		c.Fatalf("Next returned: %v", ok)
 	case <-time.After(3e9):
 		// Good. Should still be sleeping at that point.
 	}
@@ -1145,8 +1244,10 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	session.Close()
 
 	select {
-	case err := <-gotNext:
-		c.Assert(err, Matches, "Closed explicitly")
+	case ok := <-gotNext:
+		c.Assert(ok, Equals, false)
+		c.Assert(iter.Err(), Matches, "Closed explicitly")
+		c.Assert(iter.Timeout(), Equals, false)
 	case <-time.After(1e9):
 		c.Fatal("Closing the session did not unblock Next")
 	}
@@ -1169,8 +1270,7 @@ func (s *S) TestFindForOnIter(c *C) {
 	mgo.ResetStats()
 
 	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
-	iter, err := query.Iter()
-	c.Assert(err, IsNil)
+	iter := query.Iter()
 
 	i := 2
 	var result *struct{ N int }
@@ -1352,20 +1452,19 @@ func (s *S) TestSort(c *C) {
 
 	query := coll.Find(M{})
 	query.Sort(bson.D{{"a", -1}}) // Should be ignored.
-	iter, err := query.Sort(bson.D{{"b", -1}, {"a", 1}}).Iter()
-	c.Assert(err, IsNil)
+	iter := query.Sort(bson.D{{"b", -1}, {"a", 1}}).Iter()
 
 	l := make([]int, 18)
 	r := struct{ A, B int }{}
 	for i := 0; i != len(l); i += 2 {
-		err := iter.Next(&r)
+		ok := iter.Next(&r)
+		c.Assert(ok, Equals, true)
 		c.Assert(err, IsNil)
 		l[i] = r.A
 		l[i+1] = r.B
 	}
 
-	c.Assert(l, Equals,
-		[]int{0, 2, 1, 2, 2, 2, 0, 1, 1, 1, 2, 1, 0, 0, 1, 0, 2, 0})
+	c.Assert(l, Equals, []int{0, 2, 1, 2, 2, 2, 0, 1, 1, 1, 2, 1, 0, 0, 1, 0, 2, 0})
 }
 
 func (s *S) TestPrefetching(c *C) {
@@ -1392,33 +1491,32 @@ func (s *S) TestPrefetching(c *C) {
 
 		switch testi {
 		case 0: // First, using query methods.
-			iter, err = coll.Find(M{}).Prefetch(0.27).Batch(100).Iter()
-			c.Assert(err, IsNil)
+			iter = coll.Find(M{}).Prefetch(0.27).Batch(100).Iter()
 			nextn = 73
 
 		case 1: // Then, the default session value.
 			session.SetBatch(100)
-			iter, err = coll.Find(M{}).Iter()
-			c.Assert(err, IsNil)
+			iter = coll.Find(M{}).Iter()
 			nextn = 75
 
 		case 2: // Then, tweaking the session value.
 			session.SetBatch(100)
 			session.SetPrefetch(0.27)
-			iter, err = coll.Find(M{}).Iter()
-			c.Assert(err, IsNil)
+			iter = coll.Find(M{}).Iter()
 			nextn = 73
 		}
 
 		result := struct{ N int }{}
 		for i := 0; i != nextn; i++ {
-			iter.Next(&result)
+			ok := iter.Next(&result)
+			c.Assert(ok, Equals, true)
 		}
 
 		stats := mgo.GetStats()
 		c.Assert(stats.ReceivedDocs, Equals, 100)
 
-		iter.Next(&result)
+		ok := iter.Next(&result)
+		c.Assert(ok, Equals, true)
 
 		// Ping the database just to wait for the fetch above
 		// to get delivered.
@@ -1601,10 +1699,12 @@ func (s *S) TestQueryErrorNext(c *C) {
 		Err string "$err"
 	}{}
 
-	iter, err := coll.Find(M{"a": 1}).Select(M{"a": M{"b": 1}}).Iter()
-	c.Assert(err, IsNil)
+	iter := coll.Find(M{"a": 1}).Select(M{"a": M{"b": 1}}).Iter()
 
-	err = iter.Next(&result)
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, false)
+
+	err = iter.Err()
 	c.Assert(err, Matches, "Unsupported projection option: b")
 	c.Assert(err.(*mgo.QueryError).Message, Matches, "Unsupported projection option: b")
 	c.Assert(err.(*mgo.QueryError).Code, Equals, 13097)

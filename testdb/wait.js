@@ -9,7 +9,7 @@ var rs2cfg = {_id: "rs2",
                         {_id: 2, host: "127.0.0.1:40022", priority: 1},
                         {_id: 3, host: "127.0.0.1:40023", priority: 0}]}
 
-for (var i = 0; i != 30; i++) {
+for (var i = 0; i != 60; i++) {
 	try {
 		rs1a = new Mongo("127.0.0.1:40011").getDB("admin")
 		rs2a = new Mongo("127.0.0.1:40021").getDB("admin")
@@ -33,13 +33,13 @@ function countHealthy(rs) {
 
 var totalRSMembers = rs1cfg.members.length + rs2cfg.members.length
 
-for (var i = 0; i != 30; i++) {
+for (var i = 0; i != 60; i++) {
     var count = countHealthy(rs1a) + countHealthy(rs2a)
     print("Replica sets have", count, "healthy nodes.")
     if (count == totalRSMembers) {
         quit(0)
     }
-    sleep(3000)
+    sleep(1000)
 }
 
 print("Replica sets didn't sync up properly.")

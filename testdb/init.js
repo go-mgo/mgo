@@ -1,6 +1,6 @@
 
 // Setup auth on db2.
-for (var i = 0; i != 30; i++) {
+for (var i = 0; i != 60; i++) {
 	try {
         db2 = new Mongo("127.0.0.1:40002").getDB("admin")
 		break
@@ -28,7 +28,7 @@ var rs2cfg = {_id: "rs2",
                         {_id: 3, host: "127.0.0.1:40023", priority: 1}],
               settings: settings}
 
-for (var i = 0; i != 30; i++) {
+for (var i = 0; i != 60; i++) {
 	try {
 		rs1a = new Mongo("127.0.0.1:40011").getDB("admin")
 		rs2a = new Mongo("127.0.0.1:40021").getDB("admin")

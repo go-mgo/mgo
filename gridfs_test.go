@@ -240,20 +240,17 @@ func (s *S) TestGridFSCreateWithChunking(c *C) {
 	c.Assert(result, Equals, expected)
 
 	// Check the chunks.
-	iter, err := db.C("fs.chunks").Find(nil).Sort(M{"n": 1}).Iter()
-	c.Assert(err, IsNil)
-
+	iter := db.C("fs.chunks").Find(nil).Sort(M{"n": 1}).Iter()
 	dataChunks := []string{"abcde", "fghij", "klmno", "pqrst", "uv"}
-
 	for i := 0; ; i++ {
 		result = M{}
-		err := iter.Next(result)
-		if err == mgo.NotFound {
+		if !iter.Next(result) {
 			if i != 5 {
 				c.Fatalf("Expected 5 chunks, got %d", i)
 			}
 			break
 		}
+		c.Assert(iter.Err(), IsNil)
 
 		result["_id"] = "<id>"
 

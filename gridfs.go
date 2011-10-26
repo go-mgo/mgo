@@ -269,21 +269,15 @@ type gfsDocId struct {
 
 // Remove deletes all files with the provided name from the GridFS.
 func (gfs GridFS) Remove(name string) (err os.Error) {
-	iter, err := gfs.Files.Find(bson.M{"filename": name}).Select(bson.M{"_id": 1}).Iter()
-	if err != nil {
-		return err
-	}
+	iter := gfs.Files.Find(bson.M{"filename": name}).Select(bson.M{"_id": 1}).Iter()
 	var doc gfsDocId
-	for {
-		if e := iter.Next(&doc); e != nil {
-			if e != NotFound {
-				err = e
-			}
-			break
-		}
+	for iter.Next(&doc) {
 		if e := gfs.RemoveId(doc.Id); e != nil {
 			err = e
 		}
+	}
+	if err == nil {
+		err = iter.Err()
 	}
 	return err
 }

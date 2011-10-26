@@ -485,6 +485,9 @@ func addCString(b []byte, s string) []byte {
 }
 
 func addBSON(b []byte, doc interface{}) ([]byte, os.Error) {
+	if doc == nil {
+		return append(b, 5, 0, 0, 0, 0), nil
+	}
 	data, err := bson.Marshal(doc)
 	if err != nil {
 		return b, err
