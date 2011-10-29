@@ -297,10 +297,10 @@ func finalizeSession(session *Session) {
 
 // LiveServers returns a list of server addresses which are
 // currently known to be alive.
-func (session *Session) LiveServers() (addrs []string) {
-	session.m.RLock()
-	addrs = session.cluster().LiveServers()
-	session.m.RUnlock()
+func (s *Session) LiveServers() (addrs []string) {
+	s.m.RLock()
+	addrs = s.cluster().LiveServers()
+	s.m.RUnlock()
 	return addrs
 }
 
@@ -308,16 +308,16 @@ func (session *Session) LiveServers() (addrs []string) {
 // collections within it, or performing any database-level operations.
 // Creating this object is a very lightweight operation, and involves
 // no network communication.
-func (session *Session) DB(name string) Database {
-	return Database{session, name}
+func (s *Session) DB(name string) Database {
+	return Database{s, name}
 }
 
 // C returns a collection object for the given database, which enables querying
 // and modifying the content contained in the given collection. Creating this
 // object is a very lightweight operation, and involves no network
 // communication.
-func (database Database) C(name string) Collection {
-	return Collection{database, name, database.Name + "." + name}
+func (db Database) C(name string) Collection {
+	return Collection{db, name, db.Name + "." + name}
 }
 
 // GridFS returns a GridFS value for interacting with collections in the
@@ -334,8 +334,8 @@ func (database Database) C(name string) Collection {
 //     http://www.mongodb.org/display/DOCS/GridFS+Tools
 //     http://www.mongodb.org/display/DOCS/GridFS+Specification
 //
-func (database Database) GridFS(prefix string) *GridFS {
-	return newGridFS(database, prefix)
+func (db Database) GridFS(prefix string) *GridFS {
+	return newGridFS(db, prefix)
 }
 
 // Run issues the provided command against the database and unmarshals
@@ -358,11 +358,11 @@ func (database Database) GridFS(prefix string) *GridFS {
 //     http://www.mongodb.org/display/DOCS/Commands
 //     http://www.mongodb.org/display/DOCS/List+of+Database+CommandSkips
 //
-func (database Database) Run(cmd interface{}, result interface{}) os.Error {
+func (db Database) Run(cmd interface{}, result interface{}) os.Error {
 	if name, ok := cmd.(string); ok {
 		cmd = bson.D{{name, 1}}
 	}
-	return database.C("$cmd").Find(cmd).One(result)
+	return db.C("$cmd").Find(cmd).One(result)
 }
 
 // Login authenticates against MongoDB with the provided credentials.  The
@@ -371,9 +371,9 @@ func (database Database) Run(cmd interface{}, result interface{}) os.Error {
 // closed.
 //
 // Concurrent Login calls will work correctly.
-func (database Database) Login(user, pass string) (err os.Error) {
-	session := database.Session
-	dbname := database.Name
+func (db Database) Login(user, pass string) (err os.Error) {
+	session := db.Session
+	dbname := db.Name
 
 	socket, err := session.acquireSocket(false)
 	if err != nil {
@@ -401,9 +401,9 @@ func (database Database) Login(user, pass string) (err os.Error) {
 }
 
 // Logout removes any established authentication credentials for the database.
-func (database Database) Logout() {
-	session := database.Session
-	dbname := database.Name
+func (db Database) Logout() {
+	session := db.Session
+	dbname := db.Name
 	session.m.Lock()
 	found := false
 	for i, a := range session.auth {
@@ -421,29 +421,29 @@ func (database Database) Logout() {
 }
 
 // LogoutAll removes all established authentication credentials for the session.
-func (session *Session) LogoutAll() {
-	session.m.Lock()
-	for _, a := range session.auth {
-		session.socket.Logout(a.db)
+func (s *Session) LogoutAll() {
+	s.m.Lock()
+	for _, a := range s.auth {
+		s.socket.Logout(a.db)
 	}
-	session.auth = session.auth[0:0]
-	session.m.Unlock()
+	s.auth = s.auth[0:0]
+	s.m.Unlock()
 }
 
 // AddUser creates or updates the authentication credentials of user within
 // the database.
-func (database Database) AddUser(user, pass string, readOnly bool) os.Error {
+func (db Database) AddUser(user, pass string, readOnly bool) os.Error {
 	psum := md5.New()
 	psum.Write([]byte(user + ":mongo:" + pass))
 	digest := hex.EncodeToString(psum.Sum())
-	c := database.C("system.users")
+	c := db.C("system.users")
 	_, err := c.Upsert(bson.M{"user": user}, bson.M{"$set": bson.M{"user": user, "pwd": digest, "readOnly": readOnly}})
 	return err
 }
 
 // RemoveUser removes the authentication credentials of user from the database.
-func (database Database) RemoveUser(user string) os.Error {
-	c := database.C("system.users")
+func (db Database) RemoveUser(user string) os.Error {
+	c := db.C("system.users")
 	return c.Remove(bson.M{"user": user})
 }
 
@@ -516,8 +516,8 @@ func parseIndexKey(key []string) (name string, realKey bson.D, err os.Error) {
 //     err := collection.EnsureIndex(mgo.Index{Key: []string{"a", "b"}})
 //
 // See the EnsureIndex method for more details.
-func (collection Collection) EnsureIndexKey(key []string) os.Error {
-	return collection.EnsureIndex(Index{Key: key})
+func (c Collection) EnsureIndexKey(key []string) os.Error {
+	return c.EnsureIndex(Index{Key: key})
 }
 
 // EnsureIndex ensures an index with the given key exists, creating it with
@@ -581,22 +581,22 @@ func (collection Collection) EnsureIndexKey(key []string) os.Error {
 //     http://www.mongodb.org/display/DOCS/Geospatial+Indexing
 //     http://www.mongodb.org/display/DOCS/Multikeys
 //
-func (collection Collection) EnsureIndex(index Index) os.Error {
+func (c Collection) EnsureIndex(index Index) os.Error {
 	name, realKey, err := parseIndexKey(index.Key)
 	if err != nil {
 		return err
 	}
 
-	db := collection.DB
+	db := c.DB
 	session := db.Session
-	cacheKey := collection.FullName + "\x00" + name
+	cacheKey := c.FullName + "\x00" + name
 	if session.cluster().HasCachedIndex(cacheKey) {
 		return nil
 	}
 
 	spec := indexSpec{
 		Name:       name,
-		NS:         collection.FullName,
+		NS:         c.FullName,
 		Key:        realKey,
 		Unique:     index.Unique,
 		DropDups:   index.DropDups,
@@ -631,15 +631,15 @@ func (collection Collection) EnsureIndex(index Index) os.Error {
 //     err := collection.DropIndex([]string{"lastname", "firstname"})
 //
 // See the EnsureIndex method for more details on indexes.
-func (collection Collection) DropIndex(key []string) os.Error {
+func (c Collection) DropIndex(key []string) os.Error {
 	name, _, err := parseIndexKey(key)
 	if err != nil {
 		return err
 	}
 
-	db := collection.DB
+	db := c.DB
 	session := db.Session
-	cacheKey := collection.FullName + "\x00" + name
+	cacheKey := c.FullName + "\x00" + name
 	session.cluster().CacheIndex(cacheKey, false)
 
 	session = session.Clone()
@@ -652,7 +652,7 @@ func (collection Collection) DropIndex(key []string) os.Error {
 		ErrMsg string
 		Ok     bool
 	}{}
-	err = db.Run(bson.D{{"dropIndexes", collection.Name}, {"index", name}}, &result)
+	err = db.Run(bson.D{{"dropIndexes", c.Name}, {"index", name}}, &result)
 	if err != nil {
 		return err
 	}
@@ -678,8 +678,8 @@ func (collection Collection) DropIndex(key []string) os.Error {
 //   }
 //
 // See the EnsureIndex method for more details on indexes.
-func (collection Collection) Indexes() (indexes []Index, err os.Error) {
-	query := collection.DB.C("system.indexes").Find(bson.M{"ns": collection.FullName})
+func (c Collection) Indexes() (indexes []Index, err os.Error) {
+	query := c.DB.C("system.indexes").Find(bson.M{"ns": c.FullName})
 	iter := query.Sort(bson.D{{"name", 1}}).Iter()
 	for {
 		var spec indexSpec
@@ -724,8 +724,8 @@ func simpleIndexKey(realKey bson.D) (key []string) {
 
 // ResetIndexCache() clears the cache of previously ensured indexes.
 // Following requests to EnsureIndex will contact the server.
-func (session *Session) ResetIndexCache() {
-	session.cluster().ResetIndexCache()
+func (s *Session) ResetIndexCache() {
+	s.cluster().ResetIndexCache()
 }
 
 // New creates a new session with the same parameters as the original
@@ -740,22 +740,22 @@ func (session *Session) ResetIndexCache() {
 //
 // See the Copy and Clone methods.
 //
-func (session *Session) New() *Session {
-	session.m.Lock()
-	s := copySession(session, false)
-	session.m.Unlock()
-	s.Refresh()
-	return s
+func (s *Session) New() *Session {
+	s.m.Lock()
+	scopy := copySession(s, false)
+	s.m.Unlock()
+	scopy.Refresh()
+	return scopy
 }
 
 // Copy works just like New, but preserves the exact authentication
 // information from the original session.
-func (session *Session) Copy() *Session {
-	session.m.Lock()
-	s := copySession(session, true)
-	session.m.Unlock()
-	s.Refresh()
-	return s
+func (s *Session) Copy() *Session {
+	s.m.Lock()
+	scopy := copySession(s, true)
+	s.m.Unlock()
+	scopy.Refresh()
+	return scopy
 }
 
 // Clone works just like Copy, but also reuses the same socket as the original
@@ -764,39 +764,39 @@ func (session *Session) Copy() *Session {
 // are necessarily observed when using the new session, as long as it was a
 // strong or monotonic session.  That said, it also means that long operations
 // may cause other goroutines using the original session to wait.
-func (session *Session) Clone() *Session {
-	session.m.Lock()
-	s := copySession(session, true)
-	session.m.Unlock()
-	return s
+func (s *Session) Clone() *Session {
+	s.m.Lock()
+	scopy := copySession(s, true)
+	s.m.Unlock()
+	return scopy
 }
 
 // Close terminates the session.  It's a runtime error to use a session
 // after it has been closed.
-func (session *Session) Close() {
-	session.m.Lock()
-	if session.cluster_ != nil {
-		session.setSocket(nil)
-		session.cluster_.Release()
-		session.cluster_ = nil
+func (s *Session) Close() {
+	s.m.Lock()
+	if s.cluster_ != nil {
+		s.setSocket(nil)
+		s.cluster_.Release()
+		s.cluster_ = nil
 	}
-	session.m.Unlock()
+	s.m.Unlock()
 }
 
-func (session *Session) cluster() *mongoCluster {
-	if session.cluster_ == nil {
+func (s *Session) cluster() *mongoCluster {
+	if s.cluster_ == nil {
 		panic("Session already closed")
 	}
-	return session.cluster_
+	return s.cluster_
 }
 
 // Refresh puts back any reserved sockets in use and restarts the consistency
 // guarantees according to the current consistency setting for the session.
-func (session *Session) Refresh() {
-	session.m.Lock()
-	session.slaveOk = session.consistency != Strong
-	session.setSocket(nil)
-	session.m.Unlock()
+func (s *Session) Refresh() {
+	s.m.Lock()
+	s.slaveOk = s.consistency != Strong
+	s.setSocket(nil)
+	s.m.Unlock()
 }
 
 // SetMode changes the consistency mode for the session.
@@ -839,26 +839,26 @@ func (session *Session) Refresh() {
 // Shifting between Monotonic and Strong modes will keep a previously
 // reserved connection for the session unless refresh is true or the
 // connection is unsuitable (to a slave server in a Strong session).
-func (session *Session) SetMode(consistency mode, refresh bool) {
-	session.m.Lock()
-	debugf("Session %p: setting mode %d with refresh=%v (socket=%p)", session, consistency, refresh, session.socket)
-	session.consistency = consistency
+func (s *Session) SetMode(consistency mode, refresh bool) {
+	s.m.Lock()
+	debugf("Session %p: setting mode %d with refresh=%v (socket=%p)", s, consistency, refresh, s.socket)
+	s.consistency = consistency
 	if refresh {
-		session.slaveOk = session.consistency != Strong
-		session.setSocket(nil)
-	} else if session.consistency == Strong {
-		session.slaveOk = false
-	} else if session.socket == nil {
-		session.slaveOk = true
+		s.slaveOk = s.consistency != Strong
+		s.setSocket(nil)
+	} else if s.consistency == Strong {
+		s.slaveOk = false
+	} else if s.socket == nil {
+		s.slaveOk = true
 	}
-	session.m.Unlock()
+	s.m.Unlock()
 }
 
 // Mode returns the current consistency mode for the session.
-func (session *Session) Mode() mode {
-	session.m.RLock()
-	mode := session.consistency
-	session.m.RUnlock()
+func (s *Session) Mode() mode {
+	s.m.RLock()
+	mode := s.consistency
+	s.m.RUnlock()
 	return mode
 }
 
@@ -866,10 +866,10 @@ func (session *Session) Mode() mode {
 // will wait before returning an error in case a connection to a usable
 // server can't be established. Set it to zero to wait forever. This is
 // the default.
-func (session *Session) SetSyncTimeout(nsec int64) {
-	session.m.Lock()
-	session.syncTimeout = nsec
-	session.m.Unlock()
+func (s *Session) SetSyncTimeout(nsec int64) {
+	s.m.Lock()
+	s.syncTimeout = nsec
+	s.m.Unlock()
 }
 
 // SetBatch sets the default batch size used when fetching documents from the
@@ -879,10 +879,10 @@ func (session *Session) SetSyncTimeout(nsec int64) {
 // The default batch size is defined by the database itself.  As of this
 // writing, MongoDB will use an initial size of min(100 docs, 4MB) on the
 // first batch, and 4MB on remaining ones.
-func (session *Session) SetBatch(n int) {
-	session.m.Lock()
-	session.queryConfig.op.limit = int32(n)
-	session.m.Unlock()
+func (s *Session) SetBatch(n int) {
+	s.m.Lock()
+	s.queryConfig.op.limit = int32(n)
+	s.m.Unlock()
 }
 
 // SetPrefetch sets the default point at which the next batch of results will be
@@ -898,10 +898,10 @@ func (session *Session) SetBatch(n int) {
 // a per-query basis as well, using the Prefetch method of Query.
 //
 // The default prefetch value is 0.25.
-func (session *Session) SetPrefetch(p float64) {
-	session.m.Lock()
-	session.queryConfig.prefetch = p
-	session.m.Unlock()
+func (s *Session) SetPrefetch(p float64) {
+	s.m.Lock()
+	s.queryConfig.prefetch = p
+	s.m.Unlock()
 }
 
 // See SetSafe for details on the Safe type.
@@ -914,11 +914,11 @@ type Safe struct {
 }
 
 // Safe returns the current safety mode for the session.
-func (session *Session) Safe() (safe *Safe) {
-	session.m.Lock()
-	defer session.m.Unlock()
-	if session.safeOp != nil {
-		cmd := session.safeOp.query.(*getLastError)
+func (s *Session) Safe() (safe *Safe) {
+	s.m.Lock()
+	defer s.m.Unlock()
+	if s.safeOp != nil {
+		cmd := s.safeOp.query.(*getLastError)
 		safe = &Safe{WTimeout: cmd.WTimeout, FSync: cmd.FSync, J: cmd.J}
 		switch w := cmd.W.(type) {
 		case string:
@@ -992,11 +992,11 @@ func (session *Session) Safe() (safe *Safe) {
 //     http://www.mongodb.org/display/DOCS/Verifying+Propagation+of+Writes+with+getLastError
 //     http://www.mongodb.org/display/DOCS/Data+Center+Awareness
 //
-func (session *Session) SetSafe(safe *Safe) {
-	session.m.Lock()
-	session.safeOp = nil
-	session.ensureSafe(safe)
-	session.m.Unlock()
+func (s *Session) SetSafe(safe *Safe) {
+	s.m.Lock()
+	s.safeOp = nil
+	s.ensureSafe(safe)
+	s.m.Unlock()
 }
 
 // EnsureSafe compares the provided safety parameters with the ones
@@ -1026,13 +1026,13 @@ func (session *Session) SetSafe(safe *Safe) {
 //     http://www.mongodb.org/display/DOCS/Verifying+Propagation+of+Writes+with+getLastError
 //     http://www.mongodb.org/display/DOCS/Data+Center+Awareness
 //
-func (session *Session) EnsureSafe(safe *Safe) {
-	session.m.Lock()
-	session.ensureSafe(safe)
-	session.m.Unlock()
+func (s *Session) EnsureSafe(safe *Safe) {
+	s.m.Lock()
+	s.ensureSafe(safe)
+	s.m.Unlock()
 }
 
-func (session *Session) ensureSafe(safe *Safe) {
+func (s *Session) ensureSafe(safe *Safe) {
 	if safe == nil {
 		return
 	}
@@ -1045,11 +1045,11 @@ func (session *Session) ensureSafe(safe *Safe) {
 	}
 
 	var cmd getLastError
-	if session.safeOp == nil {
+	if s.safeOp == nil {
 		cmd = getLastError{1, w, safe.WTimeout, safe.FSync, safe.J}
 	} else {
 		// Copy.  We don't want to mutate the existing query.
-		cmd = *(session.safeOp.query.(*getLastError))
+		cmd = *(s.safeOp.query.(*getLastError))
 		if cmd.W == nil {
 			cmd.W = w
 		} else if safe.WMode != "" {
@@ -1067,7 +1067,7 @@ func (session *Session) ensureSafe(safe *Safe) {
 			cmd.J = true
 		}
 	}
-	session.safeOp = &queryOp{
+	s.safeOp = &queryOp{
 		query:      &cmd,
 		collection: "admin.$cmd",
 		limit:      -1,
@@ -1095,14 +1095,14 @@ func (session *Session) ensureSafe(safe *Safe) {
 //     http://www.mongodb.org/display/DOCS/Commands
 //     http://www.mongodb.org/display/DOCS/List+of+Database+CommandSkips
 //
-func (session *Session) Run(cmd interface{}, result interface{}) os.Error {
-	return session.DB("admin").Run(cmd, result)
+func (s *Session) Run(cmd interface{}, result interface{}) os.Error {
+	return s.DB("admin").Run(cmd, result)
 }
 
 // Ping runs a trivial ping command just to get in touch with the server.
-func (session *Session) Ping() os.Error {
+func (s *Session) Ping() os.Error {
 	result := struct{}{} // We don't care.
-	return session.Run("ping", &result)
+	return s.Run("ping", &result)
 }
 
 // Find prepares a query using the provided document.  The document may be a
@@ -1127,13 +1127,13 @@ func (session *Session) Ping() os.Error {
 //     http://www.mongodb.org/display/DOCS/Querying
 //     http://www.mongodb.org/display/DOCS/Advanced+Queries
 //
-func (collection Collection) Find(query interface{}) *Query {
-	session := collection.DB.Session
+func (c Collection) Find(query interface{}) *Query {
+	session := c.DB.Session
 	session.m.RLock()
 	q := &Query{session: session, query: session.queryConfig}
 	session.m.RUnlock()
 	q.op.query = query
-	q.op.collection = collection.FullName
+	q.op.collection = c.FullName
 	return q
 }
 
@@ -1172,8 +1172,8 @@ func (err *QueryError) String() string {
 // case the session is in safe mode (see the SetSafe method) and an error
 // happens while inserting the provided documents, the returned error will
 // be of type *LastError.
-func (collection Collection) Insert(docs ...interface{}) os.Error {
-	_, err := collection.DB.Session.writeQuery(&insertOp{collection.FullName, docs})
+func (c Collection) Insert(docs ...interface{}) os.Error {
+	_, err := c.DB.Session.writeQuery(&insertOp{c.FullName, docs})
 	return err
 }
 
@@ -1189,8 +1189,8 @@ func (collection Collection) Insert(docs ...interface{}) os.Error {
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (collection Collection) Update(selector interface{}, change interface{}) os.Error {
-	lerr, err := collection.DB.Session.writeQuery(&updateOp{collection.FullName, selector, change, 0})
+func (c Collection) Update(selector interface{}, change interface{}) os.Error {
+	lerr, err := c.DB.Session.writeQuery(&updateOp{c.FullName, selector, change, 0})
 	if err == nil && lerr != nil && !lerr.Updated {
 		return NotFound
 	}
@@ -1214,8 +1214,8 @@ type idType struct {
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (collection Collection) UpdateAll(selector interface{}, change interface{}) os.Error {
-	lerr, err := collection.DB.Session.writeQuery(&updateOp{collection.FullName, selector, change, 2})
+func (c Collection) UpdateAll(selector interface{}, change interface{}) os.Error {
+	lerr, err := c.DB.Session.writeQuery(&updateOp{c.FullName, selector, change, 2})
 	if err == nil && lerr != nil && !lerr.Updated {
 		return NotFound
 	}
@@ -1235,13 +1235,13 @@ func (collection Collection) UpdateAll(selector interface{}, change interface{})
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (collection Collection) Upsert(selector interface{}, change interface{}) (id interface{}, err os.Error) {
+func (c Collection) Upsert(selector interface{}, change interface{}) (id interface{}, err os.Error) {
 	data, err := bson.Marshal(change)
 	if err != nil {
 		return nil, err
 	}
 	change = bson.Raw{0x03, data}
-	lerr, err := collection.DB.Session.writeQuery(&updateOp{collection.FullName, selector, change, 1})
+	lerr, err := c.DB.Session.writeQuery(&updateOp{c.FullName, selector, change, 1})
 	if lerr != nil {
 		id = lerr.UpsertedId
 		if id == nil && !lerr.Updated {
@@ -1266,8 +1266,8 @@ func (collection Collection) Upsert(selector interface{}, change interface{}) (i
 //
 //     http://www.mongodb.org/display/DOCS/Removing
 //
-func (collection Collection) Remove(selector interface{}) os.Error {
-	_, err := collection.DB.Session.writeQuery(&deleteOp{collection.FullName, selector, 1})
+func (c Collection) Remove(selector interface{}) os.Error {
+	_, err := c.DB.Session.writeQuery(&deleteOp{c.FullName, selector, 1})
 	return err
 }
 
@@ -1280,19 +1280,19 @@ func (collection Collection) Remove(selector interface{}) os.Error {
 //
 //     http://www.mongodb.org/display/DOCS/Removing
 //
-func (collection Collection) RemoveAll(selector interface{}) os.Error {
-	_, err := collection.DB.Session.writeQuery(&deleteOp{collection.FullName, selector, 0})
+func (c Collection) RemoveAll(selector interface{}) os.Error {
+	_, err := c.DB.Session.writeQuery(&deleteOp{c.FullName, selector, 0})
 	return err
 }
 
 // DropDatabase removes the entire database including all of its collections.
-func (database Database) DropDatabase() os.Error {
-	return database.Run(bson.D{{"dropDatabase", 1}}, nil)
+func (db Database) DropDatabase() os.Error {
+	return db.Run(bson.D{{"dropDatabase", 1}}, nil)
 }
 
 // DropCollection removes the entire collection including all of its documents.
-func (collection Collection) DropCollection() os.Error {
-	return collection.DB.Run(bson.D{{"drop", collection.Name}}, nil)
+func (c Collection) DropCollection() os.Error {
+	return c.DB.Run(bson.D{{"drop", c.Name}}, nil)
 }
 
 // Batch sets the batch size used when fetching documents from the database.
@@ -1302,11 +1302,11 @@ func (collection Collection) DropCollection() os.Error {
 // The default batch size is defined by the database itself.  As of this
 // writing, MongoDB will use an initial size of min(100 docs, 4MB) on the
 // first batch, and 4MB on remaining ones.
-func (query *Query) Batch(n int) *Query {
-	query.m.Lock()
-	query.op.limit = int32(n)
-	query.m.Unlock()
-	return query
+func (q *Query) Batch(n int) *Query {
+	q.m.Lock()
+	q.op.limit = int32(n)
+	q.m.Unlock()
+	return q
 }
 
 // Prefetch sets the point at which the next batch of results will be requested.
@@ -1320,32 +1320,32 @@ func (query *Query) Batch(n int) *Query {
 // a per-session basis as well, using the SetPrefetch method of Session.
 //
 // The default prefetch value is 0.25.
-func (query *Query) Prefetch(p float64) *Query {
-	query.m.Lock()
-	query.prefetch = p
-	query.m.Unlock()
-	return query
+func (q *Query) Prefetch(p float64) *Query {
+	q.m.Lock()
+	q.prefetch = p
+	q.m.Unlock()
+	return q
 }
 
 // Skip skips over the n initial documents from the query results.  Note that
 // this only makes sense with capped collections where documents are naturally
 // ordered by insertion time, or with sorted results.
-func (query *Query) Skip(n int) *Query {
-	query.m.Lock()
-	query.op.skip = int32(n)
-	query.m.Unlock()
-	return query
+func (q *Query) Skip(n int) *Query {
+	q.m.Lock()
+	q.op.skip = int32(n)
+	q.m.Unlock()
+	return q
 }
 
 // Limit restricts the maximum number of documents retrieved to n, and also
 // changes the batch size to the same value.  Once n documents have been
 // returned by Next, the following call will return NotFound.
-func (query *Query) Limit(n int) *Query {
-	query.m.Lock()
-	query.limit = int32(n)
-	query.op.limit = -int32(n)
-	query.m.Unlock()
-	return query
+func (q *Query) Limit(n int) *Query {
+	q.m.Lock()
+	q.limit = int32(n)
+	q.op.limit = -int32(n)
+	q.m.Unlock()
+	return q
 }
 
 // Select enables selecting which fields should be retrieved for the results
@@ -1357,11 +1357,11 @@ func (query *Query) Limit(n int) *Query {
 //
 //     http://www.mongodb.org/display/DOCS/Retrieving+a+Subset+of+Fields
 //
-func (query *Query) Select(selector interface{}) *Query {
-	query.m.Lock()
-	query.op.selector = selector
-	query.m.Unlock()
-	return query
+func (q *Query) Select(selector interface{}) *Query {
+	q.m.Lock()
+	q.op.selector = selector
+	q.m.Unlock()
+	return q
 }
 
 type queryWrapper struct {
@@ -1371,16 +1371,16 @@ type queryWrapper struct {
 	Explain bool        "$explain,omitempty"
 }
 
-func (query *Query) wrap() *queryWrapper {
-	w, ok := query.op.query.(*queryWrapper)
+func (q *Query) wrap() *queryWrapper {
+	w, ok := q.op.query.(*queryWrapper)
 	if !ok {
-		if query.op.query == nil {
+		if q.op.query == nil {
 			var empty bson.D
 			w = &queryWrapper{Query: empty}
 		} else {
-			w = &queryWrapper{Query: query.op.query}
+			w = &queryWrapper{Query: q.op.query}
 		}
-		query.op.query = w
+		q.op.query = w
 	}
 	return w
 }
@@ -1392,12 +1392,12 @@ func (query *Query) wrap() *queryWrapper {
 //
 //     http://www.mongodb.org/display/DOCS/Sorting+and+Natural+Order
 //
-func (query *Query) Sort(order interface{}) *Query {
-	query.m.Lock()
-	w := query.wrap()
+func (q *Query) Sort(order interface{}) *Query {
+	q.m.Lock()
+	w := q.wrap()
 	w.OrderBy = order
-	query.m.Unlock()
-	return query
+	q.m.Unlock()
+	return q
 }
 
 // Explain returns a number of details about how the MongoDB server would
@@ -1418,14 +1418,14 @@ func (query *Query) Sort(order interface{}) *Query {
 //     http://www.mongodb.org/display/DOCS/Optimization
 //     http://www.mongodb.org/display/DOCS/Query+Optimizer
 //     
-func (query *Query) Explain(result interface{}) os.Error {
-	query.m.Lock()
-	clone := &Query{session: query.session, query: query.query}
-	query.m.Unlock()
+func (q *Query) Explain(result interface{}) os.Error {
+	q.m.Lock()
+	clone := &Query{session: q.session, query: q.query}
+	q.m.Unlock()
 	w := clone.wrap()
 	w.Explain = true
 	if clone.op.limit > 0 {
-		clone.op.limit = -query.op.limit
+		clone.op.limit = -q.op.limit
 	}
 	iter := clone.Iter()
 	if iter.Next(result) {
@@ -1449,16 +1449,16 @@ func (query *Query) Explain(result interface{}) os.Error {
 //     http://www.mongodb.org/display/DOCS/Optimization
 //     http://www.mongodb.org/display/DOCS/Query+Optimizer
 //     
-func (query *Query) Hint(indexKey []string) *Query {
-	query.m.Lock()
+func (q *Query) Hint(indexKey []string) *Query {
+	q.m.Lock()
 	_, realKey, err := parseIndexKey(indexKey)
-	w := query.wrap()
+	w := q.wrap()
 	w.Hint = realKey
-	query.m.Unlock()
+	q.m.Unlock()
 	if err != nil {
 		panic(err)
 	}
-	return query
+	return q
 }
 
 func checkQueryError(d []byte) os.Error {
@@ -1511,11 +1511,11 @@ func checkQueryError(d []byte) os.Error {
 // received document so that any other custom values may be obtained if
 // desired.
 //
-func (query *Query) One(result interface{}) (err os.Error) {
-	query.m.Lock()
-	session := query.session
-	op := query.op // Copy.
-	query.m.Unlock()
+func (q *Query) One(result interface{}) (err os.Error) {
+	q.m.Lock()
+	session := q.session
+	op := q.op // Copy.
+	q.m.Unlock()
 
 	socket, err := session.acquireSocket(true)
 	if err != nil {
@@ -1539,9 +1539,9 @@ func (query *Query) One(result interface{}) (err os.Error) {
 
 	err = bson.Unmarshal(data, result)
 	if err == nil {
-		debugf("Query %p document unmarshaled: %#v", query, result)
+		debugf("Query %p document unmarshaled: %#v", q, result)
 	} else {
-		debugf("Query %p document unmarshaling failed: %#v", query, err)
+		debugf("Query %p document unmarshaling failed: %#v", q, err)
 		return err
 	}
 
@@ -1580,11 +1580,11 @@ type id struct {
 // 
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
-func (database Database) FindRef(ref DBRef, result interface{}) os.Error {
+func (db Database) FindRef(ref DBRef, result interface{}) os.Error {
 	if ref.DB == "" {
-		return database.C(ref.C).Find(id{ref.ID}).One(result)
+		return db.C(ref.C).Find(id{ref.ID}).One(result)
 	}
-	return database.Session.DB(ref.DB).C(ref.C).Find(id{ref.ID}).One(result)
+	return db.Session.DB(ref.DB).C(ref.C).Find(id{ref.ID}).One(result)
 }
 
 // FindRef retrieves the document in the provided reference and stores it
@@ -1597,18 +1597,18 @@ func (database Database) FindRef(ref DBRef, result interface{}) os.Error {
 // 
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
-func (session *Session) FindRef(ref DBRef, result interface{}) os.Error {
+func (s *Session) FindRef(ref DBRef, result interface{}) os.Error {
 	if ref.DB == "" {
 		return os.NewError(fmt.Sprintf("Can't resolve database for %#v", ref))
 	}
-	return session.DB(ref.DB).C(ref.C).Find(id{ref.ID}).One(result)
+	return s.DB(ref.DB).C(ref.C).Find(id{ref.ID}).One(result)
 }
 
 // CollectionNames returns the collection names present in database.
-func (database Database) CollectionNames() (names []string, err os.Error) {
-	c := len(database.Name) + 1
+func (db Database) CollectionNames() (names []string, err os.Error) {
+	c := len(db.Name) + 1
 	var result *struct{ Name string }
-	err = database.C("system.namespaces").Find(nil).For(&result, func() os.Error {
+	err = db.C("system.namespaces").Find(nil).For(&result, func() os.Error {
 		if strings.Index(result.Name, "$") < 0 || strings.Index(result.Name, ".oplog.$") >= 0 {
 			names = append(names, result.Name[c:])
 		}
@@ -1629,9 +1629,9 @@ type dbNames struct {
 }
 
 // DatabaseNames returns the names of non-empty databases present in the cluster.
-func (session *Session) DatabaseNames() (names []string, err os.Error) {
+func (s *Session) DatabaseNames() (names []string, err os.Error) {
 	var result dbNames
-	err = session.Run("listDatabases", &result)
+	err = s.Run("listDatabases", &result)
 	if err != nil {
 		return nil, err
 	}
@@ -1647,13 +1647,13 @@ func (session *Session) DatabaseNames() (names []string, err os.Error) {
 // the results. Results will be returned in batches of configurable
 // size (see the Batch method) and more documents will be requested when a
 // configurable number of documents is iterated over (see the Prefetch method).
-func (query *Query) Iter() *Iter {
-	query.m.Lock()
-	session := query.session
-	op := query.op
-	prefetch := query.prefetch
-	limit := query.limit
-	query.m.Unlock()
+func (q *Query) Iter() *Iter {
+	q.m.Lock()
+	session := q.session
+	op := q.op
+	prefetch := q.prefetch
+	limit := q.limit
+	q.m.Unlock()
 
 	iter := &Iter{session: session, prefetch: prefetch, limit: limit}
 	iter.gotReply.L = &iter.m
@@ -1720,12 +1720,12 @@ func (query *Query) Iter() *Iter {
 //     http://www.mongodb.org/display/DOCS/Capped+Collections
 //     http://www.mongodb.org/display/DOCS/Sorting+and+Natural+Order
 //
-func (query *Query) Tail(timeoutSecs int) *Iter {
-	query.m.Lock()
-	session := query.session
-	op := query.op
-	prefetch := query.prefetch
-	query.m.Unlock()
+func (q *Query) Tail(timeoutSecs int) *Iter {
+	q.m.Lock()
+	session := q.session
+	op := q.op
+	prefetch := q.prefetch
+	q.m.Unlock()
 
 	iter := &Iter{session: session, prefetch: prefetch}
 	iter.gotReply.L = &iter.m
@@ -1747,12 +1747,12 @@ func (query *Query) Tail(timeoutSecs int) *Iter {
 	return iter
 }
 
-func (session *Session) slaveOkFlag() (flag uint32) {
-	session.m.RLock()
-	if session.slaveOk {
+func (s *Session) slaveOkFlag() (flag uint32) {
+	s.m.RLock()
+	if s.slaveOk {
 		flag = 4
 	}
-	session.m.RUnlock()
+	s.m.RUnlock()
 	return
 }
 
@@ -1914,14 +1914,14 @@ func (iter *Iter) All(result interface{}) os.Error {
 }
 
 // All calls All on an Iter for query. See Iter.All.
-func (query *Query) All(result interface{}) os.Error {
-	return query.Iter().All(result)
+func (q *Query) All(result interface{}) os.Error {
+	return q.Iter().All(result)
 }
 
 // The For method is obsolete and will be removed in a future release.
 // See Iter as an elegant replacement.
-func (query *Query) For(result interface{}, f func() os.Error) os.Error {
-	return query.Iter().For(result, f)
+func (q *Query) For(result interface{}, f func() os.Error) os.Error {
+	return q.Iter().For(result, f)
 }
 
 // The For method is obsolete and will be removed in a future release.
@@ -1978,11 +1978,11 @@ type countCmd struct {
 }
 
 // Count returns the total number of documents in the result set.
-func (query *Query) Count() (n int, err os.Error) {
-	query.m.Lock()
-	session := query.session
-	op := query.op
-	query.m.Unlock()
+func (q *Query) Count() (n int, err os.Error) {
+	q.m.Lock()
+	session := q.session
+	op := q.op
+	q.m.Unlock()
 
 	c := strings.Index(op.collection, ".")
 	if c < 0 {
@@ -1992,19 +1992,19 @@ func (query *Query) Count() (n int, err os.Error) {
 	dbname := op.collection[:c]
 	cname := op.collection[c+1:]
 
-	q := op.query
-	if qw, ok := q.(*queryWrapper); ok {
-		q = qw.Query
+	qdoc := op.query
+	if wrapper, ok := qdoc.(*queryWrapper); ok {
+		qdoc = wrapper.Query
 	}
 
 	result := struct{ N int }{}
-	err = session.DB(dbname).Run(countCmd{cname, q}, &result)
+	err = session.DB(dbname).Run(countCmd{cname, qdoc}, &result)
 	return result.N, err
 }
 
 // Count returns the total number of documents in the collection.
-func (collection Collection) Count() (n int, err os.Error) {
-	return collection.Find(nil).Count()
+func (c Collection) Count() (n int, err os.Error) {
+	return c.Find(nil).Count()
 }
 
 type distinctCmd struct {
@@ -2026,11 +2026,11 @@ type distinctCmd struct {
 //
 //     http://www.mongodb.org/display/DOCS/Aggregation
 //
-func (query *Query) Distinct(key string, result interface{}) os.Error {
-	query.m.Lock()
-	session := query.session
-	op := query.op // Copy.
-	query.m.Unlock()
+func (q *Query) Distinct(key string, result interface{}) os.Error {
+	q.m.Lock()
+	session := q.session
+	op := q.op // Copy.
+	q.m.Unlock()
 
 	c := strings.Index(op.collection, ".")
 	if c < 0 {
@@ -2040,13 +2040,13 @@ func (query *Query) Distinct(key string, result interface{}) os.Error {
 	dbname := op.collection[:c]
 	cname := op.collection[c+1:]
 
-	q := op.query
-	if qw, ok := q.(*queryWrapper); ok {
-		q = qw.Query
+	qdoc := op.query
+	if wrapper, ok := qdoc.(*queryWrapper); ok {
+		qdoc = wrapper.Query
 	}
 
 	var doc struct{ Values bson.Raw }
-	err := session.DB(dbname).Run(distinctCmd{cname, key, q}, &doc)
+	err := session.DB(dbname).Run(distinctCmd{cname, key, qdoc}, &doc)
 	if err != nil {
 		return err
 	}
@@ -2160,12 +2160,12 @@ type MapReduceTime struct {
 //
 //     http://www.mongodb.org/display/DOCS/MapReduce
 //
-func (query *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduceInfo, err os.Error) {
-	query.m.Lock()
-	session := query.session
-	op := query.op // Copy.
-	limit := query.limit
-	query.m.Unlock()
+func (q *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduceInfo, err os.Error) {
+	q.m.Lock()
+	session := q.session
+	op := q.op // Copy.
+	limit := q.limit
+	q.m.Unlock()
 
 	c := strings.Index(op.collection, ".")
 	if c < 0 {
@@ -2175,11 +2175,11 @@ func (query *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduc
 	dbname := op.collection[:c]
 	cname := op.collection[c+1:]
 
-	q := op.query
+	qdoc := op.query
 	var sort interface{}
-	if qw, ok := q.(*queryWrapper); ok {
-		q = qw.Query
-		sort = qw.OrderBy
+	if wrapper, ok := qdoc.(*queryWrapper); ok {
+		qdoc = wrapper.Query
+		sort = wrapper.OrderBy
 	}
 
 	cmd := mapReduceCmd{
@@ -2190,7 +2190,7 @@ func (query *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduc
 		Out:        job.Out,
 		Scope:      job.Scope,
 		Verbose:    job.Verbose,
-		Query:      q,
+		Query:      qdoc,
 		Sort:       sort,
 		Limit:      limit,
 	}
@@ -2280,11 +2280,11 @@ type valueResult struct {
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (query *Query) Modify(change Change, result interface{}) (err os.Error) {
-	query.m.Lock()
-	session := query.session
-	op := query.op // Copy.
-	query.m.Unlock()
+func (q *Query) Modify(change Change, result interface{}) (err os.Error) {
+	q.m.Lock()
+	session := q.session
+	op := q.op // Copy.
+	q.m.Unlock()
 
 	c := strings.Index(op.collection, ".")
 	if c < 0 {
@@ -2294,11 +2294,11 @@ func (query *Query) Modify(change Change, result interface{}) (err os.Error) {
 	dbname := op.collection[:c]
 	cname := op.collection[c+1:]
 
-	q := op.query
+	qdoc := op.query
 	var sort interface{}
-	if qw, ok := q.(*queryWrapper); ok {
-		q = qw.Query
-		sort = qw.OrderBy
+	if wrapper, ok := qdoc.(*queryWrapper); ok {
+		qdoc = wrapper.Query
+		sort = wrapper.OrderBy
 	}
 
 	cmd := findModifyCmd{
@@ -2307,7 +2307,7 @@ func (query *Query) Modify(change Change, result interface{}) (err os.Error) {
 		Upsert:     change.Upsert,
 		Remove:     change.Remove,
 		New:        change.New,
-		Query:      q,
+		Query:      qdoc,
 		Sort:       sort,
 		Fields:     op.selector,
 	}
@@ -2343,8 +2343,8 @@ type BuildInfo struct {
 
 // BuildInfo retrieves the version and other details about the
 // running MongoDB server.
-func (session *Session) BuildInfo() (info BuildInfo, err os.Error) {
-	err = session.Run(bson.D{{"buildInfo", "1"}}, &info)
+func (s *Session) BuildInfo() (info BuildInfo, err os.Error) {
+	err = s.Run(bson.D{{"buildInfo", "1"}}, &info)
 	if len(info.VersionArray) == 0 {
 		for _, a := range strings.Split(info.Version, ".") {
 			i, err := strconv.Atoi(a)
@@ -2363,43 +2363,43 @@ func (session *Session) BuildInfo() (info BuildInfo, err os.Error) {
 // ---------------------------------------------------------------------------
 // Internal session handling helpers.
 
-func (session *Session) acquireSocket(slaveOk bool) (s *mongoSocket, err os.Error) {
+func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, os.Error) {
 
 	// Try to use a previously reserved socket, with a fast read-only lock.
-	session.m.RLock()
-	s = session.socket
-	sIsGood := s != nil && (slaveOk && session.slaveOk || session.socketIsMaster)
-	session.m.RUnlock()
+	s.m.RLock()
+	sock := s.socket
+	sockIsGood := sock != nil && (slaveOk && s.slaveOk || s.socketIsMaster)
+	s.m.RUnlock()
 
-	if sIsGood {
-		s.Acquire()
-		return s, nil
+	if sockIsGood {
+		sock.Acquire()
+		return sock, nil
 	}
 
 	// No go.  We may have to request a new socket and change the session,
 	// so try again but with an exclusive lock now.
-	session.m.Lock()
-	defer session.m.Unlock()
+	s.m.Lock()
+	defer s.m.Unlock()
 
-	s = session.socket
-	sIsGood = s != nil && (slaveOk && session.slaveOk || session.socketIsMaster)
+	sock = s.socket
+	sockIsGood = sock != nil && (slaveOk && s.slaveOk || s.socketIsMaster)
 
-	if sIsGood {
-		s.Acquire()
-		return s, nil
+	if sockIsGood {
+		sock.Acquire()
+		return sock, nil
 	}
 
 	// Still not good.  We need a new socket.
-	s, err = session.cluster().AcquireSocket(slaveOk && session.slaveOk, session.syncTimeout)
+	sock, err := s.cluster().AcquireSocket(slaveOk && s.slaveOk, s.syncTimeout)
 	if err != nil {
 		return nil, err
 	}
 
 	// Authenticate the new socket.
-	for _, a := range session.auth {
-		err = s.Login(a.db, a.user, a.pass)
+	for _, a := range s.auth {
+		err = sock.Login(a.db, a.user, a.pass)
 		if err != nil {
-			s.Release()
+			sock.Release()
 			return nil, err
 		}
 	}
@@ -2409,16 +2409,16 @@ func (session *Session) acquireSocket(slaveOk bool) (s *mongoSocket, err os.Erro
 	// not refreshed (socket != nil), it means the developer asked
 	// to preserve an existing reserved socket, so we'll keep the
 	// master one around too before a Refresh happens.
-	if session.consistency != Eventual || session.socket != nil {
-		session.setSocket(s)
+	if s.consistency != Eventual || s.socket != nil {
+		s.setSocket(sock)
 	}
 
 	// Switch over a Monotonic session to the master.
-	if !slaveOk && session.consistency == Monotonic {
-		session.slaveOk = false
+	if !slaveOk && s.consistency == Monotonic {
+		s.slaveOk = false
 	}
 
-	return s, nil
+	return sock, nil
 }
 
 // Set the socket bound to this session.  With a bound socket, all operations
@@ -2426,16 +2426,16 @@ func (session *Session) acquireSocket(slaveOk bool) (s *mongoSocket, err os.Erro
 // (e.g. attempting to write to a slave) acquireSocket will replace the
 // current socket.  Note that this method will properly refcount the socket up
 // and down when setting/releasing.
-func (session *Session) setSocket(socket *mongoSocket) {
+func (s *Session) setSocket(socket *mongoSocket) {
 	if socket != nil {
-		session.socketIsMaster = socket.Acquire()
+		s.socketIsMaster = socket.Acquire()
 	} else {
-		session.socketIsMaster = false
+		s.socketIsMaster = false
 	}
-	if session.socket != nil {
-		session.socket.Release()
+	if s.socket != nil {
+		s.socket.Release()
 	}
-	session.socket = socket
+	s.socket = socket
 }
 
 func (iter *Iter) replyFunc() replyFunc {
@@ -2473,16 +2473,16 @@ func (iter *Iter) replyFunc() replyFunc {
 // by a getLastError command in case the session is in safe mode.  The
 // LastError result is made available in lerr, and if lerr.Err is set it
 // will also be returned as err.
-func (session *Session) writeQuery(op interface{}) (lerr *LastError, err os.Error) {
-	socket, err := session.acquireSocket(false)
+func (s *Session) writeQuery(op interface{}) (lerr *LastError, err os.Error) {
+	socket, err := s.acquireSocket(false)
 	if err != nil {
 		return nil, err
 	}
 	defer socket.Release()
 
-	session.m.RLock()
-	safeOp := session.safeOp
-	session.m.RUnlock()
+	s.m.RLock()
+	safeOp := s.safeOp
+	s.m.RUnlock()
 
 	if safeOp == nil {
 		return nil, socket.Query(op)

@@ -45,10 +45,10 @@ rs1a.runCommand({replSetInitiate: rs1cfg})
 function configShards() {
     cfg1 = new Mongo("127.0.0.1:40201").getDB("admin")
     cfg1.runCommand({addshard: "127.0.0.1:40001"})
-    cfg1.runCommand({addshard: "rs1/127.0.0.1:40011,127.0.0.1:40012,127.0.0.1:40013"})
+    cfg1.runCommand({addshard: "rs1/127.0.0.1:40011"})
 
     cfg2 = new Mongo("127.0.0.1:40202").getDB("admin")
-    cfg2.runCommand({addshard: "rs2/127.0.0.1:40021,127.0.0.1:40022,127.0.0.1:40023"})
+    cfg2.runCommand({addshard: "rs2/127.0.0.1:40021"})
 }
 
 function countHealthy(rs) {
