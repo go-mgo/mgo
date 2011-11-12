@@ -31,6 +31,7 @@
 package mgo_test
 
 import (
+	"io"
 	"launchpad.net/gobson/bson"
 	. "launchpad.net/gocheck"
 	"launchpad.net/mgo"
@@ -162,7 +163,7 @@ func (s *S) TestGridFSFileDetails(c *C) {
 	c.Assert(file.MD5(), Equals, "1e50210a0202497fb79bc38b6ade6c34")
 
 	c.Assert(file.UploadDate() < time.Nanoseconds(), Equals, true)
-	c.Assert(file.UploadDate() > time.Nanoseconds() - 3e9, Equals, true)
+	c.Assert(file.UploadDate() > time.Nanoseconds()-3e9, Equals, true)
 
 	result := M{}
 	err = db.C("fs.files").Find(nil).One(result)
@@ -312,7 +313,7 @@ func (s *S) TestGridFSReadAll(c *C) {
 
 	n, err = file.Read(b)
 	c.Assert(n, Equals, 0)
-	c.Assert(err == os.EOF, Equals, true)
+	c.Assert(err == io.EOF, Equals, true)
 
 	err = file.Close()
 	c.Assert(err, IsNil)
@@ -372,7 +373,7 @@ func (s *S) TestGridFSReadChunking(c *C) {
 
 	n, err = file.Read(b)
 	c.Assert(n, Equals, 0)
-	c.Assert(err == os.EOF, Equals, true)
+	c.Assert(err == io.EOF, Equals, true)
 
 	err = file.Close()
 	c.Assert(err, IsNil)
@@ -476,7 +477,7 @@ func (s *S) TestGridFSSeek(c *C) {
 	// Try seeking past end of file.
 	file.Seek(3, os.SEEK_SET)
 	o, err = file.Seek(23, os.SEEK_SET)
-	c.Assert(err, Matches, "Seek past end of file")
+	c.Assert(err, ErrorMatches, "Seek past end of file")
 	c.Assert(o, Equals, int64(3))
 }
 

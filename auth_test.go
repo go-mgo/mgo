@@ -43,12 +43,12 @@ func (s *S) TestAuthLogin(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
-	c.Assert(err, Matches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized")
 
 	admindb := session.DB("admin")
 
 	err = admindb.Login("root", "wrong")
-	c.Assert(err, Matches, "auth fails")
+	c.Assert(err, ErrorMatches, "auth fails")
 
 	err = admindb.Login("root", "rapadura")
 	c.Assert(err, IsNil)
@@ -70,7 +70,7 @@ func (s *S) TestAuthLoginLogout(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
-	c.Assert(err, Matches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized")
 
 	// Must have dropped auth from the session too.
 	session = session.Copy()
@@ -78,7 +78,7 @@ func (s *S) TestAuthLoginLogout(c *C) {
 
 	coll = session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
-	c.Assert(err, Matches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized")
 }
 
 func (s *S) TestAuthLoginLogoutAll(c *C) {
@@ -94,7 +94,7 @@ func (s *S) TestAuthLoginLogoutAll(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
-	c.Assert(err, Matches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized")
 
 	// Must have dropped auth from the session too.
 	session = session.Copy()
@@ -102,7 +102,7 @@ func (s *S) TestAuthLoginLogoutAll(c *C) {
 
 	coll = session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
-	c.Assert(err, Matches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized")
 }
 
 func (s *S) TestAuthAddUser(c *C) {
@@ -127,7 +127,7 @@ func (s *S) TestAuthAddUser(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
-	c.Assert(err, Matches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized")
 
 	err = mydb.Login("mywuser", "mypass")
 	c.Assert(err, IsNil)
@@ -154,13 +154,13 @@ func (s *S) TestAuthAddUserReplaces(c *C) {
 	admindb.Logout()
 
 	err = mydb.Login("myuser", "myoldpass")
-	c.Assert(err, Matches, "auth fails")
+	c.Assert(err, ErrorMatches, "auth fails")
 	err = mydb.Login("myuser", "mynewpass")
 	c.Assert(err, IsNil)
 
 	// ReadOnly flag was changed too.
 	err = mydb.C("mycoll").Insert(M{"n": 1})
-	c.Assert(err, Matches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized")
 }
 
 func (s *S) TestAuthRemoveUser(c *C) {
@@ -179,7 +179,7 @@ func (s *S) TestAuthRemoveUser(c *C) {
 	c.Assert(err, IsNil)
 
 	err = mydb.Login("myuser", "mypass")
-	c.Assert(err, Matches, "auth fails")
+	c.Assert(err, ErrorMatches, "auth fails")
 }
 
 func (s *S) TestAuthLoginTwiceDoesNothing(c *C) {
@@ -237,7 +237,7 @@ func (s *S) TestAuthLoginSwitchUser(c *C) {
 
 	// Can't write.
 	err = coll.Insert(M{"n": 1})
-	c.Assert(err, Matches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized")
 
 	// But can read.
 	result := struct{ N int }{}
@@ -272,7 +272,7 @@ func (s *S) TestAuthLoginChangePassword(c *C) {
 
 	// The second login must be in effect, which means read-only.
 	err = mydb.C("mycoll").Insert(M{"n": 1})
-	c.Assert(err, Matches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized")
 }
 
 func (s *S) TestAuthLoginCachingWithSessionRefresh(c *C) {
@@ -339,7 +339,7 @@ func (s *S) TestAuthLoginCachingWithNewSession(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
-	c.Assert(err, Matches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized")
 }
 
 func (s *S) TestAuthLoginCachingAcrossPool(c *C) {
@@ -436,7 +436,7 @@ func (s *S) TestAuthLoginCachingAcrossPoolWithLogout(c *C) {
 	// Can't write, since root has been implicitly logged out
 	// when the collection went into the pool, and not revalidated.
 	err = other.DB("mydb").C("mycoll").Insert(M{"n": 1})
-	c.Assert(err, Matches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized")
 
 	// But can read due to the revalidated myuser login.
 	result := struct{ N int }{}
@@ -498,7 +498,7 @@ func (s *S) TestAuthURLWrongCredentials(c *C) {
 	defer session.Close()
 
 	err = session.DB("mydb").C("mycoll").Insert(M{"n": 1})
-	c.Assert(err, Matches, "auth fails")
+	c.Assert(err, ErrorMatches, "auth fails")
 }
 
 func (s *S) TestAuthURLWithNewSession(c *C) {

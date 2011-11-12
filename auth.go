@@ -33,9 +33,9 @@ package mgo
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"launchpad.net/gobson/bson"
-	"os"
 	"sync"
 )
 
@@ -67,7 +67,7 @@ type logoutCmd struct {
 	Logout int
 }
 
-func (socket *mongoSocket) getNonce() (nonce string, err os.Error) {
+func (socket *mongoSocket) getNonce() (nonce string, err error) {
 	socket.Lock()
 	for socket.cachedNonce == "" && socket.dead == nil {
 		debugf("Socket %p to %s: waiting for nonce", socket, socket.addr)
@@ -75,7 +75,7 @@ func (socket *mongoSocket) getNonce() (nonce string, err os.Error) {
 	}
 	if socket.cachedNonce == "mongos" {
 		socket.Unlock()
-		return "", os.NewError("Can't authenticate with mongos; see http://j.mp/mongos-auth")
+		return "", errors.New("Can't authenticate with mongos; see http://j.mp/mongos-auth")
 	}
 	debugf("Socket %p to %s: got nonce", socket, socket.addr)
 	nonce, err = socket.cachedNonce, socket.dead
@@ -93,15 +93,15 @@ func (socket *mongoSocket) resetNonce() {
 	op.query = &getNonceCmd{GetNonce: 1}
 	op.collection = "admin.$cmd"
 	op.limit = -1
-	op.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
+	op.replyFunc = func(err error, reply *replyOp, docNum int, docData []byte) {
 		if err != nil {
-			socket.kill(os.NewError("getNonce: " + err.String()))
+			socket.kill(errors.New("getNonce: " + err.Error()))
 			return
 		}
 		result := &getNonceResult{}
 		err = bson.Unmarshal(docData, &result)
 		if err != nil {
-			socket.kill(os.NewError("Failed to unmarshal nonce: " + err.String()))
+			socket.kill(errors.New("Failed to unmarshal nonce: " + err.Error()))
 			return
 		}
 		debugf("Socket %p to %s: nonce unmarshalled: %#v", socket, socket.addr, result)
@@ -115,7 +115,7 @@ func (socket *mongoSocket) resetNonce() {
 			} else {
 				msg = "Got an empty nonce"
 			}
-			socket.kill(os.NewError(msg))
+			socket.kill(errors.New(msg))
 			return
 		}
 		socket.Lock()
@@ -129,11 +129,11 @@ func (socket *mongoSocket) resetNonce() {
 	}
 	err := socket.Query(op)
 	if err != nil {
-		socket.kill(os.NewError("resetNonce: " + err.String()))
+		socket.kill(errors.New("resetNonce: " + err.Error()))
 	}
 }
 
-func (socket *mongoSocket) Login(db string, user string, pass string) os.Error {
+func (socket *mongoSocket) Login(db string, user string, pass string) error {
 	socket.Lock()
 	for _, a := range socket.auth {
 		if a.db == db && a.user == user && a.pass == pass {
@@ -174,14 +174,14 @@ func (socket *mongoSocket) Login(db string, user string, pass string) os.Error {
 	cmd := authCmd{Authenticate: 1, User: user, Nonce: nonce, Key: key}
 
 	var mutex sync.Mutex
-	var replyErr os.Error
+	var replyErr error
 	mutex.Lock()
 
 	op := queryOp{}
 	op.query = &cmd
 	op.collection = db + ".$cmd"
 	op.limit = -1
-	op.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
+	op.replyFunc = func(err error, reply *replyOp, docNum int, docData []byte) {
 		defer mutex.Unlock()
 
 		if err != nil {
@@ -198,7 +198,7 @@ func (socket *mongoSocket) Login(db string, user string, pass string) os.Error {
 			return
 		}
 		if !result.Ok {
-			replyErr = os.NewError(result.ErrMsg)
+			replyErr = errors.New(result.ErrMsg)
 		}
 
 		socket.Lock()
