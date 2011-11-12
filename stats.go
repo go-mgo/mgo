@@ -34,7 +34,6 @@ import (
 	"sync"
 )
 
-
 var stats *Stats
 var statsMutex sync.Mutex
 
