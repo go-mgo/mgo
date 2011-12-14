@@ -1975,6 +1975,8 @@ func (iter *Iter) getMore() {
 type countCmd struct {
 	Count string
 	Query interface{}
+	Limit int32 ",omitempty"
+	Skip  int32 ",omitempty"
 }
 
 // Count returns the total number of documents in the result set.
@@ -1982,6 +1984,7 @@ func (q *Query) Count() (n int, err os.Error) {
 	q.m.Lock()
 	session := q.session
 	op := q.op
+	limit := q.limit
 	q.m.Unlock()
 
 	c := strings.Index(op.collection, ".")
@@ -1998,7 +2001,7 @@ func (q *Query) Count() (n int, err os.Error) {
 	}
 
 	result := struct{ N int }{}
-	err = session.DB(dbname).Run(countCmd{cname, qdoc}, &result)
+	err = session.DB(dbname).Run(countCmd{cname, qdoc, limit, op.skip}, &result)
 	return result.N, err
 }
 

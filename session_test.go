@@ -666,6 +666,28 @@ func (s *S) TestCountQuerySorted(c *C) {
 	c.Assert(n, Equals, 2)
 }
 
+func (s *S) TestCountSkipLimit(c *C) {
+	session, err := mgo.Mongo("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{40, 41, 42, 43, 44}
+	for _, n := range ns {
+		err := coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
+	}
+
+	n, err := coll.Find(nil).Skip(1).Limit(3).Count()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 3)
+
+	n, err = coll.Find(nil).Skip(1).Limit(5).Count()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 4)
+}
+
 func (s *S) TestQueryExplain(c *C) {
 	session, err := mgo.Mongo("localhost:40001")
 	c.Assert(err, IsNil)
