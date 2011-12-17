@@ -369,8 +369,8 @@ func fill(r *net.TCPConn, b []byte) error {
 // Estimated minimum cost per socket: 1 goroutine + memory for the largest
 // document ever seen.
 func (socket *mongoSocket) readLoop() {
-	p := [36]byte{}[:] // 16 from header + 20 from OP_REPLY fixed fields
-	s := [4]byte{}[:]
+	p := make([]byte, 36) // 16 from header + 20 from OP_REPLY fixed fields
+	s := make([]byte, 4)
 	conn := socket.conn // No locking, conn never changes.
 	for {
 		// XXX Handle timeouts, , etc

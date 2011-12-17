@@ -1041,12 +1041,12 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 
 	c.Log("Will wait for a result which will never come...")
 
-	started := time.Nanoseconds()
+	started := time.Now().UnixNano()
 	ok = iter.Next(&result)
 	c.Assert(ok, Equals, false)
 	c.Assert(iter.Err(), IsNil)
 	c.Assert(iter.Timeout(), Equals, true)
-	c.Assert(time.Nanoseconds()-started > timeout*1e9, Equals, true)
+	c.Assert(time.Now().UnixNano()-started > timeout*1e9, Equals, true)
 
 	c.Log("Will now reuse the timed out tail cursor...")
 
@@ -1134,12 +1134,12 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 
 	c.Log("Will wait for a result which will never come...")
 
-	started := time.Nanoseconds()
+	started := time.Now().UnixNano()
 	ok = iter.Next(&result)
 	c.Assert(ok, Equals, false)
 	c.Assert(iter.Err(), IsNil)
 	c.Assert(iter.Timeout(), Equals, true)
-	c.Assert(time.Nanoseconds()-started > timeout*1e9, Equals, true)
+	c.Assert(time.Now().UnixNano()-started > timeout*1e9, Equals, true)
 
 	c.Log("Will now reuse the timed out tail cursor...")
 

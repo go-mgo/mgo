@@ -367,7 +367,7 @@ restart:
 // true, it will attempt to return a socket to a slave server.  If it is
 // false, the socket will necessarily be to a master server.
 func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout int64) (s *mongoSocket, err error) {
-	started := time.Nanoseconds()
+	started := time.Now().UnixNano()
 	for {
 		cluster.RLock()
 		for {
@@ -375,7 +375,7 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout int64) (s *
 			if !cluster.masters.Empty() || slaveOk && !cluster.slaves.Empty() {
 				break
 			}
-			if syncTimeout > 0 && time.Nanoseconds()-started > syncTimeout {
+			if syncTimeout > 0 && time.Now().UnixNano()-started > syncTimeout {
 				cluster.RUnlock()
 				return nil, errors.New("no reachable servers")
 			}

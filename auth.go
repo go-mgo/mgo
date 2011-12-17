@@ -167,9 +167,9 @@ func (socket *mongoSocket) Login(db string, user string, pass string) error {
 
 	ksum := md5.New()
 	ksum.Write([]byte(nonce + user))
-	ksum.Write([]byte(hex.EncodeToString(psum.Sum())))
+	ksum.Write([]byte(hex.EncodeToString(psum.Sum(nil))))
 
-	key := hex.EncodeToString(ksum.Sum())
+	key := hex.EncodeToString(ksum.Sum(nil))
 
 	cmd := authCmd{Authenticate: 1, User: user, Nonce: nonce, Key: key}
 

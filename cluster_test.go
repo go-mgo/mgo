@@ -636,14 +636,14 @@ func (s *S) TestSyncTimeout(c *C) {
 
 	session.SetSyncTimeout(timeout)
 
-	started := time.Nanoseconds()
+	started := time.Now().UnixNano()
 
 	// Do something.
 	result := struct{ Ok bool }{}
 	err = session.Run("getLastError", &result)
 	c.Assert(err, ErrorMatches, "no reachable servers")
-	c.Assert(time.Nanoseconds()-started > timeout, Equals, true)
-	c.Assert(time.Nanoseconds()-started < timeout*2, Equals, true)
+	c.Assert(time.Now().UnixNano()-started > timeout, Equals, true)
+	c.Assert(time.Now().UnixNano()-started < timeout*2, Equals, true)
 }
 
 func (s *S) TestDirect(c *C) {

@@ -540,7 +540,7 @@ func (file *GridFile) insertChunk(data []byte) {
 }
 
 func (file *GridFile) insertFile() {
-	hexsum := hex.EncodeToString(file.wsum.Sum())
+	hexsum := hex.EncodeToString(file.wsum.Sum(nil))
 	for file.wpending > 0 {
 		debugf("GridFile %p: waiting for %d pending chunks to insert file", file, file.wpending)
 		file.c.Wait()

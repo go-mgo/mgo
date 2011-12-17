@@ -436,7 +436,7 @@ func (s *Session) LogoutAll() {
 func (db Database) AddUser(user, pass string, readOnly bool) error {
 	psum := md5.New()
 	psum.Write([]byte(user + ":mongo:" + pass))
-	digest := hex.EncodeToString(psum.Sum())
+	digest := hex.EncodeToString(psum.Sum(nil))
 	c := db.C("system.users")
 	_, err := c.Upsert(bson.M{"user": user}, bson.M{"$set": bson.M{"user": user, "pwd": digest, "readOnly": readOnly}})
 	return err
@@ -1807,7 +1807,7 @@ func (iter *Iter) Timeout() bool {
 func (iter *Iter) Next(result interface{}) bool {
 	timeout := int64(-1)
 	if iter.timeout >= 0 {
-		timeout = time.Nanoseconds() + int64(iter.timeout)*1e9
+		timeout = time.Now().UnixNano() + int64(iter.timeout)*1e9
 	}
 
 	iter.m.Lock()
@@ -1815,7 +1815,7 @@ func (iter *Iter) Next(result interface{}) bool {
 	for iter.err == nil && iter.docData.Len() == 0 && (iter.pendingDocs > 0 || iter.op.cursorId != 0) {
 		if iter.pendingDocs == 0 && iter.op.cursorId != 0 {
 			// Tailable cursor exhausted.
-			if timeout >= 0 && time.Nanoseconds() > timeout {
+			if timeout >= 0 && time.Now().UnixNano() > timeout {
 				iter.timedout = true
 				iter.m.Unlock()
 				return false
