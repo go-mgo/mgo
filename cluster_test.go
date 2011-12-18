@@ -31,9 +31,9 @@
 package mgo_test
 
 import (
+	"io"
 	. "launchpad.net/gocheck"
 	"launchpad.net/mgo"
-	"os"
 	"strings"
 	"time"
 )
@@ -405,11 +405,11 @@ func (s *S) TestPrimaryShutdownStrong(c *C) {
 
 	// This must fail, since the connection was broken.
 	err = session.Run("serverStatus", result)
-	c.Assert(err, Equals, os.EOF)
+	c.Assert(err, Equals, io.EOF)
 
 	// With strong consistency, it fails again until reset.
 	err = session.Run("serverStatus", result)
-	c.Assert(err, Equals, os.EOF)
+	c.Assert(err, Equals, io.EOF)
 
 	session.Refresh()
 
@@ -445,11 +445,11 @@ func (s *S) TestPrimaryShutdownMonotonic(c *C) {
 
 	// This must fail, since the connection was broken.
 	err = session.Run("serverStatus", result)
-	c.Assert(err, Equals, os.EOF)
+	c.Assert(err, Equals, io.EOF)
 
 	// With monotonic consistency, it fails again until reset.
 	err = session.Run("serverStatus", result)
-	c.Assert(err, Equals, os.EOF)
+	c.Assert(err, Equals, io.EOF)
 
 	session.Refresh()
 
@@ -636,14 +636,14 @@ func (s *S) TestSyncTimeout(c *C) {
 
 	session.SetSyncTimeout(timeout)
 
-	started := time.Nanoseconds()
+	started := time.Now().UnixNano()
 
 	// Do something.
 	result := struct{ Ok bool }{}
 	err = session.Run("getLastError", &result)
-	c.Assert(err, Matches, "no reachable servers")
-	c.Assert(time.Nanoseconds()-started > timeout, Equals, true)
-	c.Assert(time.Nanoseconds()-started < timeout*2, Equals, true)
+	c.Assert(err, ErrorMatches, "no reachable servers")
+	c.Assert(time.Now().UnixNano()-started > timeout, Equals, true)
+	c.Assert(time.Now().UnixNano()-started < timeout*2, Equals, true)
 }
 
 func (s *S) TestDirect(c *C) {
@@ -669,7 +669,7 @@ func (s *S) TestDirect(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"test": 1})
-	c.Assert(err, Matches, "no reachable servers")
+	c.Assert(err, ErrorMatches, "no reachable servers")
 
 	// Slave is still reachable.
 	result.Host = ""
@@ -687,7 +687,7 @@ type OpCounters struct {
 	Command int
 }
 
-func getOpCounters(server string) (c *OpCounters, err os.Error) {
+func getOpCounters(server string) (c *OpCounters, err error) {
 	session, err := mgo.Mongo(server + "?connect=direct")
 	if err != nil {
 		return nil, err

@@ -31,10 +31,9 @@
 package mgo
 
 import (
-	"sync"
-	"sort"
 	"net"
-	"os"
+	"sort"
+	"sync"
 )
 
 // ---------------------------------------------------------------------------
@@ -50,11 +49,10 @@ type mongoServer struct {
 	master       bool
 }
 
-
-func newServer(addr string) (server *mongoServer, err os.Error) {
+func newServer(addr string) (server *mongoServer, err error) {
 	tcpaddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
-		log("Failed to resolve ", addr, ": ", err.String())
+		log("Failed to resolve ", addr, ": ", err.Error())
 		return nil, err
 	}
 
@@ -66,12 +64,11 @@ func newServer(addr string) (server *mongoServer, err os.Error) {
 	return
 }
 
-
 // Obtain a socket for communicating with the server.  This will attempt to
 // reuse an old connection, if one is available. Otherwise, it will establish
 // a new one. The returned socket is owned by the call site, and will return
 // to the cache if explicitly done.
-func (server *mongoServer) AcquireSocket() (socket *mongoSocket, err os.Error) {
+func (server *mongoServer) AcquireSocket() (socket *mongoSocket, err error) {
 	for {
 		server.Lock()
 		n := len(server.sockets)
@@ -95,7 +92,7 @@ func (server *mongoServer) AcquireSocket() (socket *mongoSocket, err os.Error) {
 
 // Establish a new connection to the server. This should generally be done
 // through server.getSocket().
-func (server *mongoServer) Connect() (*mongoSocket, os.Error) {
+func (server *mongoServer) Connect() (*mongoSocket, error) {
 	server.RLock()
 	addr := server.Addr
 	tcpaddr := server.tcpaddr
@@ -105,7 +102,7 @@ func (server *mongoServer) Connect() (*mongoSocket, os.Error) {
 	log("Establishing new connection to ", addr, "...")
 	conn, err := net.DialTCP("tcp", nil, tcpaddr)
 	if err != nil {
-		log("Connection to ", addr, " failed: ", err.String())
+		log("Connection to ", addr, " failed: ", err.Error())
 		return nil, err
 	}
 	log("Connection to ", addr, " established.")
@@ -184,7 +181,6 @@ func (s mongoServerSlice) Search(other *mongoServer) (i int, ok bool) {
 	})
 	return i, i != n && s[i].ResolvedAddr == resolvedAddr
 }
-
 
 type mongoServers struct {
 	slice mongoServerSlice

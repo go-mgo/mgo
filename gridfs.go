@@ -33,7 +33,9 @@ package mgo
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"hash"
+	"io"
 	"launchpad.net/gobson/bson"
 	"os"
 	"sync"
@@ -57,7 +59,7 @@ type GridFile struct {
 	c    sync.Cond
 	gfs  GridFS
 	mode gfsFileMode
-	err  os.Error
+	err  error
 
 	chunk  int
 	offset int64
@@ -94,7 +96,7 @@ type gfsCachedChunk struct {
 	wait sync.Mutex
 	n    int
 	data []byte
-	err  os.Error
+	err  error
 }
 
 func newGridFS(db Database, prefix string) *GridFS {
@@ -150,7 +152,7 @@ func finalizeFile(file *GridFile) {
 //     err = file.Close()
 //     check(err)
 //
-func (gfs GridFS) Create(name string) (file *GridFile, err os.Error) {
+func (gfs GridFS) Create(name string) (file *GridFile, err error) {
 	file = gfs.newFile()
 	file.mode = gfsWriting
 	file.wsum = md5.New()
@@ -194,7 +196,7 @@ func (gfs GridFS) Create(name string) (file *GridFile, err os.Error) {
 //     err = file.Close()
 //     check(err)
 //
-func (gfs GridFS) OpenId(id interface{}) (file *GridFile, err os.Error) {
+func (gfs GridFS) OpenId(id interface{}) (file *GridFile, err error) {
 	var doc gfsFile
 	err = gfs.Files.Find(bson.M{"_id": id}).One(&doc)
 	if err != nil {
@@ -242,7 +244,7 @@ func (gfs GridFS) OpenId(id interface{}) (file *GridFile, err os.Error) {
 //     err = file.Close()
 //     check(err)
 //
-func (gfs GridFS) Open(name string) (file *GridFile, err os.Error) {
+func (gfs GridFS) Open(name string) (file *GridFile, err error) {
 	var doc gfsFile
 	err = gfs.Files.Find(bson.M{"filename": name}).Sort(bson.M{"uploadDate": -1}).One(&doc)
 	if err != nil {
@@ -255,7 +257,7 @@ func (gfs GridFS) Open(name string) (file *GridFile, err os.Error) {
 }
 
 // RemoveId deletes the file with the provided id from the GridFS.
-func (gfs GridFS) RemoveId(id interface{}) os.Error {
+func (gfs GridFS) RemoveId(id interface{}) error {
 	err := gfs.Files.Remove(bson.M{"_id": id})
 	if err != nil {
 		return err
@@ -268,7 +270,7 @@ type gfsDocId struct {
 }
 
 // Remove deletes all files with the provided name from the GridFS.
-func (gfs GridFS) Remove(name string) (err os.Error) {
+func (gfs GridFS) Remove(name string) (err error) {
 	iter := gfs.Files.Find(bson.M{"filename": name}).Select(bson.M{"_id": 1}).Iter()
 	var doc gfsDocId
 	for iter.Next(&doc) {
@@ -373,7 +375,7 @@ func (file *GridFile) SetContentType(ctype string) {
 //     }
 //     fmt.Printf("inode: %d\n", result.INode)
 //
-func (file *GridFile) GetInfo(result interface{}) (err os.Error) {
+func (file *GridFile) GetInfo(result interface{}) (err error) {
 	file.m.Lock()
 	if file.doc.Metadata != nil {
 		err = bson.Unmarshal(file.doc.Metadata.Data, result)
@@ -425,7 +427,7 @@ func (file *GridFile) UploadDate() int64 {
 // It's important to Close files whether they are being written to
 // or read from, and to check the err result to ensure the operation
 // completed successfully.
-func (file *GridFile) Close() (err os.Error) {
+func (file *GridFile) Close() (err error) {
 	file.m.Lock()
 	defer file.m.Unlock()
 	if file.mode == gfsWriting {
@@ -452,7 +454,7 @@ func (file *GridFile) Close() (err os.Error) {
 //
 // The parameters and behavior of this function turn the file
 // into an io.Writer.
-func (file *GridFile) Write(data []byte) (n int, err os.Error) {
+func (file *GridFile) Write(data []byte) (n int, err error) {
 	file.assertMode(gfsWriting)
 	file.m.Lock()
 	debugf("GridFile %p: writing %d bytes", file, len(data))
@@ -538,7 +540,7 @@ func (file *GridFile) insertChunk(data []byte) {
 }
 
 func (file *GridFile) insertFile() {
-	hexsum := hex.EncodeToString(file.wsum.Sum())
+	hexsum := hex.EncodeToString(file.wsum.Sum(nil))
 	for file.wpending > 0 {
 		debugf("GridFile %p: waiting for %d pending chunks to insert file", file, file.wpending)
 		file.c.Wait()
@@ -556,7 +558,7 @@ func (file *GridFile) insertFile() {
 // the origin of the file, 1 means relative to the current offset,
 // and 2 means relative to the end. It returns the new offset and
 // an Error, if any.
-func (file *GridFile) Seek(offset int64, whence int) (pos int64, err os.Error) {
+func (file *GridFile) Seek(offset int64, whence int) (pos int64, err error) {
 	file.m.Lock()
 	debugf("GridFile %p: seeking for %s (whence=%d)", file, offset, whence)
 	defer file.m.Unlock()
@@ -570,7 +572,7 @@ func (file *GridFile) Seek(offset int64, whence int) (pos int64, err os.Error) {
 		panic("Unsupported whence value")
 	}
 	if offset > file.doc.Length {
-		return file.offset, os.NewError("Seek past end of file")
+		return file.offset, errors.New("Seek past end of file")
 	}
 	chunk := int(offset / int64(file.doc.ChunkSize))
 	if chunk+1 == file.chunk && offset >= file.offset {
@@ -595,13 +597,13 @@ func (file *GridFile) Seek(offset int64, whence int) (pos int64, err os.Error) {
 //
 // The parameters and behavior of this function turn the file
 // into an io.Reader.
-func (file *GridFile) Read(b []byte) (n int, err os.Error) {
+func (file *GridFile) Read(b []byte) (n int, err error) {
 	file.assertMode(gfsReading)
 	file.m.Lock()
 	debugf("GridFile %p: reading at offset %d into buffer of length %d", file, file.offset, len(b))
 	defer file.m.Unlock()
 	if file.offset == file.doc.Length {
-		return 0, os.EOF
+		return 0, io.EOF
 	}
 	for err == nil {
 		i := copy(b, file.rbuf)
@@ -617,7 +619,7 @@ func (file *GridFile) Read(b []byte) (n int, err os.Error) {
 	return n, err
 }
 
-func (file *GridFile) getChunk() (data []byte, err os.Error) {
+func (file *GridFile) getChunk() (data []byte, err error) {
 	cache := file.rcache
 	file.rcache = nil
 	if cache != nil && cache.n == file.chunk {

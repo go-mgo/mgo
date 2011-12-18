@@ -31,10 +31,11 @@
 package mgo
 
 import (
+	"errors"
+	"math/rand"
 	"sync"
+
 	"time"
-	"os"
-	"rand"
 )
 
 // ---------------------------------------------------------------------------
@@ -116,7 +117,7 @@ type isMasterResult struct {
 	Passives  []string
 }
 
-func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, err os.Error) {
+func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, err error) {
 	addr := server.Addr
 	log("[sync] Processing ", addr, "...")
 
@@ -129,7 +130,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 
 	socket, err := server.AcquireSocket()
 	if err != nil {
-		log("[sync] Failed to get socket to ", addr, ": ", err.String())
+		log("[sync] Failed to get socket to ", addr, ": ", err.Error())
 		return
 	}
 
@@ -142,7 +143,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 	result := isMasterResult{}
 	err = session.Run("ismaster", &result)
 	if err != nil {
-		log("[sync] Command 'ismaster' to ", addr, " failed: ", err.String())
+		log("[sync] Command 'ismaster' to ", addr, " failed: ", err.Error())
 		return
 	}
 	debugf("[sync] Result of 'ismaster' from %s: %#v", addr, result)
@@ -236,7 +237,6 @@ func (cluster *mongoCluster) getKnownAddrs() []string {
 	return known
 }
 
-
 // Synchronize all servers in the cluster.  This will contact all servers in
 // parallel, ask them about known peers and their own role within the cluster,
 // and then attempt to do the same with all the peers retrieved.  This function
@@ -296,7 +296,7 @@ restart:
 
 			server, err := newServer(addr)
 			if err != nil {
-				log("[sync] Failed to start sync of ", addr, ": ", err.String())
+				log("[sync] Failed to start sync of ", addr, ": ", err.Error())
 				return
 			}
 
@@ -366,8 +366,8 @@ restart:
 // AcquireSocket returns a socket to a server in the cluster.  If slaveOk is
 // true, it will attempt to return a socket to a slave server.  If it is
 // false, the socket will necessarily be to a master server.
-func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout int64) (s *mongoSocket, err os.Error) {
-	started := time.Nanoseconds()
+func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout int64) (s *mongoSocket, err error) {
+	started := time.Now().UnixNano()
 	for {
 		cluster.RLock()
 		for {
@@ -375,9 +375,9 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout int64) (s *
 			if !cluster.masters.Empty() || slaveOk && !cluster.slaves.Empty() {
 				break
 			}
-			if syncTimeout > 0 && time.Nanoseconds()-started > syncTimeout {
+			if syncTimeout > 0 && time.Now().UnixNano()-started > syncTimeout {
 				cluster.RUnlock()
-				return nil, os.NewError("no reachable servers")
+				return nil, errors.New("no reachable servers")
 			}
 			log("Waiting for servers to synchronize...")
 			if !cluster.syncing {
@@ -412,7 +412,11 @@ func (cluster *mongoCluster) CacheIndex(cacheKey string, exists bool) {
 	if cluster.cachedIndex == nil {
 		cluster.cachedIndex = make(map[string]bool)
 	}
-	cluster.cachedIndex[cacheKey] = exists, exists
+	if exists {
+		cluster.cachedIndex[cacheKey] = true
+	} else {
+		delete(cluster.cachedIndex, cacheKey)
+	}
 	cluster.Unlock()
 }
 

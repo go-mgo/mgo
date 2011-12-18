@@ -30,10 +30,7 @@
 
 package mgo
 
-import (
-	"fmt"
-	"os"
-)
+import "fmt"
 
 // ---------------------------------------------------------------------------
 // Logging integration.
@@ -42,7 +39,7 @@ import (
 // associated with using an interface rather than the type.  Depending on how
 // often the logger is plugged in, it would be worth using the type instead.
 type log_Logger interface {
-	Output(calldepth int, s string) os.Error
+	Output(calldepth int, s string) error
 }
 
 var globalLogger log_Logger

@@ -31,10 +31,10 @@
 package mgo_test
 
 import (
+	"errors"
 	"launchpad.net/gobson/bson"
 	. "launchpad.net/gocheck"
 	"launchpad.net/mgo"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -276,7 +276,7 @@ func (s *S) TestFindRef(c *C) {
 	c.Assert(result.N, Equals, 3)
 
 	err = session.FindRef(ref1, &result)
-	c.Assert(err, Matches, "Can't resolve database for mgo.DBRef{C:\"col1\", ID:1, DB:\"\"}")
+	c.Assert(err, ErrorMatches, "Can't resolve database for mgo.DBRef{C:\"col1\", ID:1, DB:\"\"}")
 }
 
 func (s *S) TestDatabaseAndCollectionNames(c *C) {
@@ -544,7 +544,7 @@ func (s *S) TestDropDatabase(c *C) {
 
 	names, err = session.DatabaseNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, Equals, []string{})
+	c.Assert(names, Equals, []string(nil))
 }
 
 func (s *S) TestDropCollection(c *C) {
@@ -711,7 +711,7 @@ func (s *S) TestQueryExplain(c *C) {
 
 	n := 0
 	var result M
-	err = query.For(&result, func() os.Error {
+	err = query.For(&result, func() error {
 		n++
 		return nil
 	})
@@ -744,7 +744,7 @@ func (s *S) TestFindOneNotFound(c *C) {
 	result := struct{ A, B int }{}
 	err = coll.Find(M{"a": 1}).One(&result)
 	c.Assert(err, Equals, mgo.NotFound)
-	c.Assert(err, Matches, "Document not found")
+	c.Assert(err, ErrorMatches, "Document not found")
 	c.Assert(err == mgo.NotFound, Equals, true)
 }
 
@@ -982,7 +982,6 @@ func (s *S) TestFindIterSortWithBatch(c *C) {
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
-
 // Test tailable cursors in a situation where Next has to sleep to
 // respect the timeout requested on Tail.
 func (s *S) TestFindTailTimeoutWithSleep(c *C) {
@@ -1064,12 +1063,12 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 
 	c.Log("Will wait for a result which will never come...")
 
-	started := time.Nanoseconds()
+	started := time.Now().UnixNano()
 	ok = iter.Next(&result)
 	c.Assert(ok, Equals, false)
 	c.Assert(iter.Err(), IsNil)
 	c.Assert(iter.Timeout(), Equals, true)
-	c.Assert(time.Nanoseconds()-started > timeout*1e9, Equals, true)
+	c.Assert(time.Now().UnixNano()-started > timeout*1e9, Equals, true)
 
 	c.Log("Will now reuse the timed out tail cursor...")
 
@@ -1157,12 +1156,12 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 
 	c.Log("Will wait for a result which will never come...")
 
-	started := time.Nanoseconds()
+	started := time.Now().UnixNano()
 	ok = iter.Next(&result)
 	c.Assert(ok, Equals, false)
 	c.Assert(iter.Err(), IsNil)
 	c.Assert(iter.Timeout(), Equals, true)
-	c.Assert(time.Nanoseconds()-started > timeout*1e9, Equals, true)
+	c.Assert(time.Now().UnixNano()-started > timeout*1e9, Equals, true)
 
 	c.Log("Will now reuse the timed out tail cursor...")
 
@@ -1268,7 +1267,7 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	select {
 	case ok := <-gotNext:
 		c.Assert(ok, Equals, false)
-		c.Assert(iter.Err(), Matches, "Closed explicitly")
+		c.Assert(iter.Err(), ErrorMatches, "Closed explicitly")
 		c.Assert(iter.Timeout(), Equals, false)
 	case <-time.After(1e9):
 		c.Fatal("Closing the session did not unblock Next")
@@ -1296,7 +1295,7 @@ func (s *S) TestFindForOnIter(c *C) {
 
 	i := 2
 	var result *struct{ N int }
-	err = iter.For(&result, func() os.Error {
+	err = iter.For(&result, func() error {
 		c.Assert(i < 7, Equals, true)
 		c.Assert(result.N, Equals, ns[i])
 		if i == 1 {
@@ -1337,7 +1336,7 @@ func (s *S) TestFindFor(c *C) {
 
 	i := 2
 	var result *struct{ N int }
-	err = query.For(&result, func() os.Error {
+	err = query.For(&result, func() error {
 		c.Assert(i < 7, Equals, true)
 		c.Assert(result.N, Equals, ns[i])
 		if i == 1 {
@@ -1373,16 +1372,16 @@ func (s *S) TestFindForStopOnError(c *C) {
 	query := coll.Find(M{"n": M{"$gte": 42}})
 	i := 2
 	var result *struct{ N int }
-	err = query.For(&result, func() os.Error {
+	err = query.For(&result, func() error {
 		c.Assert(i < 4, Equals, true)
 		c.Assert(result.N, Equals, ns[i])
 		if i == 3 {
-			return os.NewError("stop!")
+			return errors.New("stop!")
 		}
 		i++
 		return nil
 	})
-	c.Assert(err, Matches, "stop!")
+	c.Assert(err, ErrorMatches, "stop!")
 }
 
 func (s *S) TestFindForResetsResult(c *C) {
@@ -1401,7 +1400,7 @@ func (s *S) TestFindForResetsResult(c *C) {
 
 	i := 0
 	var sresult *struct{ N1, N2, N3 int }
-	err = query.For(&sresult, func() os.Error {
+	err = query.For(&sresult, func() error {
 		switch i {
 		case 0:
 			c.Assert(sresult.N1, Equals, 1)
@@ -1420,8 +1419,8 @@ func (s *S) TestFindForResetsResult(c *C) {
 
 	i = 0
 	var mresult M
-	err = query.For(&mresult, func() os.Error {
-		mresult["_id"] = nil, false
+	err = query.For(&mresult, func() error {
+		delete(mresult, "_id")
 		switch i {
 		case 0:
 			c.Assert(mresult, Equals, M{"n1": 1})
@@ -1437,10 +1436,10 @@ func (s *S) TestFindForResetsResult(c *C) {
 
 	i = 0
 	var iresult interface{}
-	err = query.For(&iresult, func() os.Error {
+	err = query.For(&iresult, func() error {
 		mresult, ok := iresult.(bson.M)
 		c.Assert(ok, Equals, true, Bug("%#v", iresult))
-		mresult["_id"] = nil, false
+		delete(mresult, "_id")
 		switch i {
 		case 0:
 			c.Assert(mresult, Equals, bson.M{"n1": 1})
@@ -1657,7 +1656,7 @@ func (s *S) TestSafeInsert(c *C) {
 
 	// Session should be safe by default, so inserting it again must fail.
 	err = coll.Insert(M{"_id": 1})
-	c.Assert(err, Matches, "E11000 duplicate.*")
+	c.Assert(err, ErrorMatches, "E11000 duplicate.*")
 	c.Assert(err.(*mgo.LastError).Code, Equals, 11000)
 
 	// It must have sent two operations (INSERT_OP + getLastError QUERY_OP)
@@ -1686,7 +1685,7 @@ func (s *S) TestSafeParameters(c *C) {
 	// Tweak the safety parameters to something unachievable.
 	session.SetSafe(&mgo.Safe{W: 4, WTimeout: 100})
 	err = coll.Insert(M{"_id": 1})
-	c.Assert(err, Matches, "timeout")
+	c.Assert(err, ErrorMatches, "timeout")
 	c.Assert(err.(*mgo.LastError).WTimeout, Equals, true)
 }
 
@@ -1702,7 +1701,7 @@ func (s *S) TestQueryErrorOne(c *C) {
 	}{}
 
 	err = coll.Find(M{"a": 1}).Select(M{"a": M{"b": 1}}).One(&result)
-	c.Assert(err, Matches, "Unsupported projection option: b")
+	c.Assert(err, ErrorMatches, "Unsupported projection option: b")
 	c.Assert(err.(*mgo.QueryError).Message, Matches, "Unsupported projection option: b")
 	c.Assert(err.(*mgo.QueryError).Code, Equals, 13097)
 
@@ -1727,7 +1726,7 @@ func (s *S) TestQueryErrorNext(c *C) {
 	c.Assert(ok, Equals, false)
 
 	err = iter.Err()
-	c.Assert(err, Matches, "Unsupported projection option: b")
+	c.Assert(err, ErrorMatches, "Unsupported projection option: b")
 	c.Assert(err.(*mgo.QueryError).Message, Matches, "Unsupported projection option: b")
 	c.Assert(err.(*mgo.QueryError).Code, Equals, 13097)
 
@@ -1783,7 +1782,7 @@ func (s *S) TestEnsureIndex(c *C) {
 	err = sysidx.Find(M{"name": "loc_"}).One(result3)
 	c.Assert(err, IsNil)
 
-	result1["v"] = nil, false
+	delete(result1, "v")
 	expected1 := M{
 		"name":       "a_1",
 		"key":        bson.M{"a": 1},
@@ -1792,7 +1791,7 @@ func (s *S) TestEnsureIndex(c *C) {
 	}
 	c.Assert(result1, Equals, expected1)
 
-	result2["v"] = nil, false
+	delete(result2, "v")
 	expected2 := M{
 		"name":     "a_1_b_-1",
 		"key":      bson.M{"a": 1, "b": -1},
@@ -1802,7 +1801,7 @@ func (s *S) TestEnsureIndex(c *C) {
 	}
 	c.Assert(result2, Equals, expected2)
 
-	result3["v"] = nil, false
+	delete(result3, "v")
 	expected3 := M{
 		"name": "loc_",
 		"key":  bson.M{"loc": "2d"},
@@ -1817,7 +1816,7 @@ func (s *S) TestEnsureIndex(c *C) {
 	err = coll.Insert(M{"a": 1, "b": 1})
 	c.Assert(err, IsNil)
 	err = coll.Insert(M{"a": 1, "b": 1})
-	c.Assert(err, Matches, ".*duplicate key error.*")
+	c.Assert(err, ErrorMatches, ".*duplicate key error.*")
 }
 
 func (s *S) TestEnsureIndexWithBadInfo(c *C) {
@@ -1828,10 +1827,10 @@ func (s *S) TestEnsureIndexWithBadInfo(c *C) {
 	coll := session.DB("mydb").C("mycoll")
 
 	err = coll.EnsureIndex(mgo.Index{})
-	c.Assert(err, Matches, "Invalid index key:.*")
+	c.Assert(err, ErrorMatches, "Invalid index key:.*")
 
 	err = coll.EnsureIndex(mgo.Index{Key: []string{""}})
-	c.Assert(err, Matches, "Invalid index key:.*")
+	c.Assert(err, ErrorMatches, "Invalid index key:.*")
 }
 
 func (s *S) TestEnsureIndexWithUnsafeSession(c *C) {
@@ -1856,7 +1855,7 @@ func (s *S) TestEnsureIndexWithUnsafeSession(c *C) {
 	}
 
 	err = coll.EnsureIndex(index)
-	c.Assert(err, Matches, ".*duplicate key error.*")
+	c.Assert(err, ErrorMatches, ".*duplicate key error.*")
 }
 
 func (s *S) TestEnsureIndexKey(c *C) {
@@ -1882,7 +1881,7 @@ func (s *S) TestEnsureIndexKey(c *C) {
 	err = sysidx.Find(M{"name": "a_1_b_-1"}).One(result2)
 	c.Assert(err, IsNil)
 
-	result1["v"] = nil, false
+	delete(result1, "v")
 	expected1 := M{
 		"name": "a_1",
 		"key":  bson.M{"a": 1},
@@ -1890,7 +1889,7 @@ func (s *S) TestEnsureIndexKey(c *C) {
 	}
 	c.Assert(result1, Equals, expected1)
 
-	result2["v"] = nil, false
+	delete(result2, "v")
 	expected2 := M{
 		"name": "a_1_b_-1",
 		"key":  bson.M{"a": 1, "b": -1},
@@ -1931,7 +1930,7 @@ func (s *S) TestEnsureIndexDropIndex(c *C) {
 	c.Assert(err, Equals, mgo.NotFound)
 
 	err = coll.DropIndex([]string{"a"})
-	c.Assert(err, Matches, "index not found")
+	c.Assert(err, ErrorMatches, "index not found")
 }
 
 func (s *S) TestEnsureIndexCaching(c *C) {
@@ -2126,7 +2125,7 @@ func (s *S) TestMapReduceToCollection(c *C) {
 		Value int
 	}
 	mr := session.DB("mydb").C("mr")
-	err = mr.Find(nil).For(&item, func() os.Error {
+	err = mr.Find(nil).For(&item, func() error {
 		c.Logf("Item: %#v", &item)
 		c.Assert(item.Value, Equals, expected[item.Id])
 		expected[item.Id] = -1
@@ -2168,7 +2167,7 @@ func (s *S) TestMapReduceToOtherDb(c *C) {
 		Value int
 	}
 	mr := session.DB("otherdb").C("mr")
-	err = mr.Find(nil).For(&item, func() os.Error {
+	err = mr.Find(nil).For(&item, func() error {
 		c.Logf("Item: %#v", &item)
 		c.Assert(item.Value, Equals, expected[item.Id])
 		expected[item.Id] = -1

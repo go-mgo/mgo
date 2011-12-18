@@ -33,15 +33,16 @@ package mgo
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"launchpad.net/gobson/bson"
-	"sync"
-	"os"
 	"reflect"
+
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -106,7 +107,7 @@ type Iter struct {
 	gotReply       sync.Cond
 	session        *Session
 	docData        queue
-	err            os.Error
+	err            error
 	op             getMoreOp
 	prefetch       float64
 	limit          int32
@@ -116,7 +117,7 @@ type Iter struct {
 	timedout       bool
 }
 
-var NotFound = os.NewError("Document not found")
+var NotFound = errors.New("Document not found")
 
 const defaultPrefetch = 0.25
 
@@ -167,7 +168,7 @@ const defaultPrefetch = 0.25
 //
 //     http://www.mongodb.org/display/DOCS/Connections
 //
-func Mongo(url string) (session *Session, err os.Error) {
+func Mongo(url string) (session *Session, err error) {
 	servers, auth, options, err := parseURL(url)
 	if err != nil {
 		return nil, err
@@ -185,7 +186,7 @@ func Mongo(url string) (session *Session, err os.Error) {
 			}
 			fallthrough
 		default:
-			err = os.NewError("Unsupported connection URL option: " + k + "=" + v)
+			err = errors.New("Unsupported connection URL option: " + k + "=" + v)
 			return
 		}
 	}
@@ -199,7 +200,7 @@ func Mongo(url string) (session *Session, err os.Error) {
 	return session, nil
 }
 
-func parseURL(url string) (servers []string, auth authInfo, options map[string]string, err os.Error) {
+func parseURL(url string) (servers []string, auth authInfo, options map[string]string, err error) {
 	if strings.HasPrefix(url, "mongodb://") {
 		url = url[10:]
 	}
@@ -208,7 +209,7 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 		for _, pair := range strings.Split(url[c+1:], ";") {
 			l := strings.SplitN(pair, "=", 2)
 			if len(l) != 2 || l[0] == "" || l[1] == "" {
-				err = os.NewError("Connection option must be key=value: " + pair)
+				err = errors.New("Connection option must be key=value: " + pair)
 				return
 			}
 			options[l[0]] = l[1]
@@ -218,7 +219,7 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 	if c := strings.Index(url, "@"); c != -1 {
 		pair := strings.SplitN(url[:c], ":", 2)
 		if len(pair) != 2 || pair[0] == "" {
-			err = os.NewError("Credentials must be provided as user:pass@host")
+			err = errors.New("Credentials must be provided as user:pass@host")
 			return
 		}
 		auth.user = pair[0]
@@ -234,7 +235,7 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 	}
 	if auth.user == "" {
 		if auth.db != "" {
-			err = os.NewError("Database name only makes sense with credentials")
+			err = errors.New("Database name only makes sense with credentials")
 			return
 		}
 	} else if auth.db == "" {
@@ -358,7 +359,7 @@ func (db Database) GridFS(prefix string) *GridFS {
 //     http://www.mongodb.org/display/DOCS/Commands
 //     http://www.mongodb.org/display/DOCS/List+of+Database+CommandSkips
 //
-func (db Database) Run(cmd interface{}, result interface{}) os.Error {
+func (db Database) Run(cmd interface{}, result interface{}) error {
 	if name, ok := cmd.(string); ok {
 		cmd = bson.D{{name, 1}}
 	}
@@ -371,7 +372,7 @@ func (db Database) Run(cmd interface{}, result interface{}) os.Error {
 // closed.
 //
 // Concurrent Login calls will work correctly.
-func (db Database) Login(user, pass string) (err os.Error) {
+func (db Database) Login(user, pass string) (err error) {
 	session := db.Session
 	dbname := db.Name
 
@@ -432,17 +433,17 @@ func (s *Session) LogoutAll() {
 
 // AddUser creates or updates the authentication credentials of user within
 // the database.
-func (db Database) AddUser(user, pass string, readOnly bool) os.Error {
+func (db Database) AddUser(user, pass string, readOnly bool) error {
 	psum := md5.New()
 	psum.Write([]byte(user + ":mongo:" + pass))
-	digest := hex.EncodeToString(psum.Sum())
+	digest := hex.EncodeToString(psum.Sum(nil))
 	c := db.C("system.users")
 	_, err := c.Upsert(bson.M{"user": user}, bson.M{"$set": bson.M{"user": user, "pwd": digest, "readOnly": readOnly}})
 	return err
 }
 
 // RemoveUser removes the authentication credentials of user from the database.
-func (db Database) RemoveUser(user string) os.Error {
+func (db Database) RemoveUser(user string) error {
 	c := db.C("system.users")
 	return c.Remove(bson.M{"user": user})
 }
@@ -469,7 +470,7 @@ type Index struct {
 	Bits, Min, Max int // Properties for spatial indexes
 }
 
-func parseIndexKey(key []string) (name string, realKey bson.D, err os.Error) {
+func parseIndexKey(key []string) (name string, realKey bson.D, err error) {
 	var order interface{}
 	for _, field := range key {
 		if name != "" {
@@ -494,12 +495,12 @@ func parseIndexKey(key []string) (name string, realKey bson.D, err os.Error) {
 			}
 		}
 		if field == "" {
-			return "", nil, os.NewError("Invalid index key: empty field name")
+			return "", nil, errors.New("Invalid index key: empty field name")
 		}
 		realKey = append(realKey, bson.DocElem{field, order})
 	}
 	if name == "" {
-		return "", nil, os.NewError("Invalid index key: no fields provided")
+		return "", nil, errors.New("Invalid index key: no fields provided")
 	}
 	return
 }
@@ -516,7 +517,7 @@ func parseIndexKey(key []string) (name string, realKey bson.D, err os.Error) {
 //     err := collection.EnsureIndex(mgo.Index{Key: []string{"a", "b"}})
 //
 // See the EnsureIndex method for more details.
-func (c Collection) EnsureIndexKey(key []string) os.Error {
+func (c Collection) EnsureIndexKey(key []string) error {
 	return c.EnsureIndex(Index{Key: key})
 }
 
@@ -581,7 +582,7 @@ func (c Collection) EnsureIndexKey(key []string) os.Error {
 //     http://www.mongodb.org/display/DOCS/Geospatial+Indexing
 //     http://www.mongodb.org/display/DOCS/Multikeys
 //
-func (c Collection) EnsureIndex(index Index) os.Error {
+func (c Collection) EnsureIndex(index Index) error {
 	name, realKey, err := parseIndexKey(index.Key)
 	if err != nil {
 		return err
@@ -631,7 +632,7 @@ func (c Collection) EnsureIndex(index Index) os.Error {
 //     err := collection.DropIndex([]string{"lastname", "firstname"})
 //
 // See the EnsureIndex method for more details on indexes.
-func (c Collection) DropIndex(key []string) os.Error {
+func (c Collection) DropIndex(key []string) error {
 	name, _, err := parseIndexKey(key)
 	if err != nil {
 		return err
@@ -657,7 +658,7 @@ func (c Collection) DropIndex(key []string) os.Error {
 		return err
 	}
 	if !result.Ok {
-		return os.NewError(result.ErrMsg)
+		return errors.New(result.ErrMsg)
 	}
 	return nil
 }
@@ -678,7 +679,7 @@ func (c Collection) DropIndex(key []string) os.Error {
 //   }
 //
 // See the EnsureIndex method for more details on indexes.
-func (c Collection) Indexes() (indexes []Index, err os.Error) {
+func (c Collection) Indexes() (indexes []Index, err error) {
 	query := c.DB.C("system.indexes").Find(bson.M{"ns": c.FullName})
 	iter := query.Sort(bson.D{{"name", 1}}).Iter()
 	for {
@@ -1095,12 +1096,12 @@ func (s *Session) ensureSafe(safe *Safe) {
 //     http://www.mongodb.org/display/DOCS/Commands
 //     http://www.mongodb.org/display/DOCS/List+of+Database+CommandSkips
 //
-func (s *Session) Run(cmd interface{}, result interface{}) os.Error {
+func (s *Session) Run(cmd interface{}, result interface{}) error {
 	return s.DB("admin").Run(cmd, result)
 }
 
 // Ping runs a trivial ping command just to get in touch with the server.
-func (s *Session) Ping() os.Error {
+func (s *Session) Ping() error {
 	result := struct{}{} // We don't care.
 	return s.Run("ping", &result)
 }
@@ -1146,7 +1147,7 @@ type LastError struct {
 	UpsertedId      interface{} "upserted"
 }
 
-func (err *LastError) String() string {
+func (err *LastError) Error() string {
 	return err.Err
 }
 
@@ -1164,7 +1165,7 @@ type QueryError struct {
 	Assertion bool
 }
 
-func (err *QueryError) String() string {
+func (err *QueryError) Error() string {
 	return err.Message
 }
 
@@ -1172,7 +1173,7 @@ func (err *QueryError) String() string {
 // case the session is in safe mode (see the SetSafe method) and an error
 // happens while inserting the provided documents, the returned error will
 // be of type *LastError.
-func (c Collection) Insert(docs ...interface{}) os.Error {
+func (c Collection) Insert(docs ...interface{}) error {
 	_, err := c.DB.Session.writeQuery(&insertOp{c.FullName, docs})
 	return err
 }
@@ -1189,7 +1190,7 @@ func (c Collection) Insert(docs ...interface{}) os.Error {
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (c Collection) Update(selector interface{}, change interface{}) os.Error {
+func (c Collection) Update(selector interface{}, change interface{}) error {
 	lerr, err := c.DB.Session.writeQuery(&updateOp{c.FullName, selector, change, 0})
 	if err == nil && lerr != nil && !lerr.Updated {
 		return NotFound
@@ -1214,7 +1215,7 @@ type idType struct {
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (c Collection) UpdateAll(selector interface{}, change interface{}) os.Error {
+func (c Collection) UpdateAll(selector interface{}, change interface{}) error {
 	lerr, err := c.DB.Session.writeQuery(&updateOp{c.FullName, selector, change, 2})
 	if err == nil && lerr != nil && !lerr.Updated {
 		return NotFound
@@ -1235,7 +1236,7 @@ func (c Collection) UpdateAll(selector interface{}, change interface{}) os.Error
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (c Collection) Upsert(selector interface{}, change interface{}) (id interface{}, err os.Error) {
+func (c Collection) Upsert(selector interface{}, change interface{}) (id interface{}, err error) {
 	data, err := bson.Marshal(change)
 	if err != nil {
 		return nil, err
@@ -1266,7 +1267,7 @@ func (c Collection) Upsert(selector interface{}, change interface{}) (id interfa
 //
 //     http://www.mongodb.org/display/DOCS/Removing
 //
-func (c Collection) Remove(selector interface{}) os.Error {
+func (c Collection) Remove(selector interface{}) error {
 	_, err := c.DB.Session.writeQuery(&deleteOp{c.FullName, selector, 1})
 	return err
 }
@@ -1280,18 +1281,18 @@ func (c Collection) Remove(selector interface{}) os.Error {
 //
 //     http://www.mongodb.org/display/DOCS/Removing
 //
-func (c Collection) RemoveAll(selector interface{}) os.Error {
+func (c Collection) RemoveAll(selector interface{}) error {
 	_, err := c.DB.Session.writeQuery(&deleteOp{c.FullName, selector, 0})
 	return err
 }
 
 // DropDatabase removes the entire database including all of its collections.
-func (db Database) DropDatabase() os.Error {
+func (db Database) DropDatabase() error {
 	return db.Run(bson.D{{"dropDatabase", 1}}, nil)
 }
 
 // DropCollection removes the entire collection including all of its documents.
-func (c Collection) DropCollection() os.Error {
+func (c Collection) DropCollection() error {
 	return c.DB.Run(bson.D{{"drop", c.Name}}, nil)
 }
 
@@ -1418,7 +1419,7 @@ func (q *Query) Sort(order interface{}) *Query {
 //     http://www.mongodb.org/display/DOCS/Optimization
 //     http://www.mongodb.org/display/DOCS/Query+Optimizer
 //     
-func (q *Query) Explain(result interface{}) os.Error {
+func (q *Query) Explain(result interface{}) error {
 	q.m.Lock()
 	clone := &Query{session: q.session, query: q.query}
 	q.m.Unlock()
@@ -1461,7 +1462,7 @@ func (q *Query) Hint(indexKey []string) *Query {
 	return q
 }
 
-func checkQueryError(d []byte) os.Error {
+func checkQueryError(d []byte) error {
 	found := false
 	l := len(d)
 	for i := 0; i < l; i++ {
@@ -1511,7 +1512,7 @@ func checkQueryError(d []byte) os.Error {
 // received document so that any other custom values may be obtained if
 // desired.
 //
-func (q *Query) One(result interface{}) (err os.Error) {
+func (q *Query) One(result interface{}) (err error) {
 	q.m.Lock()
 	session := q.session
 	op := q.op // Copy.
@@ -1580,7 +1581,7 @@ type id struct {
 // 
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
-func (db Database) FindRef(ref DBRef, result interface{}) os.Error {
+func (db Database) FindRef(ref DBRef, result interface{}) error {
 	if ref.DB == "" {
 		return db.C(ref.C).Find(id{ref.ID}).One(result)
 	}
@@ -1597,18 +1598,18 @@ func (db Database) FindRef(ref DBRef, result interface{}) os.Error {
 // 
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
-func (s *Session) FindRef(ref DBRef, result interface{}) os.Error {
+func (s *Session) FindRef(ref DBRef, result interface{}) error {
 	if ref.DB == "" {
-		return os.NewError(fmt.Sprintf("Can't resolve database for %#v", ref))
+		return errors.New(fmt.Sprintf("Can't resolve database for %#v", ref))
 	}
 	return s.DB(ref.DB).C(ref.C).Find(id{ref.ID}).One(result)
 }
 
 // CollectionNames returns the collection names present in database.
-func (db Database) CollectionNames() (names []string, err os.Error) {
+func (db Database) CollectionNames() (names []string, err error) {
 	c := len(db.Name) + 1
 	var result *struct{ Name string }
-	err = db.C("system.namespaces").Find(nil).For(&result, func() os.Error {
+	err = db.C("system.namespaces").Find(nil).For(&result, func() error {
 		if strings.Index(result.Name, "$") < 0 || strings.Index(result.Name, ".oplog.$") >= 0 {
 			names = append(names, result.Name[c:])
 		}
@@ -1629,7 +1630,7 @@ type dbNames struct {
 }
 
 // DatabaseNames returns the names of non-empty databases present in the cluster.
-func (s *Session) DatabaseNames() (names []string, err os.Error) {
+func (s *Session) DatabaseNames() (names []string, err error) {
 	var result dbNames
 	err = s.Run("listDatabases", &result)
 	if err != nil {
@@ -1762,7 +1763,7 @@ func (s *Session) slaveOkFlag() (flag uint32) {
 // In case a resulting document included a field named $err or errmsg, which are
 // standard ways for MongoDB to report an improper query, the returned value has
 // a *QueryError type, and includes the Err message and the Code.
-func (iter *Iter) Err() os.Error {
+func (iter *Iter) Err() error {
 	iter.m.Lock()
 	err := iter.err
 	iter.m.Unlock()
@@ -1806,7 +1807,7 @@ func (iter *Iter) Timeout() bool {
 func (iter *Iter) Next(result interface{}) bool {
 	timeout := int64(-1)
 	if iter.timeout >= 0 {
-		timeout = time.Nanoseconds() + int64(iter.timeout)*1e9
+		timeout = time.Now().UnixNano() + int64(iter.timeout)*1e9
 	}
 
 	iter.m.Lock()
@@ -1814,7 +1815,7 @@ func (iter *Iter) Next(result interface{}) bool {
 	for iter.err == nil && iter.docData.Len() == 0 && (iter.pendingDocs > 0 || iter.op.cursorId != 0) {
 		if iter.pendingDocs == 0 && iter.op.cursorId != 0 {
 			// Tailable cursor exhausted.
-			if timeout >= 0 && time.Nanoseconds() > timeout {
+			if timeout >= 0 && time.Now().UnixNano() > timeout {
 				iter.timedout = true
 				iter.m.Unlock()
 				return false
@@ -1885,7 +1886,7 @@ func (iter *Iter) Next(result interface{}) bool {
 //        panic(iter.Err())
 //    }
 //
-func (iter *Iter) All(result interface{}) os.Error {
+func (iter *Iter) All(result interface{}) error {
 	resultv := reflect.ValueOf(result)
 	if resultv.Kind() != reflect.Ptr || resultv.Elem().Kind() != reflect.Slice {
 		panic("result argument must be a slice address")
@@ -1914,19 +1915,19 @@ func (iter *Iter) All(result interface{}) os.Error {
 }
 
 // All calls All on an Iter for query. See Iter.All.
-func (q *Query) All(result interface{}) os.Error {
+func (q *Query) All(result interface{}) error {
 	return q.Iter().All(result)
 }
 
 // The For method is obsolete and will be removed in a future release.
 // See Iter as an elegant replacement.
-func (q *Query) For(result interface{}, f func() os.Error) os.Error {
+func (q *Query) For(result interface{}, f func() error) error {
 	return q.Iter().For(result, f)
 }
 
 // The For method is obsolete and will be removed in a future release.
 // See Iter as an elegant replacement.
-func (iter *Iter) For(result interface{}, f func() os.Error) (err os.Error) {
+func (iter *Iter) For(result interface{}, f func() error) (err error) {
 	valid := false
 	v := reflect.ValueOf(result)
 	if v.Kind() == reflect.Ptr {
@@ -1980,7 +1981,7 @@ type countCmd struct {
 }
 
 // Count returns the total number of documents in the result set.
-func (q *Query) Count() (n int, err os.Error) {
+func (q *Query) Count() (n int, err error) {
 	q.m.Lock()
 	session := q.session
 	op := q.op
@@ -1989,7 +1990,7 @@ func (q *Query) Count() (n int, err os.Error) {
 
 	c := strings.Index(op.collection, ".")
 	if c < 0 {
-		return 0, os.NewError("Bad collection name: " + op.collection)
+		return 0, errors.New("Bad collection name: " + op.collection)
 	}
 
 	dbname := op.collection[:c]
@@ -2006,7 +2007,7 @@ func (q *Query) Count() (n int, err os.Error) {
 }
 
 // Count returns the total number of documents in the collection.
-func (c Collection) Count() (n int, err os.Error) {
+func (c Collection) Count() (n int, err error) {
 	return c.Find(nil).Count()
 }
 
@@ -2029,7 +2030,7 @@ type distinctCmd struct {
 //
 //     http://www.mongodb.org/display/DOCS/Aggregation
 //
-func (q *Query) Distinct(key string, result interface{}) os.Error {
+func (q *Query) Distinct(key string, result interface{}) error {
 	q.m.Lock()
 	session := q.session
 	op := q.op // Copy.
@@ -2037,7 +2038,7 @@ func (q *Query) Distinct(key string, result interface{}) os.Error {
 
 	c := strings.Index(op.collection, ".")
 	if c < 0 {
-		return os.NewError("Bad collection name: " + op.collection)
+		return errors.New("Bad collection name: " + op.collection)
 	}
 
 	dbname := op.collection[:c]
@@ -2163,7 +2164,7 @@ type MapReduceTime struct {
 //
 //     http://www.mongodb.org/display/DOCS/MapReduce
 //
-func (q *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduceInfo, err os.Error) {
+func (q *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduceInfo, err error) {
 	q.m.Lock()
 	session := q.session
 	op := q.op // Copy.
@@ -2172,7 +2173,7 @@ func (q *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduceInf
 
 	c := strings.Index(op.collection, ".")
 	if c < 0 {
-		return nil, os.NewError("Bad collection name: " + op.collection)
+		return nil, errors.New("Bad collection name: " + op.collection)
 	}
 
 	dbname := op.collection[:c]
@@ -2208,7 +2209,7 @@ func (q *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduceInf
 		return nil, err
 	}
 	if doc.Err != "" {
-		return nil, os.NewError(doc.Err)
+		return nil, errors.New(doc.Err)
 	}
 
 	info = &MapReduceInfo{
@@ -2283,7 +2284,7 @@ type valueResult struct {
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (q *Query) Modify(change Change, result interface{}) (err os.Error) {
+func (q *Query) Modify(change Change, result interface{}) (err error) {
 	q.m.Lock()
 	session := q.session
 	op := q.op // Copy.
@@ -2291,7 +2292,7 @@ func (q *Query) Modify(change Change, result interface{}) (err os.Error) {
 
 	c := strings.Index(op.collection, ".")
 	if c < 0 {
-		return os.NewError("Bad collection name: " + op.collection)
+		return errors.New("Bad collection name: " + op.collection)
 	}
 
 	dbname := op.collection[:c]
@@ -2346,7 +2347,7 @@ type BuildInfo struct {
 
 // BuildInfo retrieves the version and other details about the
 // running MongoDB server.
-func (s *Session) BuildInfo() (info BuildInfo, err os.Error) {
+func (s *Session) BuildInfo() (info BuildInfo, err error) {
 	err = s.Run(bson.D{{"buildInfo", "1"}}, &info)
 	if len(info.VersionArray) == 0 {
 		for _, a := range strings.Split(info.Version, ".") {
@@ -2366,7 +2367,7 @@ func (s *Session) BuildInfo() (info BuildInfo, err os.Error) {
 // ---------------------------------------------------------------------------
 // Internal session handling helpers.
 
-func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, os.Error) {
+func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 
 	// Try to use a previously reserved socket, with a fast read-only lock.
 	s.m.RLock()
@@ -2442,12 +2443,12 @@ func (s *Session) setSocket(socket *mongoSocket) {
 }
 
 func (iter *Iter) replyFunc() replyFunc {
-	return func(err os.Error, op *replyOp, docNum int, docData []byte) {
+	return func(err error, op *replyOp, docNum int, docData []byte) {
 		iter.m.Lock()
 		iter.pendingDocs--
 		if err != nil {
 			iter.err = err
-			debugf("Iter %p received an error: %s", iter, err.String())
+			debugf("Iter %p received an error: %s", iter, err.Error())
 		} else if docNum == -1 {
 			debugf("Iter %p received no documents (cursor=%d).", iter, op.cursorId)
 			if op != nil && op.cursorId != 0 {
@@ -2476,7 +2477,7 @@ func (iter *Iter) replyFunc() replyFunc {
 // by a getLastError command in case the session is in safe mode.  The
 // LastError result is made available in lerr, and if lerr.Err is set it
 // will also be returned as err.
-func (s *Session) writeQuery(op interface{}) (lerr *LastError, err os.Error) {
+func (s *Session) writeQuery(op interface{}) (lerr *LastError, err error) {
 	socket, err := s.acquireSocket(false)
 	if err != nil {
 		return nil, err
@@ -2492,10 +2493,10 @@ func (s *Session) writeQuery(op interface{}) (lerr *LastError, err os.Error) {
 	} else {
 		var mutex sync.Mutex
 		var replyData []byte
-		var replyErr os.Error
+		var replyErr error
 		mutex.Lock()
 		query := *safeOp // Copy the data.
-		query.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
+		query.replyFunc = func(err error, reply *replyOp, docNum int, docData []byte) {
 			replyData = docData
 			replyErr = err
 			mutex.Unlock()

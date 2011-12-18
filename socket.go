@@ -31,13 +31,13 @@
 package mgo
 
 import (
+	"errors"
 	"launchpad.net/gobson/bson"
-	"sync"
 	"net"
-	"os"
+	"sync"
 )
 
-type replyFunc func(err os.Error, reply *replyOp, docNum int, docData []byte)
+type replyFunc func(err error, reply *replyOp, docNum int, docData []byte)
 
 type mongoSocket struct {
 	sync.Mutex
@@ -51,7 +51,7 @@ type mongoSocket struct {
 	logout        []authInfo
 	cachedNonce   string
 	gotNonce      sync.Cond
-	dead          os.Error
+	dead          error
 }
 
 type queryOp struct {
@@ -115,7 +115,7 @@ func newSocket(server *mongoServer, conn *net.TCPConn) *mongoSocket {
 
 // Inform the socket it's being put in use, either right after a
 // connection or after being recycled.
-func (socket *mongoSocket) Acquired(server *mongoServer) os.Error {
+func (socket *mongoSocket) Acquired(server *mongoServer) error {
 	socket.Lock()
 	if socket.server != nil {
 		panic("Attempting to reacquire an owned socket.")
@@ -173,17 +173,17 @@ func (socket *mongoSocket) Release() {
 
 // Close terminates the socket use.
 func (socket *mongoSocket) Close() {
-	socket.kill(os.NewError("Closed explicitly"))
+	socket.kill(errors.New("Closed explicitly"))
 }
 
-func (socket *mongoSocket) kill(err os.Error) {
+func (socket *mongoSocket) kill(err error) {
 	socket.Lock()
 	if socket.dead != nil {
-		debugf("Socket %p to %s: killed again: %s (previously: %s)", socket, socket.addr, err.String(), socket.dead.String())
+		debugf("Socket %p to %s: killed again: %s (previously: %s)", socket, socket.addr, err.Error(), socket.dead.Error())
 		socket.Unlock()
 		return
 	}
-	logf("Socket %p to %s: closing: %s", socket, socket.addr, err.String())
+	logf("Socket %p to %s: closing: %s", socket, socket.addr, err.Error())
 	socket.dead = err
 	socket.conn.Close()
 	stats.socketsAlive(-1)
@@ -191,17 +191,17 @@ func (socket *mongoSocket) kill(err os.Error) {
 	socket.replyFuncs = make(map[uint32]replyFunc)
 	socket.Unlock()
 	for _, f := range replyFuncs {
-		logf("Socket %p to %s: notifying replyFunc of closed socket: %s", socket, socket.addr, err.String())
+		logf("Socket %p to %s: notifying replyFunc of closed socket: %s", socket, socket.addr, err.Error())
 		f(err, nil, -1, nil)
 	}
 }
 
-func (socket *mongoSocket) SimpleQuery(op *queryOp) (data []byte, err os.Error) {
+func (socket *mongoSocket) SimpleQuery(op *queryOp) (data []byte, err error) {
 	var mutex sync.Mutex
 	var replyData []byte
-	var replyErr os.Error
+	var replyErr error
 	mutex.Lock()
-	op.replyFunc = func(err os.Error, reply *replyOp, docNum int, docData []byte) {
+	op.replyFunc = func(err error, reply *replyOp, docNum int, docData []byte) {
 		replyData = docData
 		replyErr = err
 		mutex.Unlock()
@@ -217,7 +217,7 @@ func (socket *mongoSocket) SimpleQuery(op *queryOp) (data []byte, err os.Error) 
 	return replyData, nil
 }
 
-func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
+func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 
 	if lops := socket.flushLogout(); len(lops) > 0 {
 		ops = append(lops, ops...)
@@ -322,7 +322,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
 	socket.Lock()
 	if socket.dead != nil {
 		socket.Unlock()
-		debug("Socket %p to %s: failing query, already closed: %s", socket, socket.addr, socket.dead.String())
+		debug("Socket %p to %s: failing query, already closed: %s", socket, socket.addr, socket.dead.Error())
 		// XXX This seems necessary in case the session is closed concurrently
 		// with a query being performed, but it's not yet tested:
 		for i := 0; i != requestCount; i++ {
@@ -355,7 +355,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err os.Error) {
 	return err
 }
 
-func fill(r *net.TCPConn, b []byte) os.Error {
+func fill(r *net.TCPConn, b []byte) error {
 	l := len(b)
 	n, err := r.Read(b)
 	for n != l && err == nil {
@@ -369,8 +369,8 @@ func fill(r *net.TCPConn, b []byte) os.Error {
 // Estimated minimum cost per socket: 1 goroutine + memory for the largest
 // document ever seen.
 func (socket *mongoSocket) readLoop() {
-	p := [36]byte{}[:] // 16 from header + 20 from OP_REPLY fixed fields
-	s := [4]byte{}[:]
+	p := make([]byte, 36) // 16 from header + 20 from OP_REPLY fixed fields
+	s := make([]byte, 4)
 	conn := socket.conn // No locking, conn never changes.
 	for {
 		// XXX Handle timeouts, , etc
@@ -390,7 +390,7 @@ func (socket *mongoSocket) readLoop() {
 		_ = totalLen
 
 		if opCode != 1 {
-			socket.kill(os.NewError("opcode != 1, corrupted data?"))
+			socket.kill(errors.New("opcode != 1, corrupted data?"))
 			return
 		}
 
@@ -450,7 +450,7 @@ func (socket *mongoSocket) readLoop() {
 		// Only remove replyFunc after iteration, so that kill() will see it.
 		socket.Lock()
 		if replyFuncFound {
-			socket.replyFuncs[uint32(responseTo)] = replyFunc, false
+			delete(socket.replyFuncs, uint32(responseTo))
 		}
 		socket.Unlock()
 
@@ -484,7 +484,7 @@ func addCString(b []byte, s string) []byte {
 	return b
 }
 
-func addBSON(b []byte, doc interface{}) ([]byte, os.Error) {
+func addBSON(b []byte, doc interface{}) ([]byte, error) {
 	if doc == nil {
 		return append(b, 5, 0, 0, 0, 0), nil
 	}

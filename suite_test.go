@@ -31,13 +31,14 @@
 package mgo_test
 
 import (
-	"exec"
+	"errors"
 	"flag"
 	"fmt"
-	. "launchpad.net/gocheck"
 	"launchpad.net/gobson/bson"
+	. "launchpad.net/gocheck"
 	"launchpad.net/mgo"
-	"os"
+	"os/exec"
+
 	"strings"
 	"testing"
 	"time"
@@ -49,13 +50,12 @@ type M bson.M
 
 type cLogger C
 
-func (c *cLogger) Output(calldepth int, s string) os.Error {
-	ns := time.Nanoseconds()
+func (c *cLogger) Output(calldepth int, s string) error {
+	ns := time.Now().UnixNano()
 	t := float64(ns%100e9) / 1e9
 	((*C)(c)).Logf("[LOG] %.05f %s", t, s)
 	return nil
 }
-
 
 func TestAll(t *testing.T) {
 	TestingT(t)
@@ -77,7 +77,7 @@ func (s *S) SetUpSuite(c *C) {
 func (s *S) SetUpTest(c *C) {
 	err := run("mongo --nodb testdb/dropall.js")
 	if err != nil {
-		panic(err.String())
+		panic(err.Error())
 	}
 	mgo.SetLogger((*cLogger)(c))
 	mgo.ResetStats()
@@ -103,7 +103,7 @@ func (s *S) TearDownTest(c *C) {
 func (s *S) Stop(host string) {
 	err := run("cd _testdb && supervisorctl stop " + supvName(host))
 	if err != nil {
-		panic(err.String())
+		panic(err.Error())
 	}
 	s.stopped = true
 }
@@ -113,16 +113,16 @@ func (s *S) StartAll() {
 	run("cd _testdb && supervisorctl start all")
 	err := run("cd testdb && mongo --nodb wait.js")
 	if err != nil {
-		panic(err.String())
+		panic(err.Error())
 	}
 	s.stopped = false
 }
 
-func run(command string) os.Error {
+func run(command string) error {
 	output, err := exec.Command("/bin/sh", "-c", command).CombinedOutput()
 	if err != nil {
-		msg := fmt.Sprintf("Failed to execute: %s: %s\n%s", command, err.String(), string(output))
-		return os.NewError(msg)
+		msg := fmt.Sprintf("Failed to execute: %s: %s\n%s", command, err.Error(), string(output))
+		return errors.New(msg)
 	}
 	return nil
 }
