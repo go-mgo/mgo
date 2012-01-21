@@ -117,7 +117,7 @@ var NotFound = errors.New("Document not found")
 
 const defaultPrefetch = 0.25
 
-// Mongo establishes a new session to the cluster identified by the given seed
+// Dial establishes a new session to the cluster identified by the given seed
 // server(s).  The session will enable communication with all of the servers in
 // the cluster, so the seed servers are used only to find out about the cluster
 // topology.
@@ -164,7 +164,7 @@ const defaultPrefetch = 0.25
 //
 //     http://www.mongodb.org/display/DOCS/Connections
 //
-func Mongo(url string) (session *Session, err error) {
+func Dial(url string) (session *Session, err error) {
 	servers, auth, options, err := parseURL(url)
 	if err != nil {
 		return nil, err

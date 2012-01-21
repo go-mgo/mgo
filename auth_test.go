@@ -33,7 +33,7 @@ import (
 )
 
 func (s *S) TestAuthLogin(c *C) {
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -54,7 +54,7 @@ func (s *S) TestAuthLogin(c *C) {
 }
 
 func (s *S) TestAuthLoginLogout(c *C) {
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -78,7 +78,7 @@ func (s *S) TestAuthLoginLogout(c *C) {
 }
 
 func (s *S) TestAuthLoginLogoutAll(c *C) {
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -102,7 +102,7 @@ func (s *S) TestAuthLoginLogoutAll(c *C) {
 }
 
 func (s *S) TestAuthAddUser(c *C) {
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -133,7 +133,7 @@ func (s *S) TestAuthAddUser(c *C) {
 }
 
 func (s *S) TestAuthAddUserReplaces(c *C) {
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -160,7 +160,7 @@ func (s *S) TestAuthAddUserReplaces(c *C) {
 }
 
 func (s *S) TestAuthRemoveUser(c *C) {
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -179,7 +179,7 @@ func (s *S) TestAuthRemoveUser(c *C) {
 }
 
 func (s *S) TestAuthLoginTwiceDoesNothing(c *C) {
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -197,7 +197,7 @@ func (s *S) TestAuthLoginTwiceDoesNothing(c *C) {
 }
 
 func (s *S) TestAuthLoginLogoutLoginDoesNothing(c *C) {
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -216,7 +216,7 @@ func (s *S) TestAuthLoginLogoutLoginDoesNothing(c *C) {
 }
 
 func (s *S) TestAuthLoginSwitchUser(c *C) {
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -243,7 +243,7 @@ func (s *S) TestAuthLoginSwitchUser(c *C) {
 }
 
 func (s *S) TestAuthLoginChangePassword(c *C) {
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -272,7 +272,7 @@ func (s *S) TestAuthLoginChangePassword(c *C) {
 }
 
 func (s *S) TestAuthLoginCachingWithSessionRefresh(c *C) {
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -288,7 +288,7 @@ func (s *S) TestAuthLoginCachingWithSessionRefresh(c *C) {
 }
 
 func (s *S) TestAuthLoginCachingWithSessionCopy(c *C) {
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -305,7 +305,7 @@ func (s *S) TestAuthLoginCachingWithSessionCopy(c *C) {
 }
 
 func (s *S) TestAuthLoginCachingWithSessionClone(c *C) {
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -322,7 +322,7 @@ func (s *S) TestAuthLoginCachingWithSessionClone(c *C) {
 }
 
 func (s *S) TestAuthLoginCachingWithNewSession(c *C) {
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -342,7 +342,7 @@ func (s *S) TestAuthLoginCachingAcrossPool(c *C) {
 	// Logins are cached even when the conenction goes back
 	// into the pool.
 
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -393,7 +393,7 @@ func (s *S) TestAuthLoginCachingAcrossPoolWithLogout(c *C) {
 	// Now verify that logouts are properly flushed if they
 	// are not revalidated after leaving the pool.
 
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -444,7 +444,7 @@ func (s *S) TestAuthLoginCachingAcrossPoolWithLogout(c *C) {
 func (s *S) TestAuthEventual(c *C) {
 	// Eventual sessions don't keep sockets around, so they are
 	// an interesting test case.
-	session, err := mgo.Mongo("localhost:40002")
+	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -480,7 +480,7 @@ func (s *S) TestAuthEventual(c *C) {
 }
 
 func (s *S) TestAuthURL(c *C) {
-	session, err := mgo.Mongo("mongodb://root:rapadura@localhost:40002/")
+	session, err := mgo.Dial("mongodb://root:rapadura@localhost:40002/")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -489,7 +489,7 @@ func (s *S) TestAuthURL(c *C) {
 }
 
 func (s *S) TestAuthURLWrongCredentials(c *C) {
-	session, err := mgo.Mongo("mongodb://root:wrong@localhost:40002/")
+	session, err := mgo.Dial("mongodb://root:wrong@localhost:40002/")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -500,7 +500,7 @@ func (s *S) TestAuthURLWrongCredentials(c *C) {
 func (s *S) TestAuthURLWithNewSession(c *C) {
 	// When authentication is in the URL, the new session will
 	// actually carry it on as well, even if logged out explicitly.
-	session, err := mgo.Mongo("mongodb://root:rapadura@localhost:40002/")
+	session, err := mgo.Dial("mongodb://root:rapadura@localhost:40002/")
 	c.Assert(err, IsNil)
 	defer session.Close()
 

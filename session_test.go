@@ -42,7 +42,7 @@ import (
 // single connection was established.
 func (s *S) TestTopologySyncWithSingleMaster(c *C) {
 	// Use hostname here rather than IP, to make things trickier.
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -66,7 +66,7 @@ func (s *S) TestTopologySyncWithSingleMaster(c *C) {
 func (s *S) TestTopologySyncWithSlaveSeed(c *C) {
 	// That's supposed to be a slave. Must run discovery
 	// and find out master to insert successfully.
-	session, err := mgo.Mongo("localhost:40012")
+	session, err := mgo.Dial("localhost:40012")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -95,7 +95,7 @@ func (s *S) TestTopologySyncWithSlaveSeed(c *C) {
 }
 
 func (s *S) TestRunString(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -106,7 +106,7 @@ func (s *S) TestRunString(c *C) {
 }
 
 func (s *S) TestRunValue(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -117,7 +117,7 @@ func (s *S) TestRunValue(c *C) {
 }
 
 func (s *S) TestPing(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -137,7 +137,7 @@ func (s *S) TestPing(c *C) {
 }
 
 func (s *S) TestURLSingle(c *C) {
-	session, err := mgo.Mongo("mongodb://localhost:40001/")
+	session, err := mgo.Dial("mongodb://localhost:40001/")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -148,7 +148,7 @@ func (s *S) TestURLSingle(c *C) {
 }
 
 func (s *S) TestURLMany(c *C) {
-	session, err := mgo.Mongo("mongodb://localhost:40011,localhost:40012/")
+	session, err := mgo.Dial("mongodb://localhost:40011,localhost:40012/")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -159,7 +159,7 @@ func (s *S) TestURLMany(c *C) {
 }
 
 func (s *S) TestInsertFindOne(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -175,7 +175,7 @@ func (s *S) TestInsertFindOne(c *C) {
 }
 
 func (s *S) TestInsertFindOneMap(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -189,7 +189,7 @@ func (s *S) TestInsertFindOneMap(c *C) {
 }
 
 func (s *S) TestInsertFindAll(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -233,7 +233,7 @@ func (s *S) TestInsertFindAll(c *C) {
 }
 
 func (s *S) TestFindRef(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -276,7 +276,7 @@ func (s *S) TestFindRef(c *C) {
 }
 
 func (s *S) TestDatabaseAndCollectionNames(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -305,7 +305,7 @@ func (s *S) TestDatabaseAndCollectionNames(c *C) {
 }
 
 func (s *S) TestSelect(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -321,7 +321,7 @@ func (s *S) TestSelect(c *C) {
 }
 
 func (s *S) TestUpdate(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -349,7 +349,7 @@ func (s *S) TestUpdate(c *C) {
 }
 
 func (s *S) TestUpdateNil(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -380,7 +380,7 @@ func (s *S) TestUpdateNil(c *C) {
 }
 
 func (s *S) TestUpsert(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -428,7 +428,7 @@ func (s *S) TestUpsert(c *C) {
 }
 
 func (s *S) TestUpdateAll(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -461,7 +461,7 @@ func (s *S) TestUpdateAll(c *C) {
 }
 
 func (s *S) TestRemove(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -490,7 +490,7 @@ func (s *S) TestRemove(c *C) {
 }
 
 func (s *S) TestRemoveAll(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -518,7 +518,7 @@ func (s *S) TestRemoveAll(c *C) {
 }
 
 func (s *S) TestDropDatabase(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -544,7 +544,7 @@ func (s *S) TestDropDatabase(c *C) {
 }
 
 func (s *S) TestDropCollection(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -568,7 +568,7 @@ func (s *S) TestDropCollection(c *C) {
 }
 
 func (s *S) TestFindAndModify(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -609,7 +609,7 @@ func (s *S) TestFindAndModify(c *C) {
 }
 
 func (s *S) TestCountCollection(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -627,7 +627,7 @@ func (s *S) TestCountCollection(c *C) {
 }
 
 func (s *S) TestCountQuery(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -645,7 +645,7 @@ func (s *S) TestCountQuery(c *C) {
 }
 
 func (s *S) TestCountQuerySorted(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -663,7 +663,7 @@ func (s *S) TestCountQuerySorted(c *C) {
 }
 
 func (s *S) TestCountSkipLimit(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -685,7 +685,7 @@ func (s *S) TestCountSkipLimit(c *C) {
 }
 
 func (s *S) TestQueryExplain(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -716,7 +716,7 @@ func (s *S) TestQueryExplain(c *C) {
 }
 
 func (s *S) TestQueryHint(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -731,7 +731,7 @@ func (s *S) TestQueryHint(c *C) {
 }
 
 func (s *S) TestFindOneNotFound(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -745,7 +745,7 @@ func (s *S) TestFindOneNotFound(c *C) {
 }
 
 func (s *S) TestFindNil(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -760,7 +760,7 @@ func (s *S) TestFindNil(c *C) {
 }
 
 func (s *S) TestFindIterAll(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -802,7 +802,7 @@ func (s *S) TestFindIterAll(c *C) {
 }
 
 func (s *S) TestFindIterTwiceWithSameQuery(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -827,7 +827,7 @@ func (s *S) TestFindIterTwiceWithSameQuery(c *C) {
 }
 
 func (s *S) TestFindIterWithoutResults(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -844,7 +844,7 @@ func (s *S) TestFindIterWithoutResults(c *C) {
 }
 
 func (s *S) TestFindIterLimit(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -883,7 +883,7 @@ func (s *S) TestFindIterLimit(c *C) {
 }
 
 func (s *S) TestFindIterLimitWithBatch(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -928,7 +928,7 @@ func (s *S) TestFindIterLimitWithBatch(c *C) {
 }
 
 func (s *S) TestFindIterSortWithBatch(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -985,7 +985,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 		c.Skip("-fast")
 	}
 
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1079,7 +1079,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 // Test tailable cursors in a situation where Next never gets to sleep once
 // to respect the timeout requested on Tail.
 func (s *S) TestFindTailTimeoutNoSleep(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1176,7 +1176,7 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 		c.Skip("-fast")
 	}
 
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1271,7 +1271,7 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 }
 
 func (s *S) TestFindForOnIter(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1313,7 +1313,7 @@ func (s *S) TestFindForOnIter(c *C) {
 }
 
 func (s *S) TestFindFor(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1354,7 +1354,7 @@ func (s *S) TestFindFor(c *C) {
 }
 
 func (s *S) TestFindForStopOnError(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1381,7 +1381,7 @@ func (s *S) TestFindForStopOnError(c *C) {
 }
 
 func (s *S) TestFindForResetsResult(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1451,7 +1451,7 @@ func (s *S) TestFindForResetsResult(c *C) {
 }
 
 func (s *S) TestSort(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1485,7 +1485,7 @@ func (s *S) TestSort(c *C) {
 }
 
 func (s *S) TestPrefetching(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1545,7 +1545,7 @@ func (s *S) TestPrefetching(c *C) {
 }
 
 func (s *S) TestSafeSetting(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1638,7 +1638,7 @@ func (s *S) TestSafeSetting(c *C) {
 }
 
 func (s *S) TestSafeInsert(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1672,7 +1672,7 @@ func (s *S) TestSafeInsert(c *C) {
 }
 
 func (s *S) TestSafeParameters(c *C) {
-	session, err := mgo.Mongo("localhost:40011")
+	session, err := mgo.Dial("localhost:40011")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1686,7 +1686,7 @@ func (s *S) TestSafeParameters(c *C) {
 }
 
 func (s *S) TestQueryErrorOne(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1706,7 +1706,7 @@ func (s *S) TestQueryErrorOne(c *C) {
 }
 
 func (s *S) TestQueryErrorNext(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1731,7 +1731,7 @@ func (s *S) TestQueryErrorNext(c *C) {
 }
 
 func (s *S) TestEnsureIndex(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1816,7 +1816,7 @@ func (s *S) TestEnsureIndex(c *C) {
 }
 
 func (s *S) TestEnsureIndexWithBadInfo(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1830,7 +1830,7 @@ func (s *S) TestEnsureIndexWithBadInfo(c *C) {
 }
 
 func (s *S) TestEnsureIndexWithUnsafeSession(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1855,7 +1855,7 @@ func (s *S) TestEnsureIndexWithUnsafeSession(c *C) {
 }
 
 func (s *S) TestEnsureIndexKey(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1895,7 +1895,7 @@ func (s *S) TestEnsureIndexKey(c *C) {
 }
 
 func (s *S) TestEnsureIndexDropIndex(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1930,7 +1930,7 @@ func (s *S) TestEnsureIndexDropIndex(c *C) {
 }
 
 func (s *S) TestEnsureIndexCaching(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1971,7 +1971,7 @@ func (s *S) TestEnsureIndexCaching(c *C) {
 }
 
 func (s *S) TestEnsureIndexGetIndexes(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -1998,7 +1998,7 @@ func (s *S) TestEnsureIndexGetIndexes(c *C) {
 }
 
 func (s *S) TestDistinct(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -2016,7 +2016,7 @@ func (s *S) TestDistinct(c *C) {
 }
 
 func (s *S) TestMapReduce(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -2058,7 +2058,7 @@ func (s *S) TestMapReduce(c *C) {
 }
 
 func (s *S) TestMapReduceFinalize(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -2089,7 +2089,7 @@ func (s *S) TestMapReduceFinalize(c *C) {
 }
 
 func (s *S) TestMapReduceToCollection(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -2131,7 +2131,7 @@ func (s *S) TestMapReduceToCollection(c *C) {
 }
 
 func (s *S) TestMapReduceToOtherDb(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -2173,7 +2173,7 @@ func (s *S) TestMapReduceToOtherDb(c *C) {
 }
 
 func (s *S) TestMapReduceScope(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -2194,7 +2194,7 @@ func (s *S) TestMapReduceScope(c *C) {
 }
 
 func (s *S) TestMapReduceVerbose(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -2216,7 +2216,7 @@ func (s *S) TestMapReduceVerbose(c *C) {
 }
 
 func (s *S) TestMapReduceLimit(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -2238,7 +2238,7 @@ func (s *S) TestMapReduceLimit(c *C) {
 }
 
 func (s *S) TestBuildInfo(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 

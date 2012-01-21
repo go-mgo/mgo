@@ -35,7 +35,7 @@ import (
 )
 
 func (s *S) TestNewSession(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -89,7 +89,7 @@ func (s *S) TestNewSession(c *C) {
 }
 
 func (s *S) TestCloneSession(c *C) {
-	session, err := mgo.Mongo("localhost:40001")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -154,7 +154,7 @@ func (s *S) TestCloneSession(c *C) {
 }
 
 func (s *S) TestSetModeStrong(c *C) {
-	session, err := mgo.Mongo("localhost:40012")
+	session, err := mgo.Dial("localhost:40012")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -193,7 +193,7 @@ func (s *S) TestSetModeStrong(c *C) {
 func (s *S) TestSetModeMonotonic(c *C) {
 	// Must necessarily connect to a slave, otherwise the
 	// master connection will be available first.
-	session, err := mgo.Mongo("localhost:40012")
+	session, err := mgo.Dial("localhost:40012")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -237,7 +237,7 @@ func (s *S) TestSetModeMonotonicAfterStrong(c *C) {
 	// Test that a strong session shifting to a monotonic
 	// one preserves the socket untouched.
 
-	session, err := mgo.Mongo("localhost:40012")
+	session, err := mgo.Dial("localhost:40012")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -274,7 +274,7 @@ func (s *S) TestSetModeStrongAfterMonotonic(c *C) {
 
 	// Must necessarily connect to a slave, otherwise the
 	// master connection will be available first.
-	session, err := mgo.Mongo("localhost:40012")
+	session, err := mgo.Dial("localhost:40012")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -309,7 +309,7 @@ func (s *S) TestSetModeStrongAfterMonotonic(c *C) {
 func (s *S) TestSetModeEventual(c *C) {
 	// Must necessarily connect to a slave, otherwise the
 	// master connection will be available first.
-	session, err := mgo.Mongo("localhost:40012")
+	session, err := mgo.Dial("localhost:40012")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -347,7 +347,7 @@ func (s *S) TestSetModeEventualAfterStrong(c *C) {
 	// Test that a strong session shifting to an eventual
 	// one preserves the socket untouched.
 
-	session, err := mgo.Mongo("localhost:40012")
+	session, err := mgo.Dial("localhost:40012")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -386,7 +386,7 @@ func (s *S) TestPrimaryShutdownStrong(c *C) {
 		c.Skip("-fast")
 	}
 
-	session, err := mgo.Mongo("localhost:40021")
+	session, err := mgo.Dial("localhost:40021")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -420,7 +420,7 @@ func (s *S) TestPrimaryShutdownMonotonic(c *C) {
 		c.Skip("-fast")
 	}
 
-	session, err := mgo.Mongo("localhost:40021")
+	session, err := mgo.Dial("localhost:40021")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -460,7 +460,7 @@ func (s *S) TestPrimaryShutdownMonotonicWithSlave(c *C) {
 		c.Skip("-fast")
 	}
 
-	session, err := mgo.Mongo("localhost:40021")
+	session, err := mgo.Dial("localhost:40021")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -490,7 +490,7 @@ func (s *S) TestPrimaryShutdownMonotonicWithSlave(c *C) {
 		c.Fatal("Unknown host: ", ssresult.Host)
 	}
 
-	session, err = mgo.Mongo(addr)
+	session, err = mgo.Dial(addr)
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -539,7 +539,7 @@ func (s *S) TestPrimaryShutdownEventual(c *C) {
 		c.Skip("-fast")
 	}
 
-	session, err := mgo.Mongo("localhost:40021")
+	session, err := mgo.Dial("localhost:40021")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -573,7 +573,7 @@ func (s *S) TestPreserveSocketCountOnSync(c *C) {
 		c.Skip("-fast")
 	}
 
-	session, err := mgo.Mongo("localhost:40011")
+	session, err := mgo.Dial("localhost:40011")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -624,7 +624,7 @@ func (s *S) TestSyncTimeout(c *C) {
 	}
 
 	// 40009 isn't used by the test servers.
-	session, err := mgo.Mongo("localhost:40009")
+	session, err := mgo.Dial("localhost:40009")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -643,7 +643,7 @@ func (s *S) TestSyncTimeout(c *C) {
 }
 
 func (s *S) TestDirect(c *C) {
-	session, err := mgo.Mongo("localhost:40012?connect=direct")
+	session, err := mgo.Dial("localhost:40012?connect=direct")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -684,7 +684,7 @@ type OpCounters struct {
 }
 
 func getOpCounters(server string) (c *OpCounters, err error) {
-	session, err := mgo.Mongo(server + "?connect=direct")
+	session, err := mgo.Dial(server + "?connect=direct")
 	if err != nil {
 		return nil, err
 	}
@@ -696,7 +696,7 @@ func getOpCounters(server string) (c *OpCounters, err error) {
 }
 
 func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
-	session, err := mgo.Mongo("localhost:40021")
+	session, err := mgo.Dial("localhost:40021")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -721,7 +721,7 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 
 	// Do a SlaveOk query through MongoS
 
-	mongos, err := mgo.Mongo("localhost:40202")
+	mongos, err := mgo.Dial("localhost:40202")
 	c.Assert(err, IsNil)
 	defer mongos.Close()
 
