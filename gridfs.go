@@ -38,8 +38,8 @@ import (
 )
 
 type GridFS struct {
-	Files  Collection
-	Chunks Collection
+	Files  *Collection
+	Chunks *Collection
 }
 
 type gfsFileMode int
@@ -53,7 +53,7 @@ const (
 type GridFile struct {
 	m    sync.Mutex
 	c    sync.Cond
-	gfs  GridFS
+	gfs  *GridFS
 	mode gfsFileMode
 	err  error
 
@@ -95,11 +95,11 @@ type gfsCachedChunk struct {
 	err  error
 }
 
-func newGridFS(db Database, prefix string) *GridFS {
+func newGridFS(db *Database, prefix string) *GridFS {
 	return &GridFS{db.C(prefix + ".files"), db.C(prefix + ".chunks")}
 }
 
-func (gfs GridFS) newFile() *GridFile {
+func (gfs *GridFS) newFile() *GridFile {
 	file := &GridFile{gfs: gfs}
 	file.c.L = &file.m
 	//runtime.SetFinalizer(file, finalizeFile)
@@ -148,7 +148,7 @@ func finalizeFile(file *GridFile) {
 //     err = file.Close()
 //     check(err)
 //
-func (gfs GridFS) Create(name string) (file *GridFile, err error) {
+func (gfs *GridFS) Create(name string) (file *GridFile, err error) {
 	file = gfs.newFile()
 	file.mode = gfsWriting
 	file.wsum = md5.New()
@@ -192,7 +192,7 @@ func (gfs GridFS) Create(name string) (file *GridFile, err error) {
 //     err = file.Close()
 //     check(err)
 //
-func (gfs GridFS) OpenId(id interface{}) (file *GridFile, err error) {
+func (gfs *GridFS) OpenId(id interface{}) (file *GridFile, err error) {
 	var doc gfsFile
 	err = gfs.Files.Find(bson.M{"_id": id}).One(&doc)
 	if err != nil {
@@ -235,7 +235,7 @@ func (gfs GridFS) OpenId(id interface{}) (file *GridFile, err error) {
 //     err = file.Close()
 //     check(err)
 //
-func (gfs GridFS) Open(name string) (file *GridFile, err error) {
+func (gfs *GridFS) Open(name string) (file *GridFile, err error) {
 	var doc gfsFile
 	err = gfs.Files.Find(bson.M{"filename": name}).Sort(bson.M{"uploadDate": -1}).One(&doc)
 	if err != nil {
@@ -274,7 +274,7 @@ func (gfs GridFS) Open(name string) (file *GridFile, err error) {
 //         panic(iter.Err())
 //     }
 //
-func (gfs GridFS) OpenNext(iter *Iter, file **GridFile) bool {
+func (gfs *GridFS) OpenNext(iter *Iter, file **GridFile) bool {
 	if *file != nil {
 		// Ignoring the error here shouldn't be a big deal
 		// as we're reading the file and the loop iteration
@@ -306,12 +306,12 @@ func (gfs GridFS) OpenNext(iter *Iter, file **GridFile) bool {
 //     files := db.C("fs" + ".files")
 //     iter := files.Find(nil).Iter()
 //    
-func (gfs GridFS) Find(query interface{}) *Query {
+func (gfs *GridFS) Find(query interface{}) *Query {
 	return gfs.Files.Find(query)
 }
 
 // RemoveId deletes the file with the provided id from the GridFS.
-func (gfs GridFS) RemoveId(id interface{}) error {
+func (gfs *GridFS) RemoveId(id interface{}) error {
 	err := gfs.Files.Remove(bson.M{"_id": id})
 	if err != nil {
 		return err
@@ -324,7 +324,7 @@ type gfsDocId struct {
 }
 
 // Remove deletes all files with the provided name from the GridFS.
-func (gfs GridFS) Remove(name string) (err error) {
+func (gfs *GridFS) Remove(name string) (err error) {
 	iter := gfs.Files.Find(bson.M{"filename": name}).Select(bson.M{"_id": 1}).Iter()
 	var doc gfsDocId
 	for iter.Next(&doc) {
@@ -694,11 +694,12 @@ func (file *GridFile) getChunk() (data []byte, err error) {
 		cache = &gfsCachedChunk{n: file.chunk}
 		cache.wait.Lock()
 		debugf("GridFile %p: Scheduling chunk %d for background caching", file, file.chunk)
-		chunks := file.gfs.Chunks
 		// Clone the session to avoid having it closed in between.
-		chunks.DB.Session = chunks.DB.Session.Clone()
+		chunks := file.gfs.Chunks
+		session := chunks.Database.Session.Clone()
 		go func(id interface{}, n int) {
-			defer chunks.DB.Session.Close()
+			defer session.Close()
+			chunks = chunks.With(session)
 			var doc gfsChunk
 			cache.err = chunks.Find(bson.D{{"files_id", id}, {"n", n}}).One(&doc)
 			cache.data = doc.Data

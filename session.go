@@ -33,7 +33,6 @@ import (
 	"fmt"
 	"launchpad.net/mgo/bson"
 	"reflect"
-
 	"runtime"
 	"sort"
 	"strconv"
@@ -73,7 +72,7 @@ type Database struct {
 }
 
 type Collection struct {
-	DB       Database
+	Database *Database
 	Name     string // "collection"
 	FullName string // "db.collection"
 }
@@ -330,27 +329,41 @@ func (s *Session) LiveServers() (addrs []string) {
 	return addrs
 }
 
-// DB returns a database object, which allows further accessing any
-// collections within it, or performing any database-level operations.
+// DB returns a value representing the named database.
+// Creating this value is a very lightweight operation, and involves
+// no network communication.
+func (s *Session) DB(name string) *Database {
+	return &Database{s, name}
+}
+
+// C returns a value representing the named collection.
 // Creating this object is a very lightweight operation, and involves
 // no network communication.
-func (s *Session) DB(name string) Database {
-	return Database{s, name}
+func (db *Database) C(name string) *Collection {
+	return &Collection{db, name, db.Name + "." + name}
 }
 
-// C returns a collection object for the given database, which enables querying
-// and modifying the content contained in the given collection. Creating this
-// object is a very lightweight operation, and involves no network
-// communication.
-func (db Database) C(name string) Collection {
-	return Collection{db, name, db.Name + "." + name}
+// With returns a copy of db that uses session s.
+func (db *Database) With(s *Session) *Database {
+	newdb := *db
+	newdb.Session = s
+	return &newdb
 }
 
-// GridFS returns a GridFS value for interacting with collections in the
-// database which follow the standard GridFS specification.  The provided
-// prefix (sometimes known as root) will determine which collections to
-// use, and is usually set to "fs" when there is a single GridFS in the
-// database.
+// With returns a copy of c that uses session s.
+func (c *Collection) With(s *Session) *Collection {
+	newdb := *c.Database
+	newdb.Session = s
+	newc := *c
+	newc.Database = &newdb
+	return &newc
+}
+
+// GridFS returns a GridFS value representing collections in db that
+// follow the standard GridFS specification.
+// The provided prefix (sometimes known as root) will determine which
+// collections to use, and is usually set to "fs" when there is a
+// single GridFS in the database.
 //
 // See the GridFS Create, Open, and OpenId methods for more details.
 //
@@ -360,7 +373,7 @@ func (db Database) C(name string) Collection {
 //     http://www.mongodb.org/display/DOCS/GridFS+Tools
 //     http://www.mongodb.org/display/DOCS/GridFS+Specification
 //
-func (db Database) GridFS(prefix string) *GridFS {
+func (db *Database) GridFS(prefix string) *GridFS {
 	return newGridFS(db, prefix)
 }
 
@@ -384,7 +397,7 @@ func (db Database) GridFS(prefix string) *GridFS {
 //     http://www.mongodb.org/display/DOCS/Commands
 //     http://www.mongodb.org/display/DOCS/List+of+Database+CommandSkips
 //
-func (db Database) Run(cmd interface{}, result interface{}) error {
+func (db *Database) Run(cmd interface{}, result interface{}) error {
 	if name, ok := cmd.(string); ok {
 		cmd = bson.D{{name, 1}}
 	}
@@ -397,7 +410,7 @@ func (db Database) Run(cmd interface{}, result interface{}) error {
 // closed.
 //
 // Concurrent Login calls will work correctly.
-func (db Database) Login(user, pass string) (err error) {
+func (db *Database) Login(user, pass string) (err error) {
 	session := db.Session
 	dbname := db.Name
 
@@ -427,7 +440,7 @@ func (db Database) Login(user, pass string) (err error) {
 }
 
 // Logout removes any established authentication credentials for the database.
-func (db Database) Logout() {
+func (db *Database) Logout() {
 	session := db.Session
 	dbname := db.Name
 	session.m.Lock()
@@ -458,7 +471,7 @@ func (s *Session) LogoutAll() {
 
 // AddUser creates or updates the authentication credentials of user within
 // the database.
-func (db Database) AddUser(user, pass string, readOnly bool) error {
+func (db *Database) AddUser(user, pass string, readOnly bool) error {
 	psum := md5.New()
 	psum.Write([]byte(user + ":mongo:" + pass))
 	digest := hex.EncodeToString(psum.Sum(nil))
@@ -468,7 +481,7 @@ func (db Database) AddUser(user, pass string, readOnly bool) error {
 }
 
 // RemoveUser removes the authentication credentials of user from the database.
-func (db Database) RemoveUser(user string) error {
+func (db *Database) RemoveUser(user string) error {
 	c := db.C("system.users")
 	return c.Remove(bson.M{"user": user})
 }
@@ -542,7 +555,7 @@ func parseIndexKey(key []string) (name string, realKey bson.D, err error) {
 //     err := collection.EnsureIndex(mgo.Index{Key: []string{"a", "b"}})
 //
 // See the EnsureIndex method for more details.
-func (c Collection) EnsureIndexKey(key []string) error {
+func (c *Collection) EnsureIndexKey(key []string) error {
 	return c.EnsureIndex(Index{Key: key})
 }
 
@@ -607,14 +620,13 @@ func (c Collection) EnsureIndexKey(key []string) error {
 //     http://www.mongodb.org/display/DOCS/Geospatial+Indexing
 //     http://www.mongodb.org/display/DOCS/Multikeys
 //
-func (c Collection) EnsureIndex(index Index) error {
+func (c *Collection) EnsureIndex(index Index) error {
 	name, realKey, err := parseIndexKey(index.Key)
 	if err != nil {
 		return err
 	}
 
-	db := c.DB
-	session := db.Session
+	session := c.Database.Session
 	cacheKey := c.FullName + "\x00" + name
 	if session.cluster().HasCachedIndex(cacheKey) {
 		return nil
@@ -638,11 +650,12 @@ func (c Collection) EnsureIndex(index Index) error {
 	session.SetMode(Strong, false)
 	session.EnsureSafe(&Safe{})
 
-	db.Session = session
+	db := c.Database.With(session)
 	err = db.C("system.indexes").Insert(&spec)
 	if err == nil {
 		session.cluster().CacheIndex(cacheKey, true)
 	}
+	session.Close()
 	return err
 }
 
@@ -657,14 +670,13 @@ func (c Collection) EnsureIndex(index Index) error {
 //     err := collection.DropIndex([]string{"lastname", "firstname"})
 //
 // See the EnsureIndex method for more details on indexes.
-func (c Collection) DropIndex(key []string) error {
+func (c *Collection) DropIndex(key []string) error {
 	name, _, err := parseIndexKey(key)
 	if err != nil {
 		return err
 	}
 
-	db := c.DB
-	session := db.Session
+	session := c.Database.Session
 	cacheKey := c.FullName + "\x00" + name
 	session.cluster().CacheIndex(cacheKey, false)
 
@@ -672,8 +684,7 @@ func (c Collection) DropIndex(key []string) error {
 	defer session.Close()
 	session.SetMode(Strong, false)
 
-	db.Session = session
-	defer db.Session.Close()
+	db := c.Database.With(session)
 	result := struct {
 		ErrMsg string
 		Ok     bool
@@ -704,8 +715,8 @@ func (c Collection) DropIndex(key []string) error {
 //   }
 //
 // See the EnsureIndex method for more details on indexes.
-func (c Collection) Indexes() (indexes []Index, err error) {
-	query := c.DB.C("system.indexes").Find(bson.M{"ns": c.FullName})
+func (c *Collection) Indexes() (indexes []Index, err error) {
+	query := c.Database.C("system.indexes").Find(bson.M{"ns": c.FullName})
 	iter := query.Sort(bson.D{{"name", 1}}).Iter()
 	for {
 		var spec indexSpec
@@ -1153,8 +1164,8 @@ func (s *Session) Ping() error {
 //     http://www.mongodb.org/display/DOCS/Querying
 //     http://www.mongodb.org/display/DOCS/Advanced+Queries
 //
-func (c Collection) Find(query interface{}) *Query {
-	session := c.DB.Session
+func (c *Collection) Find(query interface{}) *Query {
+	session := c.Database.Session
 	session.m.RLock()
 	q := &Query{session: session, query: session.queryConfig}
 	session.m.RUnlock()
@@ -1198,8 +1209,8 @@ func (err *QueryError) Error() string {
 // case the session is in safe mode (see the SetSafe method) and an error
 // happens while inserting the provided documents, the returned error will
 // be of type *LastError.
-func (c Collection) Insert(docs ...interface{}) error {
-	_, err := c.DB.Session.writeQuery(&insertOp{c.FullName, docs})
+func (c *Collection) Insert(docs ...interface{}) error {
+	_, err := c.Database.Session.writeQuery(&insertOp{c.FullName, docs})
 	return err
 }
 
@@ -1215,8 +1226,9 @@ func (c Collection) Insert(docs ...interface{}) error {
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (c Collection) Update(selector interface{}, change interface{}) error {
-	lerr, err := c.DB.Session.writeQuery(&updateOp{c.FullName, selector, change, 0})
+func (c *Collection) Update(selector interface{}, change interface{}) error {
+	session := c.Database.Session
+	lerr, err := session.writeQuery(&updateOp{c.FullName, selector, change, 0})
 	if err == nil && lerr != nil && !lerr.Updated {
 		return NotFound
 	}
@@ -1240,8 +1252,9 @@ type idType struct {
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (c Collection) UpdateAll(selector interface{}, change interface{}) error {
-	lerr, err := c.DB.Session.writeQuery(&updateOp{c.FullName, selector, change, 2})
+func (c *Collection) UpdateAll(selector interface{}, change interface{}) error {
+	session := c.Database.Session
+	lerr, err := session.writeQuery(&updateOp{c.FullName, selector, change, 2})
 	if err == nil && lerr != nil && !lerr.Updated {
 		return NotFound
 	}
@@ -1261,13 +1274,14 @@ func (c Collection) UpdateAll(selector interface{}, change interface{}) error {
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (c Collection) Upsert(selector interface{}, change interface{}) (id interface{}, err error) {
+func (c *Collection) Upsert(selector interface{}, change interface{}) (id interface{}, err error) {
 	data, err := bson.Marshal(change)
 	if err != nil {
 		return nil, err
 	}
 	change = bson.Raw{0x03, data}
-	lerr, err := c.DB.Session.writeQuery(&updateOp{c.FullName, selector, change, 1})
+	session := c.Database.Session
+	lerr, err := session.writeQuery(&updateOp{c.FullName, selector, change, 1})
 	if lerr != nil {
 		id = lerr.UpsertedId
 		if id == nil && !lerr.Updated {
@@ -1292,8 +1306,9 @@ func (c Collection) Upsert(selector interface{}, change interface{}) (id interfa
 //
 //     http://www.mongodb.org/display/DOCS/Removing
 //
-func (c Collection) Remove(selector interface{}) error {
-	_, err := c.DB.Session.writeQuery(&deleteOp{c.FullName, selector, 1})
+func (c *Collection) Remove(selector interface{}) error {
+	session := c.Database.Session
+	_, err := session.writeQuery(&deleteOp{c.FullName, selector, 1})
 	return err
 }
 
@@ -1306,19 +1321,20 @@ func (c Collection) Remove(selector interface{}) error {
 //
 //     http://www.mongodb.org/display/DOCS/Removing
 //
-func (c Collection) RemoveAll(selector interface{}) error {
-	_, err := c.DB.Session.writeQuery(&deleteOp{c.FullName, selector, 0})
+func (c *Collection) RemoveAll(selector interface{}) error {
+	session := c.Database.Session
+	_, err := session.writeQuery(&deleteOp{c.FullName, selector, 0})
 	return err
 }
 
 // DropDatabase removes the entire database including all of its collections.
-func (db Database) DropDatabase() error {
+func (db *Database) DropDatabase() error {
 	return db.Run(bson.D{{"dropDatabase", 1}}, nil)
 }
 
 // DropCollection removes the entire collection including all of its documents.
-func (c Collection) DropCollection() error {
-	return c.DB.Run(bson.D{{"drop", c.Name}}, nil)
+func (c *Collection) DropCollection() error {
+	return c.Database.Run(bson.D{{"drop", c.Name}}, nil)
 }
 
 // Batch sets the batch size used when fetching documents from the database.
@@ -1606,7 +1622,7 @@ type id struct {
 // 
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
-func (db Database) FindRef(ref DBRef, result interface{}) error {
+func (db *Database) FindRef(ref DBRef, result interface{}) error {
 	if ref.DB == "" {
 		return db.C(ref.C).Find(id{ref.ID}).One(result)
 	}
@@ -1631,7 +1647,7 @@ func (s *Session) FindRef(ref DBRef, result interface{}) error {
 }
 
 // CollectionNames returns the collection names present in database.
-func (db Database) CollectionNames() (names []string, err error) {
+func (db *Database) CollectionNames() (names []string, err error) {
 	c := len(db.Name) + 1
 	var result *struct{ Name string }
 	err = db.C("system.namespaces").Find(nil).For(&result, func() error {
@@ -2034,7 +2050,7 @@ func (q *Query) Count() (n int, err error) {
 }
 
 // Count returns the total number of documents in the collection.
-func (c Collection) Count() (n int, err error) {
+func (c *Collection) Count() (n int, err error) {
 	return c.Find(nil).Count()
 }
 
