@@ -263,16 +263,16 @@ func (gfs GridFS) Open(name string) (file *GridFile, err error) {
 //
 // For example:
 //
-//    gfs := db.GridFS("fs")
-//    query := gfs.Find(nil).Sort(bson.M{"filename": 1})
-//    iter := query.Iter()
-//    var f *mgo.GridFile
-//    for gfs.OpenNext(iter, &f) {
-//        fmt.Printf("Filename: %s\n", f.Name())
-//    }
-//    if iter.Err() != nil {
-//        panic(iter.Err())
-//    }
+//     gfs := db.GridFS("fs")
+//     query := gfs.Find(nil).Sort(bson.M{"filename": 1})
+//     iter := query.Iter()
+//     var f *mgo.GridFile
+//     for gfs.OpenNext(iter, &f) {
+//         fmt.Printf("Filename: %s\n", f.Name())
+//     }
+//     if iter.Err() != nil {
+//         panic(iter.Err())
+//     }
 //
 func (gfs GridFS) OpenNext(iter *Iter, file **GridFile) bool {
 	if *file != nil {
@@ -291,6 +291,23 @@ func (gfs GridFS) OpenNext(iter *Iter, file **GridFile) bool {
 	f.doc = doc
 	*file = f
 	return true
+}
+
+// Find runs query on GridFS's files collection and returns
+// the resulting Query.
+//
+// This logic:
+//
+//     gfs := db.GridFS("fs")
+//     iter := gfs.Find(nil).Iter()
+//
+// Is equivalent to:
+//
+//     files := db.C("fs" + ".files")
+//     iter := files.Find(nil).Iter()
+//    
+func (gfs GridFS) Find(query interface{}) *Query {
+	return gfs.Files.Find(query)
 }
 
 // RemoveId deletes the file with the provided id from the GridFS.

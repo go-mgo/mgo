@@ -564,11 +564,10 @@ func (s *S) TestGridFSOpenNext(c *C) {
 	file.Write([]byte{'2'})
 	file.Close()
 
-	files := db.C("fs.files")
-	iter := files.Find(nil).Sort(bson.M{"filename": -1}).Iter()
-
 	var f *mgo.GridFile
 	var b [1]byte
+
+	iter := gfs.Find(nil).Sort(bson.M{"filename": -1}).Iter()
 
 	ok := gfs.OpenNext(iter, &f)
 	c.Assert(ok, Equals, true)
@@ -585,6 +584,19 @@ func (s *S) TestGridFSOpenNext(c *C) {
 	_, err = f.Read(b[:])
 	c.Assert(err, IsNil)
 	c.Assert(string(b[:]), Equals, "1")
+
+	ok = gfs.OpenNext(iter, &f)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Err(), Equals, nil)
+	c.Assert(f, IsNil)
+
+	// Do it again with a more restrictive query to make sure
+	// it's actually taken into account.
+	iter = gfs.Find(bson.M{"filename": "myfile1.txt"}).Iter()
+
+	ok = gfs.OpenNext(iter, &f)
+	c.Assert(ok, Equals, true)
+	c.Check(f.Name(), Equals, "myfile1.txt")
 
 	ok = gfs.OpenNext(iter, &f)
 	c.Assert(ok, Equals, false)
