@@ -458,11 +458,11 @@ func (s *S) TestAuthEventual(c *C) {
 	var wg sync.WaitGroup
 	wg.Add(20)
 
-	result := struct{ N int }{}
 	for i := 0; i != 10; i++ {
 		go func() {
 			defer wg.Done()
-			err = session.DB("mydb").C("mycoll").Find(nil).One(&result)
+			var result struct{ N int }
+			err := session.DB("mydb").C("mycoll").Find(nil).One(&result)
 			c.Assert(err, IsNil)
 			c.Assert(result.N, Equals, 1)
 		}()
@@ -471,7 +471,7 @@ func (s *S) TestAuthEventual(c *C) {
 	for i := 0; i != 10; i++ {
 		go func() {
 			defer wg.Done()
-			err = session.DB("mydb").C("mycoll").Insert(M{"n": 1})
+			err := session.DB("mydb").C("mycoll").Insert(M{"n": 1})
 			c.Assert(err, IsNil)
 		}()
 	}

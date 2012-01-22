@@ -295,10 +295,13 @@ restart:
 				return
 			}
 
+			m.Lock()
 			if _, found := seen[server.ResolvedAddr]; found {
+				m.Unlock()
 				return
 			}
 			seen[server.ResolvedAddr] = true
+			m.Unlock()
 
 			hosts, err := cluster.syncServer(server)
 			if !direct && err == nil {
