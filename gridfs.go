@@ -213,11 +213,6 @@ func (gfs GridFS) OpenId(id interface{}) (file *GridFile, err error) {
 //
 // The following example will print the first 8192 bytes from the file:
 // 
-//     func check(err os.Error) {
-//         if err != nil {
-//             panic(err.String())
-//         }
-//     }
 //     file, err := db.GridFS("fs").Open("myfile.txt")
 //     check(err)
 //     b := make([]byte, 8192)
@@ -250,6 +245,52 @@ func (gfs GridFS) Open(name string) (file *GridFile, err error) {
 	file.mode = gfsReading
 	file.doc = doc
 	return
+}
+
+// OpenNext opens the next file from iter, sets *file to it, and returns
+// true on the success case. If no more documents are available on iter or
+// an error occurred, *file is set to nil and the result is false. Errors
+// will be available on iter.Err().
+//
+// The iter parameter must be an iterator on the GridFS files collection.
+// Using the GridFS.Find method is an easy way to obtain such an iterator,
+// but any iterator on the collection will work.
+//
+// If the provided *file is non-nil, OpenNext will close it before
+// iterating to the next element. This means that in a loop one only
+// has to worry about closing files when breaking out of the loop early
+// (break, return, or panic).
+//
+// For example:
+//
+//    gfs := db.GridFS("fs")
+//    query := gfs.Find(nil).Sort(bson.M{"filename": 1})
+//    iter := query.Iter()
+//    var f *mgo.GridFile
+//    for gfs.OpenNext(iter, &f) {
+//        fmt.Printf("Filename: %s\n", f.Name())
+//    }
+//    if iter.Err() != nil {
+//        panic(iter.Err())
+//    }
+//
+func (gfs GridFS) OpenNext(iter *Iter, file **GridFile) bool {
+	if *file != nil {
+		// Ignoring the error here shouldn't be a big deal
+		// as we're reading the file and the loop iteration
+		// for this file is finished.
+		_ = file.Close()
+	}
+	var doc gfsFile
+	if !iter.Next(&doc) {
+		*file = nil
+		return false
+	}
+	f := gfs.newFile()
+	f.mode = gfsReading
+	f.doc = doc
+	*file = f
+	return true
 }
 
 // RemoveId deletes the file with the provided id from the GridFS.

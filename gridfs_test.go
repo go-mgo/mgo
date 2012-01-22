@@ -544,3 +544,50 @@ func (s *S) TestGridFSRemove(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, 0)
 }
+
+func (s *S) TestGridFSOpenNext(c *C) {
+	session, err := mgo.Dial("localhost:40011")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	db := session.DB("mydb")
+
+	gfs := db.GridFS("fs")
+
+	file, err := gfs.Create("myfile1.txt")
+	c.Assert(err, IsNil)
+	file.Write([]byte{'1'})
+	file.Close()
+
+	file, err = gfs.Create("myfile2.txt")
+	c.Assert(err, IsNil)
+	file.Write([]byte{'2'})
+	file.Close()
+
+	files := db.C("fs.files")
+	iter := files.Find(nil).Sort(bson.M{"filename": -1}).Iter()
+
+	var f *mgo.GridFile
+	var b [1]byte
+
+	ok := gfs.OpenNext(iter, &f)
+	c.Assert(ok, Equals, true)
+	c.Check(f.Name(), Equals, "myfile2.txt")
+
+	_, err = f.Read(b[:])
+	c.Assert(err, IsNil)
+	c.Assert(string(b[:]), Equals, "2")
+
+	ok = gfs.OpenNext(iter, &f)
+	c.Assert(ok, Equals, true)
+	c.Check(f.Name(), Equals, "myfile1.txt")
+
+	_, err = f.Read(b[:])
+	c.Assert(err, IsNil)
+	c.Assert(string(b[:]), Equals, "1")
+
+	ok = gfs.OpenNext(iter, &f)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Err(), Equals, nil)
+	c.Assert(f, IsNil)
+}

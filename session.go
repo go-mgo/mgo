@@ -1823,7 +1823,7 @@ func (iter *Iter) Timeout() bool {
 //
 //    iter := collection.Find(nil).Iter()
 //    for iter.Next(&result) {
-//        println(result.Id)
+//        fmt.Printf("Result: %v\n", result.Id)
 //    }
 //    if iter.Err() != nil {
 //        panic(iter.Err())
