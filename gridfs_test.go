@@ -136,20 +136,20 @@ func (s *S) TestGridFSFileDetails(c *C) {
 	c.Assert(file.ContentType(), Equals, "")
 
 	var info interface{}
-	err = file.GetInfo(&info)
+	err = file.GetMeta(&info)
 	c.Assert(err, IsNil)
 	c.Assert(info, IsNil)
 
 	file.SetId("myid")
 	file.SetName("myfile2.txt")
 	file.SetContentType("text/plain")
-	file.SetInfo(M{"any": "thing"})
+	file.SetMeta(M{"any": "thing"})
 
 	c.Assert(file.Id(), Equals, "myid")
 	c.Assert(file.Name(), Equals, "myfile2.txt")
 	c.Assert(file.ContentType(), Equals, "text/plain")
 
-	err = file.GetInfo(&info)
+	err = file.GetMeta(&info)
 	c.Assert(err, IsNil)
 	c.Assert(info, Equals, bson.M{"any": "thing"})
 

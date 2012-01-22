@@ -419,17 +419,18 @@ func (file *GridFile) SetContentType(ctype string) {
 	file.m.Unlock()
 }
 
-// GetInfo unmarshals the optional metadata associated with the file
-// into the result parameter.  For example:
+// GetMeta unmarshals the optional "metadata" field associated with the
+// file into the result parameter. The meaning of keys under that field
+// is user-defined. For example:
 //
 //     result := struct{ INode int }{}
-//     err = file.GetInfo(&result)
+//     err = file.GetMeta(&result)
 //     if err != nil {
 //         panic(err.String())
 //     }
 //     fmt.Printf("inode: %d\n", result.INode)
 //
-func (file *GridFile) GetInfo(result interface{}) (err error) {
+func (file *GridFile) GetMeta(result interface{}) (err error) {
 	file.m.Lock()
 	if file.doc.Metadata != nil {
 		err = bson.Unmarshal(file.doc.Metadata.Data, result)
@@ -438,14 +439,15 @@ func (file *GridFile) GetInfo(result interface{}) (err error) {
 	return
 }
 
-// SetInfo changes the optional metadata associated with the file.
+// SetMeta changes the optional "metadata" field associated with the
+// file. The meaning of keys under that field is user-defined.
 // For example:
 //
-//     file.SetInfo(bson.M{"inode": inode})
+//     file.SetMeta(bson.M{"inode": inode})
 //
 // It is a runtime error to call this function when the file is not open
 // for writing.
-func (file *GridFile) SetInfo(metadata interface{}) {
+func (file *GridFile) SetMeta(metadata interface{}) {
 	file.assertMode(gfsWriting)
 	data, err := bson.Marshal(metadata)
 	file.m.Lock()
