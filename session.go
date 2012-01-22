@@ -62,7 +62,7 @@ type Session struct {
 	consistency    mode
 	queryConfig    query
 	safeOp         *queryOp
-	syncTimeout    int64
+	syncTimeout    time.Duration
 	urlauth        *authInfo
 	auth           []authInfo
 }
@@ -109,7 +109,7 @@ type Iter struct {
 	limit          int32
 	pendingDocs    int
 	docsBeforeMore int
-	timeout        int
+	timeout        time.Duration
 	timedout       bool
 }
 
@@ -118,14 +118,19 @@ var NotFound = errors.New("Document not found")
 const defaultPrefetch = 0.25
 
 // Dial establishes a new session to the cluster identified by the given seed
-// server(s).  The session will enable communication with all of the servers in
+// server(s). The session will enable communication with all of the servers in
 // the cluster, so the seed servers are used only to find out about the cluster
 // topology.
 //
+// Dial will timeout after 10 seconds if a server isn't reached. The returned
+// session will timeout operations after 30 seconds by default if servers
+// aren't available. To customize the timeout, see DialWithTimeout
+// and SetSyncTimeout.
+//
 // This method is generally called just once for a given cluster.  Further
-// sessions to the same cluster are then established using the New method on
-// the obtained session.  This will make them share the underlying cluster,
-// and manage the pool of connections appropriately.
+// sessions to the same cluster are then established using the New or Copy
+// methods on the obtained session. This will make them share the underlying
+// cluster, and manage the pool of connections appropriately.
 //
 // Once the session is not useful anymore, Close must be called to release the
 // resources appropriately.
@@ -165,6 +170,20 @@ const defaultPrefetch = 0.25
 //     http://www.mongodb.org/display/DOCS/Connections
 //
 func Dial(url string) (session *Session, err error) {
+	session, err = DialWithTimeout(url, 10 * time.Second)
+	if err == nil {
+		session.SetSyncTimeout(30 * time.Second)
+	}
+	return
+}
+
+// DialWithTimeout works like Dial, but uses timeout as the amount of time to
+// wait for a server to respond when first connecting and also on follow up
+// operations in the session. If timeout is zero, the call may block
+// forever waiting for a connection to be made.
+//
+// See SetSyncTimeout for customizing the timeout for the session.
+func DialWithTimeout(url string, timeout time.Duration) (session *Session, err error) {
 	servers, auth, options, err := parseURL(url)
 	if err != nil {
 		return nil, err
@@ -187,12 +206,22 @@ func Dial(url string) (session *Session, err error) {
 		}
 	}
 	cluster := newCluster(servers, direct)
-	session = newSession(Strong, cluster, nil)
+	session = newSession(Eventual, cluster, nil, timeout)
 	if auth.user != "" {
 		session.urlauth = &auth
 		session.auth = []authInfo{auth}
 	}
 	cluster.Release()
+
+	// People get confused when we return a session that is not actually
+	// established to any servers yet (e.g. what if url was wrong). So,
+	// ping the server to ensure there's someone there, and abort if it
+	// fails.
+	if err := session.Ping(); err != nil {
+		session.Close()
+		return nil, err
+	}
+	session.SetMode(Strong, true)
 	return session, nil
 }
 
@@ -248,9 +277,9 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 	return
 }
 
-func newSession(consistency mode, cluster *mongoCluster, socket *mongoSocket) (session *Session) {
+func newSession(consistency mode, cluster *mongoCluster, socket *mongoSocket, syncTimeout time.Duration) (session *Session) {
 	cluster.Acquire()
-	session = &Session{cluster_: cluster}
+	session = &Session{cluster_: cluster, syncTimeout: syncTimeout}
 	session.SetMode(consistency, true)
 	session.SetSafe(&Safe{})
 	session.setSocket(socket)
@@ -861,11 +890,11 @@ func (s *Session) Mode() mode {
 
 // SetSyncTimeout sets the amount of time an operation with this session
 // will wait before returning an error in case a connection to a usable
-// server can't be established. Set it to zero to wait forever. This is
-// the default.
-func (s *Session) SetSyncTimeout(nsec int64) {
+// server can't be established. Set it to zero to wait forever. The
+// default value is 7 seconds.
+func (s *Session) SetSyncTimeout(d time.Duration) {
 	s.m.Lock()
-	s.syncTimeout = nsec
+	s.syncTimeout = d
 	s.m.Unlock()
 }
 
@@ -1676,12 +1705,12 @@ func (q *Query) Iter() *Iter {
 // collection once the end of the current result set is reached,
 // A tailable iterator may only be used with capped collections.
 //
-// The timeoutSecs parameter indicates how long Next will block
-// waiting for a result before timing out.  If set to -1, Next will
-// not timeout, and will continue waiting for a result for as long
-// as the cursor is valid and the session is not closed. If set
-// to 0, Next times out as soon as it reaches the end of the result
-// set. Otherwise, Next will wait for at least the given number of
+// The timeout parameter indicates how long Next will block waiting
+// for a result before timing out.  If set to -1, Next will not
+// timeout, and will continue waiting for a result for as long as
+// the cursor is valid and the session is not closed. If set to 0,
+// Next times out as soon as it reaches the end of the result set.
+// Otherwise, Next will wait for at least the given number of
 // seconds for a new document to be available before timing out.
 //
 // On timeouts, Next will unblock and return false, and the Timeout
@@ -1695,7 +1724,7 @@ func (q *Query) Iter() *Iter {
 // The following example demonstrates timeout handling and query
 // restarting:
 //
-//    iter := collection.Find(nil).Sort("$natural").Tail(5)
+//    iter := collection.Find(nil).Sort("$natural").Tail(5 * time.Second)
 //    for {
 //         for iter.Next(&result) {
 //             fmt.Println(result.Id)
@@ -1708,7 +1737,7 @@ func (q *Query) Iter() *Iter {
 //             continue
 //         }
 //         query := collection.Find(bson.M{"_id", bson.M{"$gt", lastId}})
-//         iter = query.Sort("$natural").Tail(5)
+//         iter = query.Sort("$natural").Tail(5 * time.Second)
 //    }
 //
 // Relevant documentation:
@@ -1717,7 +1746,7 @@ func (q *Query) Iter() *Iter {
 //     http://www.mongodb.org/display/DOCS/Capped+Collections
 //     http://www.mongodb.org/display/DOCS/Sorting+and+Natural+Order
 //
-func (q *Query) Tail(timeoutSecs int) *Iter {
+func (q *Query) Tail(timeout time.Duration) *Iter {
 	q.m.Lock()
 	session := q.session
 	op := q.op
@@ -1726,7 +1755,7 @@ func (q *Query) Tail(timeoutSecs int) *Iter {
 
 	iter := &Iter{session: session, prefetch: prefetch}
 	iter.gotReply.L = &iter.m
-	iter.timeout = timeoutSecs
+	iter.timeout = timeout
 	iter.op.collection = op.collection
 	iter.op.limit = op.limit
 	iter.op.replyFunc = iter.replyFunc()
@@ -1801,9 +1830,11 @@ func (iter *Iter) Timeout() bool {
 //    }
 //
 func (iter *Iter) Next(result interface{}) bool {
-	timeout := int64(-1)
+	timeouts := false
+	timeout := time.Time{}
 	if iter.timeout >= 0 {
-		timeout = time.Now().UnixNano() + int64(iter.timeout)*1e9
+		timeouts = true
+		timeout = time.Now().Add(iter.timeout)
 	}
 
 	iter.m.Lock()
@@ -1811,7 +1842,7 @@ func (iter *Iter) Next(result interface{}) bool {
 	for iter.err == nil && iter.docData.Len() == 0 && (iter.pendingDocs > 0 || iter.op.cursorId != 0) {
 		if iter.pendingDocs == 0 && iter.op.cursorId != 0 {
 			// Tailable cursor exhausted.
-			if timeout >= 0 && time.Now().UnixNano() > timeout {
+			if timeouts && time.Now().After(timeout) {
 				iter.timedout = true
 				iter.m.Unlock()
 				return false

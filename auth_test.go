@@ -490,11 +490,11 @@ func (s *S) TestAuthURL(c *C) {
 
 func (s *S) TestAuthURLWrongCredentials(c *C) {
 	session, err := mgo.Dial("mongodb://root:wrong@localhost:40002/")
-	c.Assert(err, IsNil)
-	defer session.Close()
-
-	err = session.DB("mydb").C("mycoll").Insert(M{"n": 1})
+	if session != nil {
+		session.Close()
+	}
 	c.Assert(err, ErrorMatches, "auth fails")
+	c.Assert(session, IsNil)
 }
 
 func (s *S) TestAuthURLWithNewSession(c *C) {

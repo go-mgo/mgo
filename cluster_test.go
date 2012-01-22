@@ -410,6 +410,9 @@ func (s *S) TestPrimaryShutdownStrong(c *C) {
 	session.Refresh()
 
 	// Now we should be able to talk to the new master.
+	// Increase the timeout since this may take quite a while.
+	session.SetSyncTimeout(3 * time.Minute)
+
 	err = session.Run("serverStatus", result)
 	c.Assert(err, IsNil)
 	c.Assert(result.Host, Not(Equals), host)
@@ -618,28 +621,103 @@ func (s *S) TestPreserveSocketCountOnSync(c *C) {
 	c.Assert(stats.SocketRefs, Equals, 1)
 }
 
+// Connect to the master of a deployment with a single server,
+// run an insert, and then ensure the insert worked and that a
+// single connection was established.
+func (s *S) TestTopologySyncWithSingleMaster(c *C) {
+	// Use hostname here rather than IP, to make things trickier.
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	err = coll.Insert(M{"a": 1, "b": 2})
+	c.Assert(err, IsNil)
+
+	// One connection used for discovery. Master socket recycled for
+	// insert. Socket is reserved after insert.
+	stats := mgo.GetStats()
+	c.Assert(stats.MasterConns, Equals, 1)
+	c.Assert(stats.SlaveConns, Equals, 0)
+	c.Assert(stats.SocketsInUse, Equals, 1)
+
+	// Refresh session and socket must be released.
+	session.Refresh()
+	stats = mgo.GetStats()
+	c.Assert(stats.SocketsInUse, Equals, 0)
+}
+
+func (s *S) TestTopologySyncWithSlaveSeed(c *C) {
+	// That's supposed to be a slave. Must run discovery
+	// and find out master to insert successfully.
+	session, err := mgo.Dial("localhost:40012")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	coll.Insert(M{"a": 1, "b": 2})
+
+	result := struct{ Ok bool }{}
+	err = session.Run("getLastError", &result)
+	c.Assert(err, IsNil)
+	c.Assert(result.Ok, Equals, true)
+
+	// One connection to each during discovery. Master
+	// socket recycled for insert. 
+	stats := mgo.GetStats()
+	c.Assert(stats.MasterConns, Equals, 1)
+	c.Assert(stats.SlaveConns, Equals, 2)
+
+	// Only one socket reference alive, in the master socket owned
+	// by the above session.
+	c.Assert(stats.SocketsInUse, Equals, 1)
+
+	// Refresh it, and it must be gone.
+	session.Refresh()
+	stats = mgo.GetStats()
+	c.Assert(stats.SocketsInUse, Equals, 0)
+}
+
 func (s *S) TestSyncTimeout(c *C) {
 	if *fast {
 		c.Skip("-fast")
 	}
 
-	// 40009 isn't used by the test servers.
-	session, err := mgo.Dial("localhost:40009")
+	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	timeout := int64(3e9)
+	s.Stop("localhost:40001")
 
+	timeout := 3 * time.Second
 	session.SetSyncTimeout(timeout)
-
-	started := time.Now().UnixNano()
+	started := time.Now()
 
 	// Do something.
 	result := struct{ Ok bool }{}
 	err = session.Run("getLastError", &result)
 	c.Assert(err, ErrorMatches, "no reachable servers")
-	c.Assert(time.Now().UnixNano()-started > timeout, Equals, true)
-	c.Assert(time.Now().UnixNano()-started < timeout*2, Equals, true)
+	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
+	c.Assert(started.After(time.Now().Add(-timeout*2)), Equals, true)
+}
+
+func (s *S) TestDialWithTimeout(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
+	timeout := 2 * time.Second
+	started := time.Now()
+
+	// 40009 isn't used by the test servers.
+	session, err := mgo.DialWithTimeout("localhost:40009", timeout)
+	if session != nil {
+		session.Close()
+	}
+	c.Assert(err, ErrorMatches, "no reachable servers")
+	c.Assert(session, IsNil)
+	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
+	c.Assert(started.After(time.Now().Add(-timeout*2)), Equals, true)
 }
 
 func (s *S) TestDirect(c *C) {
@@ -661,7 +739,7 @@ func (s *S) TestDirect(c *C) {
 	c.Assert(stats.SocketRefs, Equals, 1)
 
 	// We've got no master, so it'll timeout.
-	session.SetSyncTimeout(5e8)
+	session.SetSyncTimeout(5e8 * time.Nanosecond)
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"test": 1})

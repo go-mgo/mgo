@@ -30,7 +30,6 @@ import (
 	"errors"
 	"math/rand"
 	"sync"
-
 	"time"
 )
 
@@ -131,7 +130,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 	}
 
 	// Monotonic will let us talk to a slave and still hold the socket.
-	session := newSession(Monotonic, cluster, socket)
+	session := newSession(Monotonic, cluster, socket, 10 * time.Second)
 	defer session.Close()
 
 	socket.Release()
@@ -335,7 +334,7 @@ restart:
 	cluster.serverSynced.Broadcast()
 
 	if !direct && cluster.masters.Empty() || cluster.servers.Empty() {
-		log("[sync] No masters found. Synchronize again.")
+		log("[sync] No masters found. Will synchronize again.")
 
 		cluster.Unlock()
 		cluster.Release() // May stop resyncing with refs=0.
@@ -362,8 +361,8 @@ restart:
 // AcquireSocket returns a socket to a server in the cluster.  If slaveOk is
 // true, it will attempt to return a socket to a slave server.  If it is
 // false, the socket will necessarily be to a master server.
-func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout int64) (s *mongoSocket, err error) {
-	started := time.Now().UnixNano()
+func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Duration) (s *mongoSocket, err error) {
+	started := time.Now()
 	for {
 		cluster.RLock()
 		for {
@@ -371,7 +370,7 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout int64) (s *
 			if !cluster.masters.Empty() || slaveOk && !cluster.slaves.Empty() {
 				break
 			}
-			if syncTimeout > 0 && time.Now().UnixNano()-started > syncTimeout {
+			if syncTimeout != 0 && started.Before(time.Now().Add(-syncTimeout)) {
 				cluster.RUnlock()
 				return nil, errors.New("no reachable servers")
 			}

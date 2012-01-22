@@ -37,63 +37,6 @@ import (
 	"time"
 )
 
-// Connect to the master of a deployment with a single server,
-// run an insert, and then ensure the insert worked and that a
-// single connection was established.
-func (s *S) TestTopologySyncWithSingleMaster(c *C) {
-	// Use hostname here rather than IP, to make things trickier.
-	session, err := mgo.Dial("localhost:40001")
-	c.Assert(err, IsNil)
-	defer session.Close()
-
-	coll := session.DB("mydb").C("mycoll")
-	err = coll.Insert(M{"a": 1, "b": 2})
-	c.Assert(err, IsNil)
-
-	// One connection used for discovery. Master socket recycled for
-	// insert. Socket is reserved after insert.
-	stats := mgo.GetStats()
-	c.Assert(stats.MasterConns, Equals, 1)
-	c.Assert(stats.SlaveConns, Equals, 0)
-	c.Assert(stats.SocketsInUse, Equals, 1)
-
-	// Refresh session and socket must be released.
-	session.Refresh()
-	stats = mgo.GetStats()
-	c.Assert(stats.SocketsInUse, Equals, 0)
-}
-
-func (s *S) TestTopologySyncWithSlaveSeed(c *C) {
-	// That's supposed to be a slave. Must run discovery
-	// and find out master to insert successfully.
-	session, err := mgo.Dial("localhost:40012")
-	c.Assert(err, IsNil)
-	defer session.Close()
-
-	coll := session.DB("mydb").C("mycoll")
-	coll.Insert(M{"a": 1, "b": 2})
-
-	result := struct{ Ok bool }{}
-	err = session.Run("getLastError", &result)
-	c.Assert(err, IsNil)
-	c.Assert(result.Ok, Equals, true)
-
-	// One connection to each during discovery. Master
-	// socket recycled for insert. 
-	stats := mgo.GetStats()
-	c.Assert(stats.MasterConns, Equals, 1)
-	c.Assert(stats.SlaveConns, Equals, 2)
-
-	// Only one socket reference alive, in the master socket owned
-	// by the above session.
-	c.Assert(stats.SocketsInUse, Equals, 1)
-
-	// Refresh it, and it must be gone.
-	session.Refresh()
-	stats = mgo.GetStats()
-	c.Assert(stats.SocketsInUse, Equals, 0)
-}
-
 func (s *S) TestRunString(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
@@ -1006,7 +949,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 
 	mgo.ResetStats()
 
-	const timeout = 3
+	timeout := 3 * time.Second
 
 	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
 	iter := query.Tail(timeout)
@@ -1032,7 +975,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 		// The internal AwaitData timing of MongoDB is around 2 seconds,
 		// so this should force mgo to sleep at least once by itself to
 		// respect the requested timeout.
-		time.Sleep(timeout*1e9 + 5e8)
+		time.Sleep(timeout + 5e8*time.Nanosecond)
 		session := session.New()
 		defer session.Close()
 		coll := session.DB("mydb").C("mycoll")
@@ -1059,12 +1002,12 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 
 	c.Log("Will wait for a result which will never come...")
 
-	started := time.Now().UnixNano()
+	started := time.Now()
 	ok = iter.Next(&result)
 	c.Assert(ok, Equals, false)
 	c.Assert(iter.Err(), IsNil)
 	c.Assert(iter.Timeout(), Equals, true)
-	c.Assert(time.Now().UnixNano()-started > timeout*1e9, Equals, true)
+	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
 
 	c.Log("Will now reuse the timed out tail cursor...")
 
@@ -1100,7 +1043,7 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 
 	mgo.ResetStats()
 
-	const timeout = 1
+	timeout := 1 * time.Second
 
 	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
 	iter := query.Tail(timeout)
@@ -1152,12 +1095,12 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 
 	c.Log("Will wait for a result which will never come...")
 
-	started := time.Now().UnixNano()
+	started := time.Now()
 	ok = iter.Next(&result)
 	c.Assert(ok, Equals, false)
 	c.Assert(iter.Err(), IsNil)
 	c.Assert(iter.Timeout(), Equals, true)
-	c.Assert(time.Now().UnixNano()-started > timeout*1e9, Equals, true)
+	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
 
 	c.Log("Will now reuse the timed out tail cursor...")
 
