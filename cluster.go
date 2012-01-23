@@ -153,6 +153,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 		log("[sync] ", addr, " is a slave.")
 	} else {
 		log("[sync] ", addr, " is neither a master nor a slave.")
+		//return nil, errors.New(addr + " not a master nor slave")
 	}
 
 	hosts = make([]string, 0, 1+len(result.Hosts)+len(result.Passives))

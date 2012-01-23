@@ -122,7 +122,7 @@ const defaultPrefetch = 0.25
 // topology.
 //
 // Dial will timeout after 10 seconds if a server isn't reached. The returned
-// session will timeout operations after 30 seconds by default if servers
+// session will timeout operations after one minute by default if servers
 // aren't available. To customize the timeout, see DialWithTimeout
 // and SetSyncTimeout.
 //
@@ -171,7 +171,7 @@ const defaultPrefetch = 0.25
 func Dial(url string) (session *Session, err error) {
 	session, err = DialWithTimeout(url, 10 * time.Second)
 	if err == nil {
-		session.SetSyncTimeout(30 * time.Second)
+		session.SetSyncTimeout(time.Minute)
 	}
 	return
 }

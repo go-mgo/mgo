@@ -30,6 +30,7 @@ import (
 	"io"
 	. "launchpad.net/gocheck"
 	"launchpad.net/mgo"
+	"launchpad.net/mgo/bson"
 	"strings"
 	"time"
 )
@@ -839,4 +840,32 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 
 	c.Check(masterDelta, Equals, 0) // Just the counting itself.
 	c.Check(slaveDelta, Equals, 5)  // The counting for both, plus 5 queries above.
+}
+
+func (s *S) UpcomingTestRemovalOfClusterMember(c *C) {
+	session, err := mgo.Dial("localhost:40011") // Always the master for rs1.
+	c.Assert(err, IsNil)
+	defer func() {
+		session.Refresh()
+		session.Run(bson.D{{"$eval", `rs.add("127.0.0.1:40012")`}}, nil)
+		session.Close()
+
+		// XXX It's losing the priority setting here. Must use rs2 and detect master.
+	}()
+
+	err = session.Run(bson.D{{"$eval", `rs.remove("127.0.0.1:40012")`}}, nil)
+	c.Assert(err, Equals, io.EOF)
+
+	session.Refresh()
+
+	for i := 0; i < 15; i++ {
+		if len(session.LiveServers()) == 2 {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	live := session.LiveServers()
+	if len(live) != 2 {
+		c.Errorf("Removed server still considered live: %#s", live)
+	}
 }
