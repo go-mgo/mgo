@@ -169,7 +169,7 @@ const defaultPrefetch = 0.25
 //     http://www.mongodb.org/display/DOCS/Connections
 //
 func Dial(url string) (session *Session, err error) {
-	session, err = DialWithTimeout(url, 10 * time.Second)
+	session, err = DialWithTimeout(url, 10*time.Second)
 	if err == nil {
 		session.SetSyncTimeout(time.Minute)
 	}
@@ -1603,10 +1603,12 @@ func (q *Query) One(result interface{}) (err error) {
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
 type DBRef struct {
-	C  string      `bson:"$ref"`
-	ID interface{} `bson:"$id"`
-	DB string      `bson:"$db,omitempty"`
+	Collection string      `bson:"$ref"`
+	Id         interface{} `bson:"$id"`
+	Database   string      `bson:"$db,omitempty"`
 }
+
+// NOTE: Order of fields for DBRef above does matter, per documentation.
 
 type id struct {
 	Id interface{} "_id"
@@ -1622,11 +1624,14 @@ type id struct {
 // 
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
-func (db *Database) FindRef(ref DBRef, result interface{}) error {
-	if ref.DB == "" {
-		return db.C(ref.C).Find(id{ref.ID}).One(result)
+func (db *Database) FindRef(ref *DBRef, result interface{}) error {
+	var c *Collection
+	if ref.Database == "" {
+		c = db.C(ref.Collection)
+	} else {
+		c = db.Session.DB(ref.Database).C(ref.Collection)
 	}
-	return db.Session.DB(ref.DB).C(ref.C).Find(id{ref.ID}).One(result)
+	return c.Find(id{ref.Id}).One(result)
 }
 
 // FindRef retrieves the document in the provided reference and stores it
@@ -1639,11 +1644,12 @@ func (db *Database) FindRef(ref DBRef, result interface{}) error {
 // 
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
-func (s *Session) FindRef(ref DBRef, result interface{}) error {
-	if ref.DB == "" {
+func (s *Session) FindRef(ref *DBRef, result interface{}) error {
+	if ref.Database == "" {
 		return errors.New(fmt.Sprintf("Can't resolve database for %#v", ref))
 	}
-	return s.DB(ref.DB).C(ref.C).Find(id{ref.ID}).One(result)
+	c := s.DB(ref.Database).C(ref.Collection)
+	return c.Find(id{ref.Id}).One(result)
 }
 
 // CollectionNames returns the collection names present in database.

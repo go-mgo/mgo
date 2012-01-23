@@ -192,8 +192,8 @@ func (s *S) TestFindRef(c *C) {
 
 	result := struct{ N int }{}
 
-	ref1 := mgo.DBRef{C: "col1", ID: 1}
-	ref2 := mgo.DBRef{C: "col1", ID: 2, DB: "db2"}
+	ref1 := &mgo.DBRef{Collection: "col1", Id: 1}
+	ref2 := &mgo.DBRef{Collection: "col1", Id: 2, Database: "db2"}
 
 	err = db1.FindRef(ref1, &result)
 	c.Assert(err, IsNil)
@@ -215,7 +215,7 @@ func (s *S) TestFindRef(c *C) {
 	c.Assert(result.N, Equals, 3)
 
 	err = session.FindRef(ref1, &result)
-	c.Assert(err, ErrorMatches, "Can't resolve database for mgo.DBRef{C:\"col1\", ID:1, DB:\"\"}")
+	c.Assert(err, ErrorMatches, "Can't resolve database for &mgo.DBRef{Collection:\"col1\", Id:1, Database:\"\"}")
 }
 
 func (s *S) TestDatabaseAndCollectionNames(c *C) {
