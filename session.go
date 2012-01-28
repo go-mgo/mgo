@@ -1963,7 +1963,7 @@ func (iter *Iter) All(result interface{}) error {
 	return iter.Err()
 }
 
-// All calls All on an Iter for query. See Iter.All.
+// All works like Iter.All.
 func (q *Query) All(result interface{}) error {
 	return q.Iter().All(result)
 }
