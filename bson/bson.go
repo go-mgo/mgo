@@ -198,14 +198,14 @@ func NewObjectId() ObjectId {
 	return ObjectId(b)
 }
 
-// NewObjectIdSeconds returns a dummy ObjectId with the timestamp part filled
+// NewObjectIdWithTime returns a dummy ObjectId with the timestamp part filled
 // with the provided number of seconds from epoch UTC, and all other parts
 // filled with zeroes. It's not safe to insert a document with an id generated
 // by this method, it is useful only for queries to find documents with ids
 // generated before or after the specified timestamp.
-func NewObjectIdSeconds(sec int32) ObjectId {
+func NewObjectIdWithTime(t time.Time) ObjectId {
 	var b [12]byte
-	binary.BigEndian.PutUint32(b[:4], uint32(sec))
+	binary.BigEndian.PutUint32(b[:4], uint32(t.Unix()))
 	return ObjectId(string(b[:]))
 }
 
@@ -253,12 +253,12 @@ func (id ObjectId) byteSlice(start, end int) []byte {
 	return []byte(string(id)[start:end])
 }
 
-// Timestamp returns the timestamp part of the id (the number of seconds
-// from epoch in UTC). 
+// Time returns the timestamp part of the id.
 // It's a runtime error to call this method with an invalid id.
-func (id ObjectId) Timestamp() int32 {
-	// First 4 bytes of ObjectId is 32-bit big-endian timestamp
-	return int32(binary.BigEndian.Uint32(id.byteSlice(0, 4)))
+func (id ObjectId) Time() time.Time {
+	// First 4 bytes of ObjectId is 32-bit big-endian seconds from epoch.
+	secs := int64(binary.BigEndian.Uint32(id.byteSlice(0, 4)))
+	return time.Unix(secs, 0)
 }
 
 // Machine returns the 3-byte machine id part of the id.

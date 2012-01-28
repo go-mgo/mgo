@@ -1099,7 +1099,7 @@ func (s *S) TestObjectIdHex(c *C) {
 
 type objectIdParts struct {
 	id        bson.ObjectId
-	timestamp int32
+	timestamp int64
 	machine   []byte
 	pid       uint16
 	counter   int32
@@ -1131,7 +1131,8 @@ var objectIds = []objectIdParts{
 
 func (s *S) TestObjectIdPartsExtraction(c *C) {
 	for i, v := range objectIds {
-		c.Assert(v.id.Timestamp(), Equals, v.timestamp, Bug("#%d Wrong timestamp value", i))
+		t := time.Unix(v.timestamp, 0)
+		c.Assert(v.id.Time(), Equals, t, Bug("#%d Wrong timestamp value", i))
 		c.Assert(v.id.Machine(), Equals, v.machine, Bug("#%d Wrong machine id value", i))
 		c.Assert(v.id.Pid(), Equals, v.pid, Bug("#%d Wrong pid value", i))
 		c.Assert(v.id.Counter(), Equals, v.counter, Bug("#%d Wrong counter value", i))
@@ -1167,8 +1168,8 @@ func (s *S) TestNewObjectId(c *C) {
 			}
 		}
 		// Check that timestamp was incremented and is within 30 seconds of the previous one
-		td := id.Timestamp() - prevId.Timestamp()
-		c.Assert((td >= 0 && td <= 30), Equals, true, Bug("Wrong timestamp in generated ObjectId"))
+		secs := id.Time().Sub(prevId.Time()).Seconds()
+		c.Assert((secs >= 0 && secs <= 30), Equals, true, Bug("Wrong timestamp in generated ObjectId"))
 		// Check that machine ids are the same
 		c.Assert(id.Machine(), Equals, prevId.Machine())
 		// Check that pids are the same
@@ -1179,10 +1180,10 @@ func (s *S) TestNewObjectId(c *C) {
 	}
 }
 
-func (s *S) TestNewObjectIdSeconds(c *C) {
-	sec := int32(time.Now().Unix())
-	id := bson.NewObjectIdSeconds(sec)
-	c.Assert(id.Timestamp(), Equals, sec)
+func (s *S) TestNewObjectIdWithTime(c *C) {
+	t := time.Unix(12345678, 0)
+	id := bson.NewObjectIdWithTime(t)
+	c.Assert(id.Time(), Equals, t)
 	c.Assert(id.Machine(), Equals, []byte{0x00, 0x00, 0x00})
 	c.Assert(int(id.Pid()), Equals, 0)
 	c.Assert(int(id.Counter()), Equals, 0)
