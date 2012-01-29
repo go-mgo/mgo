@@ -31,6 +31,7 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"time"
 )
 
 // --------------------------------------------------------------------------
@@ -41,7 +42,7 @@ var (
 	typeBinary         reflect.Type
 	typeObjectId       reflect.Type
 	typeSymbol         reflect.Type
-	typeTimestamp      reflect.Type
+	typeTime           reflect.Type
 	typeMongoTimestamp reflect.Type
 	typeOrderKey       reflect.Type
 	typeDocElem        reflect.Type
@@ -56,7 +57,6 @@ func init() {
 	typeBinary = reflect.TypeOf(Binary{})
 	typeObjectId = reflect.TypeOf(ObjectId(""))
 	typeSymbol = reflect.TypeOf(Symbol(""))
-	typeTimestamp = reflect.TypeOf(Timestamp(0))
 	typeMongoTimestamp = reflect.TypeOf(MongoTimestamp(0))
 	typeOrderKey = reflect.TypeOf(MinKey)
 	typeDocElem = reflect.TypeOf(DocElem{})
@@ -251,13 +251,6 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 			e.addInt32(int32(v.Int()))
 		} else {
 			switch v.Type() {
-
-			case typeTimestamp:
-				// MongoDB wants timestamps as milliseconds.
-				// Go likes nanoseconds.  Convert them.
-				e.addElemName('\x09', name)
-				e.addInt64(v.Int() / 1e6)
-
 			case typeMongoTimestamp:
 				e.addElemName('\x11', name)
 				e.addInt64(v.Int())
@@ -349,6 +342,11 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 				e.addDoc(reflect.ValueOf(s.Scope))
 				e.setInt32(start, int32(len(e.out)-start))
 			}
+
+		case time.Time:
+			// MongoDB handles timestamps as milliseconds.
+			e.addElemName('\x09', name)
+			e.addInt64(s.UnixNano() / 1e6)
 
 		case undefined:
 			e.addElemName('\x06', name)

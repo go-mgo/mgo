@@ -286,21 +286,14 @@ func (id ObjectId) Counter() int32 {
 // string(symbol) will work correctly.
 type Symbol string
 
-// UTC timestamp defined as nanoseconds since the traditional epoch time.  The
-// internal MongoDB representation stores this value as milliseconds, so some
-// precision will be lost when sending a Go value to MongoDB, but given that
-// Go most commonly uses nanoseconds in time-related operations, this conversion
-// is convenient.
-type Timestamp int64
-
-// Now returns a Timestamp value with the current time in nanoseconds.
-func Now() Timestamp {
-	// The value is stored in MongoDB as milliseconds, so truncate the value
-	// ahead of time to avoid surprises after a roundtrip.
-	return Timestamp(time.Now().UnixNano() / 1e6 * 1e6)
+// Now returns the current time with millisecond precision. MongoDB stores
+// timestamps with the same precision, so a Time returned from this method
+// will not change after a roundtrip to the database.
+func Now() time.Time {
+	return time.Unix(0, time.Now().UnixNano() / 1e6 * 1e6)
 }
 
-// Special internal type used by MongoDB which for some strange reason has its
+// Special internal type used by MongoDB that for some strange reason has its
 // own datatype defined in BSON.
 type MongoTimestamp int64
 

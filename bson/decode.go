@@ -32,6 +32,7 @@ import (
 	"math"
 	"reflect"
 	"sync"
+	"time"
 )
 
 type decoder struct {
@@ -361,9 +362,8 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 	case 0x08: // Bool
 		in = d.readBool()
 	case 0x09: // Timestamp
-		// MongoDB wants timestamps as milliseconds.
-		// Go likes nanoseconds.  Convert them.
-		in = Timestamp(d.readInt64() * 1e6)
+		// MongoDB handles timestamps as milliseconds.
+		in = time.Unix(0, d.readInt64() * 1e6)
 	case 0x0A: // Nil
 		in = nil
 	case 0x0B: // RegEx
@@ -484,16 +484,7 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		switch inv.Kind() {
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			// MongoDB wants timestamps as milliseconds.
-			// Go likes nanoseconds.  Convert them.
-			// out.Type() == inv.Type() has been handled above.
-			if outt == typeTimestamp {
-				out.SetInt(inv.Int() * 1e6)
-			} else if inv.Type() == typeTimestamp {
-				out.SetInt(inv.Int() / 1e6)
-			} else {
-				out.SetInt(inv.Int())
-			}
+			out.SetInt(inv.Int())
 			return true
 		case reflect.Float32, reflect.Float64:
 			out.SetInt(int64(inv.Float()))
@@ -524,7 +515,7 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 			}
 			return true
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-			panic("Can't happen. No uint types in BSON?")
+			panic("Can't happen. No uint types in BSON.")
 		}
 	case reflect.Float32, reflect.Float64:
 		switch inv.Kind() {

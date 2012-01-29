@@ -138,7 +138,7 @@ var allItems = []testItemType{
 		"\x08_\x00\x00"},
 	{bson.M{"_": true},
 		"\x08_\x00\x01"},
-	{bson.M{"_": bson.Timestamp(258e6)}, // Note the NS <=> MS conversion.
+	{bson.M{"_": time.Unix(0, 258e6)}, // Note the NS <=> MS conversion.
 		"\x09_\x00\x02\x01\x00\x00\x00\x00\x00\x00"},
 	{bson.M{"_": nil},
 		"\x0A_\x00"},
@@ -936,11 +936,6 @@ var twoWayCrossItems = []crossTypeItem{
 	{&struct{ I uint64 }{42}, &struct{ I int32 }{42}},
 	{&struct{ I uint64 }{42}, &struct{ I int64 }{42}},
 
-	// int <=> timestamp.  Note the NS <=> MS conversion.
-	{&struct{ I bson.Timestamp }{42e6}, &struct{ I int64 }{42}},
-	{&struct{ I bson.Timestamp }{42e6}, &struct{ I int32 }{42}},
-	{&struct{ I bson.Timestamp }{42e6}, &struct{ I int }{42}},
-
 	// int <=> float
 	{&struct{ I int }{42}, &struct{ I float64 }{42}},
 
@@ -1140,13 +1135,12 @@ func (s *S) TestObjectIdPartsExtraction(c *C) {
 }
 
 func (s *S) TestNow(c *C) {
-	before := time.Now().UnixNano()
+	before := time.Now()
 	time.Sleep(1e6)
 	now := bson.Now()
 	time.Sleep(1e6)
-	after := time.Now().UnixNano()
-	c.Assert(reflect.TypeOf(now), Equals, reflect.TypeOf(bson.Timestamp(00)))
-	c.Assert(int64(now) > before && int64(now) < after, Equals, true, Bug("now=%d, before=%d, after=%d", now, before, after))
+	after := time.Now()
+	c.Assert(now.After(before) && now.Before(after), Equals, true, Bug("now=%s, before=%s, after=%s", now, before, after))
 }
 
 // --------------------------------------------------------------------------
