@@ -86,8 +86,8 @@ func (server *mongoServer) AcquireSocket() (socket *mongoSocket, err error) {
 	panic("unreached")
 }
 
-// Establish a new connection to the server. This should generally be done
-// through server.getSocket().
+// Connect establishes a new connection to the server. This should
+// generally be done through server.AcquireSocket().
 func (server *mongoServer) Connect() (*mongoSocket, error) {
 	server.RLock()
 	addr := server.Addr
