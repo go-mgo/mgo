@@ -842,21 +842,44 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 	c.Check(slaveDelta, Equals, 5)  // The counting for both, plus 5 queries above.
 }
 
-func (s *S) UpcomingTestRemovalOfClusterMember(c *C) {
-	session, err := mgo.Dial("localhost:40011") // Always the master for rs1.
+func (s *S) TestRemovalOfClusterMember(c *C) {
+	session, err := mgo.Dial("localhost:40021")
 	c.Assert(err, IsNil)
+	defer session.Close()
+
+	result := &struct{ Primary string }{}
+	err = session.Run("isMaster", result)
+	c.Assert(err, IsNil)
+
+	master := result.Primary
+	slave := "127.0.0.1:40022"
+	if strings.HasSuffix(master, ":40022") {
+		slave = "127.0.0.1:40021"
+	}
+
+	slaveSession, err := mgo.Dial(slave + "?connect=direct")
+	c.Assert(err, IsNil)
+	// Monotonic can hold a non-master socket persistently.
+	slaveSession.SetMode(mgo.Monotonic, true)
+	err = slaveSession.Ping()
+	c.Assert(err, IsNil)
+
 	defer func() {
 		session.Refresh()
-		session.Run(bson.D{{"$eval", `rs.add("127.0.0.1:40012")`}}, nil)
+		session.Run(bson.D{{"$eval", `rs.add("` + slave + `")`}}, nil)
 		session.Close()
 
-		// XXX It's losing the priority setting here. Must use rs2 and detect master.
+		s.Stop(slave)
 	}()
 
-	err = session.Run(bson.D{{"$eval", `rs.remove("127.0.0.1:40012")`}}, nil)
+	err = session.Run(bson.D{{"$eval", `rs.remove("` + slave + `")`}}, nil)
 	c.Assert(err, Equals, io.EOF)
 
 	session.Refresh()
+
+	// This should fail.
+	err = slaveSession.Ping()
+	c.Assert(err, IsNil)
 
 	for i := 0; i < 15; i++ {
 		if len(session.LiveServers()) == 2 {
