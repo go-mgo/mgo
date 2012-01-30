@@ -60,10 +60,11 @@ func newServer(addr string) (server *mongoServer, err error) {
 	return
 }
 
-// Obtain a socket for communicating with the server.  This will attempt to
-// reuse an old connection, if one is available. Otherwise, it will establish
-// a new one. The returned socket is owned by the call site, and will return
-// to the cache if explicitly done.
+// AcquireSocket returns a socket for communicating with the server.
+// This will attempt to reuse an old connection, if one is available. Otherwise,
+// it will establish a new one. The returned socket is owned by the call site,
+// and will return to the cache when the socket has its Release method called
+// the same number of times as AcquireSocket + Acquire were called for it.
 func (server *mongoServer) AcquireSocket() (socket *mongoSocket, err error) {
 	for {
 		server.Lock()

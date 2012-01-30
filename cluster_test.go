@@ -843,51 +843,51 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 }
 
 func (s *S) TestRemovalOfClusterMember(c *C) {
-	session, err := mgo.Dial("localhost:40021")
+	master, err := mgo.Dial("localhost:40021")
 	c.Assert(err, IsNil)
-	defer session.Close()
+	defer master.Close()
 
-	result := &struct{ Primary string }{}
-	err = session.Run("isMaster", result)
-	c.Assert(err, IsNil)
-
-	master := result.Primary
-	slave := "127.0.0.1:40022"
-	if strings.HasSuffix(master, ":40022") {
-		slave = "127.0.0.1:40021"
+	// Repeat a few times since we may not see a slave before
+	// the synchronization of the cluster moves on.
+	slave := master.Copy()
+	result := &struct{ IsMaster bool; Me string }{}
+	for i := 0; i < 30; i++ {
+		// Monotonic can hold a non-master socket persistently.
+		slave.SetMode(mgo.Monotonic, true)
+		err = slave.Run("isMaster", result)
+		c.Assert(err, IsNil)
+		if !result.IsMaster {
+			break
+		}
 	}
-
-	slaveSession, err := mgo.Dial(slave + "?connect=direct")
-	c.Assert(err, IsNil)
-	// Monotonic can hold a non-master socket persistently.
-	slaveSession.SetMode(mgo.Monotonic, true)
-	err = slaveSession.Ping()
-	c.Assert(err, IsNil)
+	c.Assert(result.IsMaster, Equals, false)
+	slaveAddr := result.Me
 
 	defer func() {
-		session.Refresh()
-		session.Run(bson.D{{"$eval", `rs.add("` + slave + `")`}}, nil)
-		session.Close()
+		master.Refresh()
+		master.Run(bson.D{{"$eval", `rs.add("` + slaveAddr + `")`}}, nil)
+		master.Close()
+		slave.Close()
 
-		s.Stop(slave)
+		s.Stop(slaveAddr)
 	}()
 
-	err = session.Run(bson.D{{"$eval", `rs.remove("` + slave + `")`}}, nil)
+	err = master.Run(bson.D{{"$eval", `rs.remove("` + slaveAddr + `")`}}, nil)
 	c.Assert(err, Equals, io.EOF)
 
-	session.Refresh()
+	master.Refresh()
 
-	// This should fail.
-	err = slaveSession.Ping()
+	// This must fail since the slave has been taken off the cluster.
+	err = slave.Ping()
 	c.Assert(err, IsNil)
 
 	for i := 0; i < 15; i++ {
-		if len(session.LiveServers()) == 2 {
+		if len(master.LiveServers()) == 2 {
 			break
 		}
 		time.Sleep(time.Second)
 	}
-	live := session.LiveServers()
+	live := master.LiveServers()
 	if len(live) != 2 {
 		c.Errorf("Removed server still considered live: %#s", live)
 	}
