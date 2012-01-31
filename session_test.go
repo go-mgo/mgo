@@ -2096,7 +2096,7 @@ func (s *S) TestMapReduceToOtherDb(c *C) {
 	c.Assert(info.EmitCount, Equals, 7)
 	c.Assert(info.OutputCount, Equals, 5)
 	c.Assert(info.Time > 1e6, Equals, true)
-	c.Assert(info.Time < 1e9, Equals, true)
+	c.Assert(info.Time < 2e9, Equals, true)
 	c.Assert(info.Collection, Equals, "mr")
 	c.Assert(info.Database, Equals, "otherdb")
 

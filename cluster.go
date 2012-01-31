@@ -52,12 +52,14 @@ type mongoCluster struct {
 	syncing      bool
 	direct       bool
 	cachedIndex  map[string]bool
+	sync         chan bool
 }
 
 func newCluster(userSeeds []string, direct bool) *mongoCluster {
 	cluster := &mongoCluster{userSeeds: userSeeds, references: 1, direct: direct}
 	cluster.serverSynced.L = cluster.RWMutex.RLocker()
-	go cluster.syncServers()
+	cluster.sync = make(chan bool, 1)
+	go cluster.syncServersLoop()
 	return cluster
 }
 
@@ -95,12 +97,14 @@ func (cluster *mongoCluster) LiveServers() (servers []string) {
 
 func (cluster *mongoCluster) removeServer(server *mongoServer) {
 	cluster.Lock()
-	removed := cluster.servers.Remove(server) ||
-		cluster.masters.Remove(server) ||
-		cluster.slaves.Remove(server)
-	if removed {
-		log("Removing server ", server.Addr, " from cluster.")
+	cluster.masters.Remove(server)
+	cluster.slaves.Remove(server)
+	other := cluster.servers.Remove(server)
+	if other != nil {
+		other.Close()
+		log("Removed server ", server.Addr, " from cluster.")
 	}
+	server.Close()
 	cluster.Unlock()
 }
 
@@ -114,7 +118,7 @@ type isMasterResult struct {
 
 func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, err error) {
 	addr := server.Addr
-	log("[sync] Processing ", addr, "...")
+	log("SYNC Processing ", addr, "...")
 
 	defer func() {
 		if err != nil {
@@ -125,7 +129,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 
 	socket, err := server.AcquireSocket()
 	if err != nil {
-		log("[sync] Failed to get socket to ", addr, ": ", err.Error())
+		log("SYNC Failed to get socket to ", addr, ": ", err.Error())
 		return
 	}
 
@@ -133,27 +137,31 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 	session := newSession(Monotonic, cluster, socket, 10 * time.Second)
 	defer session.Close()
 
+	// session holds the socket now.
 	socket.Release()
 
 	result := isMasterResult{}
 	err = session.Run("ismaster", &result)
 	if err != nil {
-		log("[sync] Command 'ismaster' to ", addr, " failed: ", err.Error())
+		log("SYNC Command 'ismaster' to ", addr, " failed: ", err.Error())
 		return
 	}
-	debugf("[sync] Result of 'ismaster' from %s: %#v", addr, result)
+	debugf("SYNC Result of 'ismaster' from %s: %#v", addr, result)
 
 	if result.IsMaster {
-		log("[sync] ", addr, " is a master.")
+		log("SYNC ", addr, " is a master.")
 		// Made an incorrect assumption above, so fix stats.
 		stats.conn(-1, false)
 		server.SetMaster(true)
 		stats.conn(+1, true)
 	} else if result.Secondary {
-		log("[sync] ", addr, " is a slave.")
+		log("SYNC ", addr, " is a slave.")
 	} else {
-		log("[sync] ", addr, " is neither a master nor a slave.")
-		//return nil, errors.New(addr + " not a master nor slave")
+		log("SYNC ", addr, " is neither a master nor a slave.")
+		// Made an incorrect assumption above, so fix stats.
+		stats.conn(-1, false)
+		cluster.removeServer(server)
+		return nil, errors.New(addr + " is not a master nor slave")
 	}
 
 	hosts = make([]string, 0, 1+len(result.Hosts)+len(result.Passives))
@@ -170,7 +178,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 	session.Close()
 	cluster.mergeServer(server)
 
-	debugf("[sync] %s knows about the following peers: %#v", addr, hosts)
+	debugf("SYNC %s knows about the following peers: %#v", addr, hosts)
 	return hosts, nil
 }
 
@@ -181,27 +189,27 @@ func (cluster *mongoCluster) mergeServer(server *mongoServer) {
 	if previous == nil {
 		cluster.servers.Add(server)
 		if isMaster {
-			log("[sync] Adding ", server.Addr, " to cluster as a master.")
+			log("SYNC Adding ", server.Addr, " to cluster as a master.")
 			cluster.masters.Add(server)
 		} else {
-			log("[sync] Adding ", server.Addr, " to cluster as a slave.")
+			log("SYNC Adding ", server.Addr, " to cluster as a slave.")
 			cluster.slaves.Add(server)
 		}
 	} else {
 		if isMaster != previous.IsMaster() {
 			if isMaster {
-				log("[sync] Server ", server.Addr, " is now a master.")
+				log("SYNC Server ", server.Addr, " is now a master.")
 				cluster.slaves.Remove(previous)
 				cluster.masters.Add(previous)
 			} else {
-				log("[sync] Server ", server.Addr, " is now a slave.")
+				log("SYNC Server ", server.Addr, " is now a slave.")
 				cluster.masters.Remove(previous)
 				cluster.slaves.Add(previous)
 			}
 		}
 		previous.Merge(server)
 	}
-	debug("[sync] Broadcasting availability of server.")
+	debug("SYNC Broadcasting availability of server.")
 	cluster.serverSynced.Broadcast()
 	cluster.Unlock()
 }
@@ -233,66 +241,99 @@ func (cluster *mongoCluster) getKnownAddrs() []string {
 	return known
 }
 
-// Synchronize all servers in the cluster.  This will contact all servers in
-// parallel, ask them about known peers and their own role within the cluster,
-// and then attempt to do the same with all the peers retrieved.  This function
-// will only return once the full synchronization is done.
+// syncServers injects a value into the cluster.sync channel to force
+// an iteration of the syncServersLoop function.
 func (cluster *mongoCluster) syncServers() {
-	cluster.Lock()
-	if cluster.syncing || cluster.references == 0 {
-		cluster.Unlock()
-		return
+	select {
+	case cluster.sync <- true:
+	default:
 	}
-	cluster.syncing = true
-	cluster.Unlock()
+}
 
-restart:
+// How long to wait for a checkup of the cluster topology if nothing
+// else kicks a synchronization first.
+const syncServersDelay = 5 * time.Minute
 
-	log("[sync] Starting full topology synchronization...")
-
-	cluster.Lock()
-	// Check again, so that ref=0 stops restarting.
-	if cluster.references == 0 {
-		cluster.syncing = false
+// syncServersLoop loops while the cluster is alive to keep its idea of
+// the server topology up-to-date. It must be called just once from
+// newCluster.  The loop iterates once syncServersDelay has passed, or
+// if somebody injects a value into the cluster.sync channel to force a
+// synchronization.  A loop iteration will contact all servers in
+// parallel, ask them about known peers and their own role within the
+// cluster, and then attempt to do the same with all the peers
+// retrieved.
+func (cluster *mongoCluster) syncServersLoop() {
+	for {
+		cluster.Lock()
+		if cluster.references == 0 {
+			cluster.Unlock()
+			return
+		}
+		cluster.references++ // Keep alive while syncing.
+		direct := cluster.direct
 		cluster.Unlock()
-		return
+
+		cluster.syncServersIteration(direct)
+
+		// We just synchronized, so consume any outstanding requests.
+		select {
+		case <-cluster.sync:
+		default:
+		}
+
+		// Hold off before allowing another sync. No point in
+		// burning CPU looking for down servers.
+		time.Sleep(5e8)
+
+		cluster.Lock()
+		// Poke all waiters so they have a chance to timeout or
+		// restart syncing if they wish to.
+		cluster.serverSynced.Broadcast()
+		// Check if we have to restart immediately either way.
+		restart := !direct && cluster.masters.Empty() || cluster.servers.Empty()
+		cluster.Unlock()
+
+		// Reference is decreased after unlocking so that
+		// if refs=0 Release can handle it.
+		cluster.Release()
+
+		if restart {
+			log("SYNC No masters found. Will synchronize again.")
+			continue
+		}
+
+		// Hold off until somebody explicitly requests a synchronization
+		// or it's time to check for a cluster topology change again.
+		select {
+		case <-cluster.sync:
+		case <-time.After(syncServersDelay):
+		}
 	}
-	cluster.references++ // Keep alive while syncing.
-	direct := cluster.direct
-	cluster.Unlock()
+}
+
+func (cluster *mongoCluster) syncServersIteration(direct bool) {
+	log("SYNC Starting full topology synchronization...")
 
 	known := cluster.getKnownAddrs()
 
-	// Note that the logic below is lock free.  The locks below are
-	// just to avoid race conditions internally and to wait for the
-	// procedure to finish.
+	// Note that the logic below doesn't lock the cluster.  The locks
+	// below are just to avoid race conditions internally and to wait
+	// for the procedure to finish.
 
-	var started, finished int
-	var done sync.Mutex
+	var wg sync.WaitGroup
 	var m sync.Mutex
 
-	done.Lock()
 	seen := make(map[string]bool)
 
 	var spawnSync func(addr string)
 	spawnSync = func(addr string) {
-		m.Lock()
-		started++
-		m.Unlock()
-
+		wg.Add(1)
 		go func() {
-			defer func() {
-				m.Lock()
-				finished++
-				if started == finished && finished >= len(known) {
-					done.Unlock()
-				}
-				m.Unlock()
-			}()
+			defer wg.Done()
 
-			server, err := newServer(addr)
+			server, err := newServer(addr, cluster.sync)
 			if err != nil {
-				log("[sync] Failed to start sync of ", addr, ": ", err.Error())
+				log("SYNC Failed to start sync of ", addr, ": ", err.Error())
 				return
 			}
 
@@ -316,11 +357,10 @@ restart:
 	for _, addr := range known {
 		spawnSync(addr)
 	}
-
-	done.Lock()
+	wg.Wait()
 
 	cluster.Lock()
-	log("[sync] Synchronization completed: ", cluster.masters.Len(),
+	log("SYNC Synchronization completed: ", cluster.masters.Len(),
 		" master(s) and, ", cluster.slaves.Len(), " slave(s) alive.")
 
 	// Update dynamic seeds, but only if we have any good servers. Otherwise,
@@ -331,34 +371,8 @@ restart:
 			dynaSeeds[i] = server.Addr
 		}
 		cluster.dynaSeeds = dynaSeeds
-		debugf("[sync] New dynamic seeds: %#v\n", dynaSeeds)
+		debugf("SYNC New dynamic seeds: %#v\n", dynaSeeds)
 	}
-
-	// Poke all waiters so they have a chance to timeout.
-	cluster.serverSynced.Broadcast()
-
-	if !direct && cluster.masters.Empty() || cluster.servers.Empty() {
-		log("[sync] No masters found. Will synchronize again.")
-
-		cluster.Unlock()
-		cluster.Release() // May stop resyncing with refs=0.
-		time.Sleep(5e8)
-		goto restart
-	}
-
-	// Reference is decreased after unlocking, so that
-	// if refs=0, Release handles it.
-	cluster.Unlock()
-	cluster.Release()
-
-	// Hold off before allowing another sync.  No point in
-	// burning CPU looking for down servers.
-	time.Sleep(5e8)
-	cluster.Lock()
-	cluster.syncing = false
-	// Poke all waiters so they have a chance to timeout or
-	// restart syncing if they wish to.
-	cluster.serverSynced.Broadcast()
 	cluster.Unlock()
 }
 
@@ -379,9 +393,7 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Durati
 				return nil, errors.New("no reachable servers")
 			}
 			log("Waiting for servers to synchronize...")
-			if !cluster.syncing {
-				go cluster.syncServers()
-			}
+			cluster.syncServers()
 			cluster.serverSynced.Wait()
 		}
 
@@ -398,7 +410,7 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Durati
 		s, err = server.AcquireSocket()
 		if err != nil {
 			cluster.removeServer(server)
-			go cluster.syncServers()
+			cluster.syncServers()
 			continue
 		}
 		return s, nil

@@ -843,9 +843,23 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 }
 
 func (s *S) TestRemovalOfClusterMember(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
 	master, err := mgo.Dial("localhost:40021")
 	c.Assert(err, IsNil)
 	defer master.Close()
+
+	for i := 0; i < 10; i++ {
+		if len(master.LiveServers()) == 3 {
+			break
+		}
+		time.Sleep(5e8)
+	}
+	if len(master.LiveServers()) != 3 {
+		c.Fatalf("Test started with bad cluster state: %v", master.LiveServers())
+	}
 
 	// Repeat a few times since we may not see a slave before
 	// the synchronization of the cluster moves on.
@@ -872,14 +886,22 @@ func (s *S) TestRemovalOfClusterMember(c *C) {
 		s.Stop(slaveAddr)
 	}()
 
+	c.Logf("========== Removing slave: %s ==========", slaveAddr)
+
 	err = master.Run(bson.D{{"$eval", `rs.remove("` + slaveAddr + `")`}}, nil)
 	c.Assert(err, Equals, io.EOF)
 
 	master.Refresh()
 
+	// Give the cluster a moment to catch up by doing a roundtrip to the master.
+	err = master.Ping()
+	c.Assert(err, IsNil)
+
+	time.Sleep(3e9)
+
 	// This must fail since the slave has been taken off the cluster.
 	err = slave.Ping()
-	c.Assert(err, IsNil)
+	c.Assert(err, NotNil)
 
 	for i := 0; i < 15; i++ {
 		if len(master.LiveServers()) == 2 {

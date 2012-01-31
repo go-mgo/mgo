@@ -37,15 +37,17 @@ import (
 
 type mongoServer struct {
 	sync.RWMutex
-	Addr         string
-	ResolvedAddr string
-	tcpaddr      *net.TCPAddr
-	sockets      []*mongoSocket
-	closed       bool
-	master       bool
+	Addr          string
+	ResolvedAddr  string
+	tcpaddr       *net.TCPAddr
+	unusedSockets []*mongoSocket
+	liveSockets   []*mongoSocket
+	closed        bool
+	master        bool
+	sync          chan bool
 }
 
-func newServer(addr string) (server *mongoServer, err error) {
+func newServer(addr string, sync chan bool) (server *mongoServer, err error) {
 	tcpaddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		log("Failed to resolve ", addr, ": ", err.Error())
@@ -56,7 +58,12 @@ func newServer(addr string) (server *mongoServer, err error) {
 	if resolvedAddr != addr {
 		debug("Address ", addr, " resolved as ", resolvedAddr)
 	}
-	server = &mongoServer{Addr: addr, ResolvedAddr: resolvedAddr, tcpaddr: tcpaddr}
+	server = &mongoServer{
+		Addr:         addr,
+		ResolvedAddr: resolvedAddr,
+		tcpaddr:      tcpaddr,
+		sync:         sync,
+	}
 	return
 }
 
@@ -68,19 +75,22 @@ func newServer(addr string) (server *mongoServer, err error) {
 func (server *mongoServer) AcquireSocket() (socket *mongoSocket, err error) {
 	for {
 		server.Lock()
-		n := len(server.sockets)
+		n := len(server.unusedSockets)
 		if n > 0 {
-			socket = server.sockets[n-1]
-			server.sockets[n-1] = nil // Help GC.
-			server.sockets = server.sockets[:n-1]
+			socket = server.unusedSockets[n-1]
+			server.unusedSockets[n-1] = nil // Help GC.
+			server.unusedSockets = server.unusedSockets[:n-1]
 			server.Unlock()
-			err = socket.Acquired(server)
+			err = socket.InitialAcquire()
 			if err != nil {
 				continue
 			}
 		} else {
 			server.Unlock()
 			socket, err = server.Connect()
+			server.Lock()
+			server.liveSockets = append(server.liveSockets, socket)
+			server.Unlock()
 		}
 		return
 	}
@@ -111,22 +121,49 @@ func (server *mongoServer) Connect() (*mongoSocket, error) {
 func (server *mongoServer) Close() {
 	server.Lock()
 	server.closed = true
-	for i, s := range server.sockets {
+	for i, s := range server.liveSockets {
 		s.Close()
-		server.sockets[i] = nil
+		server.liveSockets[i] = nil
 	}
-	server.sockets = server.sockets[0:0]
+	for i := range server.unusedSockets {
+		server.unusedSockets[i] = nil
+	}
+	server.liveSockets = nil
+	server.unusedSockets = nil
 	server.Unlock()
 }
 
 func (server *mongoServer) RecycleSocket(socket *mongoSocket) {
 	server.Lock()
-	if server.closed {
-		socket.Close()
-	} else {
-		server.sockets = append(server.sockets, socket)
+	if !server.closed {
+		server.unusedSockets = append(server.unusedSockets, socket)
 	}
 	server.Unlock()
+}
+
+func removeSocket(sockets []*mongoSocket, socket *mongoSocket) []*mongoSocket {
+	for i, s := range sockets {
+		if s == socket {
+			copy(sockets[i:], sockets[i+1:])
+			n := len(sockets) - 1
+			sockets[n] = nil
+			sockets = sockets[:n]
+			break
+		}
+	}
+	return sockets
+}
+
+func (server *mongoServer) AbendSocket(socket *mongoSocket) {
+	server.Lock()
+	server.liveSockets = removeSocket(server.liveSockets, socket)
+	server.unusedSockets = removeSocket(server.unusedSockets, socket)
+	server.Unlock()
+	// Maybe just a timeout, but suggest a cluster sync up just in case.
+	select {
+	case server.sync <- true:
+	default:
+	}
 }
 
 func (server *mongoServer) Merge(other *mongoServer) {
@@ -195,15 +232,15 @@ func (servers *mongoServers) Add(server *mongoServer) {
 	servers.slice.Sort()
 }
 
-func (servers *mongoServers) Remove(other *mongoServer) bool {
+func (servers *mongoServers) Remove(other *mongoServer) (server *mongoServer) {
 	if i, found := servers.slice.Search(other); found {
-		n := len(servers.slice)
-		copy(servers.slice[i:], servers.slice[i+1:n])
-		servers.slice[n-1] = nil // Help GC.
-		servers.slice = servers.slice[:n-1]
-		return true
+		server = servers.slice[i]
+		copy(servers.slice[i:], servers.slice[i+1:])
+		n := len(servers.slice) - 1
+		servers.slice[n] = nil // Help GC.
+		servers.slice = servers.slice[:n]
 	}
-	return false
+	return
 }
 
 func (servers *mongoServers) Slice() []*mongoServer {

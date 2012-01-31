@@ -68,6 +68,7 @@ for (var i = 0; i != 10; i++) {
     var count = countHealthy(rs1a) + countHealthy(rs2a)
     print("Replica sets have", count, "healthy nodes.")
     if (count == totalRSMembers) {
+        sleep(2000)
         configShards()
         quit(0)
     }

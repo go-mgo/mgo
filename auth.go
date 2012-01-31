@@ -91,13 +91,13 @@ func (socket *mongoSocket) resetNonce() {
 	op.limit = -1
 	op.replyFunc = func(err error, reply *replyOp, docNum int, docData []byte) {
 		if err != nil {
-			socket.kill(errors.New("getNonce: " + err.Error()))
+			socket.kill(errors.New("getNonce: " + err.Error()), true)
 			return
 		}
 		result := &getNonceResult{}
 		err = bson.Unmarshal(docData, &result)
 		if err != nil {
-			socket.kill(errors.New("Failed to unmarshal nonce: " + err.Error()))
+			socket.kill(errors.New("Failed to unmarshal nonce: " + err.Error()), true)
 			return
 		}
 		debugf("Socket %p to %s: nonce unmarshalled: %#v", socket, socket.addr, result)
@@ -111,7 +111,7 @@ func (socket *mongoSocket) resetNonce() {
 			} else {
 				msg = "Got an empty nonce"
 			}
-			socket.kill(errors.New(msg))
+			socket.kill(errors.New(msg), true)
 			return
 		}
 		socket.Lock()
@@ -125,7 +125,7 @@ func (socket *mongoSocket) resetNonce() {
 	}
 	err := socket.Query(op)
 	if err != nil {
-		socket.kill(errors.New("resetNonce: " + err.Error()))
+		socket.kill(errors.New("resetNonce: " + err.Error()), true)
 	}
 }
 

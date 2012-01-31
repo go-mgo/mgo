@@ -101,7 +101,10 @@ func newSocket(server *mongoServer, conn *net.TCPConn) *mongoSocket {
 	socket := &mongoSocket{conn: conn, addr: server.Addr}
 	socket.gotNonce.L = &socket.Mutex
 	socket.replyFuncs = make(map[uint32]replyFunc)
-	socket.Acquired(server)
+	socket.server = server
+	if err := socket.InitialAcquire(); err != nil {
+		panic("newSocket: InitialAcquire returned error: " + err.Error())
+	}
 	stats.socketsAlive(+1)
 	debugf("Socket %p to %s: initialized", socket, socket.addr)
 	socket.resetNonce()
@@ -109,21 +112,18 @@ func newSocket(server *mongoServer, conn *net.TCPConn) *mongoSocket {
 	return socket
 }
 
-// Inform the socket it's being put in use, either right after a
-// connection or after being recycled.
-func (socket *mongoSocket) Acquired(server *mongoServer) error {
+// InitialAcquire obtains the first reference to the socket, either
+// right after the connection is made or once a recycled socket is
+// being put back in use.
+func (socket *mongoSocket) InitialAcquire() error {
 	socket.Lock()
-	if socket.server != nil {
-		panic("Attempting to reacquire an owned socket.")
+	if socket.references > 0 {
+		panic("Socket acquired out of cache with references")
 	}
 	if socket.dead != nil {
 		socket.Unlock()
 		return socket.dead
 	}
-	if socket.references > 0 {
-		panic("Socket acquired out of cache with references")
-	}
-	socket.server = server
 	socket.references++
 	stats.socketsInUse(+1)
 	stats.socketRefs(+1)
@@ -131,23 +131,27 @@ func (socket *mongoSocket) Acquired(server *mongoServer) error {
 	return nil
 }
 
-// Acquire the socket again, increasing its refcount.  The socket
-// will only be recycled when it's released as many times as it's
-// acquired.
+// Acquire obtains an additional reference to the socket.
+// The socket will only be recycled when it's released as many
+// times as it's been acquired.
 func (socket *mongoSocket) Acquire() (isMaster bool) {
 	socket.Lock()
 	if socket.references == 0 {
-		panic("socket.Acquire() with references == 0")
+		panic("Socket got non-initial acquire with references == 0")
 	}
 	socket.references++
 	stats.socketRefs(+1)
-	isMaster = socket.server.IsMaster()
+	// We'll track references to dead sockets as well.
+	// Caller is still supposed to release the socket.
+	if socket.dead == nil {
+		isMaster = socket.server.IsMaster()
+	}
 	socket.Unlock()
 	return isMaster
 }
 
-// Decrement the socket refcount. The socket will be recycled once its
-// released as many times as it's acquired.
+// Release decrements a socket reference. The socket will be
+// recycled once its released as many times as it's been acquired.
 func (socket *mongoSocket) Release() {
 	socket.Lock()
 	if socket.references == 0 {
@@ -158,10 +162,12 @@ func (socket *mongoSocket) Release() {
 	if socket.references == 0 {
 		stats.socketsInUse(-1)
 		server := socket.server
-		socket.server = nil
 		socket.Unlock()
 		socket.LogoutAll()
-		server.RecycleSocket(socket)
+		// If the socket is dead server is nil.
+		if server != nil {
+			server.RecycleSocket(socket)
+		}
 	} else {
 		socket.Unlock()
 	}
@@ -169,26 +175,31 @@ func (socket *mongoSocket) Release() {
 
 // Close terminates the socket use.
 func (socket *mongoSocket) Close() {
-	socket.kill(errors.New("Closed explicitly"))
+	socket.kill(errors.New("Closed explicitly"), false)
 }
 
-func (socket *mongoSocket) kill(err error) {
+func (socket *mongoSocket) kill(err error, abend bool) {
 	socket.Lock()
 	if socket.dead != nil {
 		debugf("Socket %p to %s: killed again: %s (previously: %s)", socket, socket.addr, err.Error(), socket.dead.Error())
 		socket.Unlock()
 		return
 	}
-	logf("Socket %p to %s: closing: %s", socket, socket.addr, err.Error())
+	logf("Socket %p to %s: closing: %s (abend=%v)", socket, socket.addr, err.Error(), abend)
 	socket.dead = err
 	socket.conn.Close()
 	stats.socketsAlive(-1)
 	replyFuncs := socket.replyFuncs
 	socket.replyFuncs = make(map[uint32]replyFunc)
+	server := socket.server
+	socket.server = nil
 	socket.Unlock()
 	for _, f := range replyFuncs {
 		logf("Socket %p to %s: notifying replyFunc of closed socket: %s", socket, socket.addr, err.Error())
 		f(err, nil, -1, nil)
+	}
+	if abend {
+		server.AbendSocket(socket)
 	}
 }
 
@@ -372,7 +383,7 @@ func (socket *mongoSocket) readLoop() {
 		// XXX Handle timeouts, , etc
 		err := fill(conn, p)
 		if err != nil {
-			socket.kill(err)
+			socket.kill(err, true)
 			return
 		}
 
@@ -386,7 +397,7 @@ func (socket *mongoSocket) readLoop() {
 		_ = totalLen
 
 		if opCode != 1 {
-			socket.kill(errors.New("opcode != 1, corrupted data?"))
+			socket.kill(errors.New("opcode != 1, corrupted data?"), true)
 			return
 		}
 
@@ -410,7 +421,7 @@ func (socket *mongoSocket) readLoop() {
 			for i := 0; i != int(reply.replyDocs); i++ {
 				err := fill(conn, s)
 				if err != nil {
-					socket.kill(err)
+					socket.kill(err, true)
 					return
 				}
 
@@ -424,7 +435,7 @@ func (socket *mongoSocket) readLoop() {
 
 				err = fill(conn, b[4:])
 				if err != nil {
-					socket.kill(err)
+					socket.kill(err, true)
 					return
 				}
 
