@@ -44,14 +44,17 @@ import (
 // --------------------------------------------------------------------------
 // The public API.
 
-// Objects implementing the bson.Getter interface will get the GetBSON()
+// A value implementing the bson.Getter interface will have its GetBSON
 // method called when the given value has to be marshalled, and the result
 // of this method will be marshaled in place of the actual object.
+//
+// If GetBSON returns return a non-nil error, the marshalling procedure
+// will stop and error out with the provided value.
 type Getter interface {
-	GetBSON() interface{}
+	GetBSON() (interface{}, error)
 }
 
-// Objects implementing the bson.Setter interface will receive the BSON
+// A value implementing the bson.Setter interface will receive the BSON
 // value via the SetBSON method during unmarshaling, and the object
 // itself will not be changed as usual.
 //
@@ -69,7 +72,7 @@ type Getter interface {
 // Setter interface will NOT reset the value to its zero state. This allows
 // the value to decide by itself how to be unmarshalled.
 //
-// Here is a simple example:
+// For example:
 //
 //     type MyString string
 //
@@ -81,8 +84,8 @@ type Setter interface {
 	SetBSON(raw Raw) error
 }
 
-// Handy alias for a map[string]interface{} map, useful for dealing with BSON
-// in a native way.  For instance:
+// M is a convenient alias for a map[string]interface{} map, useful for
+// dealing with BSON in a native way.  For instance:
 //
 //     bson.M{"a": 1, "b": true}
 //
@@ -91,15 +94,15 @@ type Setter interface {
 // undefined ordered. See also the bson.D type for an ordered alternative.
 type M map[string]interface{}
 
-// Type for dealing with documents containing ordered elements in a native
-// fashion. For instance:
+// D is a type for dealing with documents containing ordered elements in a
+// native fashion. For instance:
 //
 //     bson.D{{"a", 1}, {"b", true}}
 //
 // In some situations, such as when creating indexes for MongoDB, the order in
 // which the elements are defined is important.  If the order is not important,
-// using a map is generally more comfortable (see the bson.M type and the
-// Map() method for D).
+// using a map is generally more comfortable. See the bson.M type and the
+// Map() method for D.
 type D []DocElem
 
 // See the bson.D type.
@@ -108,10 +111,10 @@ type DocElem struct {
 	Value interface{}
 }
 
-// Raw may be used to work with raw unprocessed BSON documents and elements,
-// if necessary in advanced cases.  Kind is the kind of element as defined
-// per the BSON specification, and Data is the raw unprocessed data for
-// the respective element.
+// The Raw type represents raw unprocessed BSON documents and elements.
+// Kind is the kind of element as defined per the BSON specification, and
+// Data is the raw unprocessed data for the respective element.
+// Using this type it is possible to unmarshal or marshal values partially.
 //
 // Relevant documentation:
 //
@@ -122,7 +125,7 @@ type Raw struct {
 	Data []byte
 }
 
-// Build a map[string]interface{} out of the ordered element name/value pairs.
+// Map returns a map out of the ordered element name/value pairs in d.
 func (d D) Map() (m M) {
 	m = make(M, len(d))
 	for _, item := range d {
@@ -131,8 +134,8 @@ func (d D) Map() (m M) {
 	return m
 }
 
-// Unique ID identifying the BSON object. Must be exactly 12 bytes long.
-// MongoDB objects by default have such a property set in their "_id"
+// ObjectId is a unique ID identifying a BSON value. It must be exactly 12 bytes
+// long. MongoDB objects by default have such a property set in their "_id"
 // property.
 //
 // http://www.mongodb.org/display/DOCS/Object+IDs
@@ -172,7 +175,7 @@ func initMachineId() {
 	machineId = sum[:]
 }
 
-// NewObjectId generates and returns a new unique ObjectId.
+// NewObjectId returns a new unique ObjectId.
 // This function causes a runtime error if it fails to get the hostname
 // of the current machine.
 func NewObjectId() ObjectId {
@@ -239,7 +242,7 @@ func (id *ObjectId) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Valid returns true if the id is valid (contains exactly 12 bytes)
+// Valid returns true if id is valid. A valid id must contain exactly 12 bytes.
 func (id ObjectId) Valid() bool {
 	return len(id) == 12
 }
@@ -281,9 +284,8 @@ func (id ObjectId) Counter() int32 {
 	return int32(uint32(b[0])<<16 | uint32(b[1])<<8 | uint32(b[2]))
 }
 
-// Similar to a string, but used in languages with a distinct symbol type. This
-// is an alias to a string type, so it can be used in string contexts and
-// string(symbol) will work correctly.
+// The Symbol type is similar to a string and is used in languages with a
+// distinct symbol type.
 type Symbol string
 
 // Now returns the current time with millisecond precision. MongoDB stores
@@ -293,24 +295,27 @@ func Now() time.Time {
 	return time.Unix(0, time.Now().UnixNano() / 1e6 * 1e6)
 }
 
-// Special internal type used by MongoDB that for some strange reason has its
-// own datatype defined in BSON.
+// MongoTimestamp is a special internal type used by MongoDB that for some
+// strange reason has its own datatype defined in BSON.
 type MongoTimestamp int64
 
 type orderKey int64
 
-// Special value which compares higher than all other possible BSON values.
+// MaxKey is a special value that compares higher than all other possible BSON
+// values in a MongoDB database.
 var MaxKey = orderKey(1<<63 - 1)
 
-// Special value which compares lower than all other possible BSON values.
+// MinKey is a special value that compares lower than all other possible BSON
+// values in a MongoDB database.
 var MinKey = orderKey(-1 << 63)
 
 type undefined struct{}
 
+// Undefined represents the undefined BSON value.
 var Undefined undefined
 
-// Representation for non-standard binary values.  Any kind should work,
-// but the following are known as of this writing:
+// Binary is a representation for non-standard binary values.  Any kind should
+// work, but the following are known as of this writing:
 //
 //   0x00 - Generic. This is decoded as []byte(data), not Binary{0x00, data}.
 //   0x01 - Function (!?)
@@ -324,7 +329,7 @@ type Binary struct {
 	Data []byte
 }
 
-// A special type for regular expressions.  The Options field should contain
+// RegEx represents a regular expression.  The Options field may contain
 // individual characters defining the way in which the pattern should be
 // applied, and must be sorted. Valid options as of this writing are 'i' for
 // case insensitive matching, 'm' for multi-line matching, 'x' for verbose
@@ -337,10 +342,10 @@ type RegEx struct {
 	Options string
 }
 
-// Special type for JavaScript code.  If Scope is non-nil, it will be marshaled
-// as a mapping from identifiers to values which should be used when evaluating
-// the provided Code.
-type JS struct {
+// JavaScript is a type that holds JavaScript code. If Scope is non-nil, it
+// will be marshaled as a mapping from identifiers to values that may be
+// used when evaluating the provided Code.
+type JavaScript struct {
 	Code  string
 	Scope interface{}
 }
@@ -363,7 +368,7 @@ func handleErr(err *error) {
 	}
 }
 
-// Marshal serializes the in document, which may be a map or a struct value.
+// Marshal serializes the in value, which may be a map or a struct value.
 // In the case of struct values, only exported fields will be serialized.
 // The lowercased field name is used as the key for each exported field,
 // but this behavior may be changed using the respective field tag.

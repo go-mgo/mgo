@@ -85,7 +85,11 @@ type encoder struct {
 func (e *encoder) addDoc(v reflect.Value) {
 	for {
 		if vi, ok := v.Interface().(Getter); ok {
-			v = reflect.ValueOf(vi.GetBSON())
+			getv, err := vi.GetBSON()
+			if err != nil {
+				panic(err)
+			}
+			v = reflect.ValueOf(getv)
 			continue
 		}
 		if v.Kind() == reflect.Ptr {
@@ -195,7 +199,11 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 	}
 
 	if getter, ok := v.Interface().(Getter); ok {
-		e.addElem(name, reflect.ValueOf(getter.GetBSON()), minSize)
+		getv, err := getter.GetBSON()
+		if err != nil {
+			panic(err)
+		}
+		e.addElem(name, reflect.ValueOf(getv), minSize)
 		return
 	}
 
@@ -331,7 +339,7 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 			e.addCStr(s.Pattern)
 			e.addCStr(s.Options)
 
-		case JS:
+		case JavaScript:
 			if s.Scope == nil {
 				e.addElemName('\x0D', name)
 				e.addStr(s.Code)

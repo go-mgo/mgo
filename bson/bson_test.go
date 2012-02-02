@@ -144,11 +144,11 @@ var allItems = []testItemType{
 		"\x0A_\x00"},
 	{bson.M{"_": bson.RegEx{"ab", "cd"}},
 		"\x0B_\x00ab\x00cd\x00"},
-	{bson.M{"_": bson.JS{"code", nil}},
+	{bson.M{"_": bson.JavaScript{"code", nil}},
 		"\x0D_\x00\x05\x00\x00\x00code\x00"},
 	{bson.M{"_": bson.Symbol("sym")},
 		"\x0E_\x00\x04\x00\x00\x00sym\x00"},
-	{bson.M{"_": bson.JS{"code", bson.M{"": nil}}},
+	{bson.M{"_": bson.JavaScript{"code", bson.M{"": nil}}},
 		"\x0F_\x00\x14\x00\x00\x00\x05\x00\x00\x00code\x00" +
 			"\x07\x00\x00\x00\x0A\x00\x00"},
 	{bson.M{"_": 258},
@@ -237,9 +237,9 @@ var oneWayMarshalItems = []testItemType{
 		"\x05\x00\x04\x00\x00\x00\x80udef"},
 	{bson.M{"": &bson.RegEx{"ab", "cd"}},
 		"\x0B\x00ab\x00cd\x00"},
-	{bson.M{"": &bson.JS{"code", nil}},
+	{bson.M{"": &bson.JavaScript{"code", nil}},
 		"\x0D\x00\x05\x00\x00\x00code\x00"},
-	{bson.M{"": &bson.JS{"code", bson.M{"": nil}}},
+	{bson.M{"": &bson.JavaScript{"code", bson.M{"": nil}}},
 		"\x0F\x00\x14\x00\x00\x00\x05\x00\x00\x00code\x00" +
 			"\x07\x00\x00\x00\x0A\x00\x00"},
 
@@ -767,10 +767,11 @@ func (s *S) TestDMap(c *C) {
 
 type typeWithGetter struct {
 	result interface{}
+	err error
 }
 
-func (t *typeWithGetter) GetBSON() interface{} {
-	return t.result
+func (t *typeWithGetter) GetBSON() (interface{}, error) {
+	return t.result, t.err
 }
 
 type docWithGetterField struct {
@@ -783,7 +784,7 @@ func (s *S) TestMarshalAllItemsWithGetter(c *C) {
 			continue
 		}
 		obj := &docWithGetterField{}
-		obj.Field = &typeWithGetter{item.obj.(bson.M)["_"]}
+		obj.Field = &typeWithGetter{result: item.obj.(bson.M)["_"]}
 		data, err := bson.Marshal(obj)
 		c.Assert(err, IsNil)
 		c.Assert(string(data), Equals, wrapInDoc(item.data),
@@ -792,16 +793,31 @@ func (s *S) TestMarshalAllItemsWithGetter(c *C) {
 }
 
 func (s *S) TestMarshalWholeDocumentWithGetter(c *C) {
-	obj := &typeWithGetter{sampleItems[0].obj}
+	obj := &typeWithGetter{result: sampleItems[0].obj}
 	data, err := bson.Marshal(obj)
 	c.Assert(err, IsNil)
 	c.Assert(string(data), Equals, sampleItems[0].data)
 }
 
+func (s *S) TestGetterErrors(c *C) {
+	e := errors.New("oops")
+
+	obj1 := &docWithGetterField{}
+	obj1.Field = &typeWithGetter{sampleItems[0].obj, e}
+	data, err := bson.Marshal(obj1)
+	c.Assert(err, ErrorMatches, "oops")
+	c.Assert(data, IsNil)
+
+	obj2 := &typeWithGetter{sampleItems[0].obj, e}
+	data, err = bson.Marshal(obj2)
+	c.Assert(err, ErrorMatches, "oops")
+	c.Assert(data, IsNil)
+}
+
 type intGetter int64
 
-func (t intGetter) GetBSON() interface{} {
-	return int64(t)
+func (t intGetter) GetBSON() (interface{}, error) {
+	return int64(t), nil
 }
 
 type typeWithIntGetter struct {

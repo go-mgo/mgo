@@ -369,12 +369,12 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 	case 0x0B: // RegEx
 		in = d.readRegEx()
 	case 0x0D: // JavaScript without scope
-		in = JS{Code: d.readStr()}
+		in = JavaScript{Code: d.readStr()}
 	case 0x0E: // Symbol
 		in = Symbol(d.readStr())
 	case 0x0F: // JavaScript with scope
 		d.i += 4 // Skip length
-		js := JS{d.readStr(), make(M)}
+		js := JavaScript{d.readStr(), make(M)}
 		d.readDocTo(reflect.ValueOf(js.Scope))
 		in = js
 	case 0x10: // Int32
