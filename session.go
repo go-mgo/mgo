@@ -776,7 +776,7 @@ func (s *Session) ResetIndexCache() {
 //
 // Login information from the original session will not be copied over
 // into the new session unless it was provided through the initial URL
-// for the Mongo function.
+// for the Dial function.
 //
 // See the Copy and Clone methods.
 //

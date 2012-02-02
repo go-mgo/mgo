@@ -290,7 +290,9 @@ type Symbol string
 
 // Now returns the current time with millisecond precision. MongoDB stores
 // timestamps with the same precision, so a Time returned from this method
-// will not change after a roundtrip to the database.
+// will not change after a roundtrip to the database. That's the only reason
+// why this function exists. Using the time.Now function also works fine
+// otherwise.
 func Now() time.Time {
 	return time.Unix(0, time.Now().UnixNano() / 1e6 * 1e6)
 }
