@@ -391,7 +391,8 @@ func (socket *mongoSocket) readLoop() {
 		responseTo := getInt32(p, 8)
 		opCode := getInt32(p, 12)
 
-		// Don't use socket.server.Addr here.  socket is not locked.
+		// Don't use socket.server.Addr here.  socket is not
+		// locked and socket.server may go away.
 		debugf("Socket %p to %s: got reply (%d bytes)", socket, socket.addr, totalLen)
 
 		_ = totalLen

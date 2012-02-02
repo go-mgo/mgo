@@ -851,6 +851,7 @@ func (s *S) TestRemovalOfClusterMember(c *C) {
 	c.Assert(err, IsNil)
 	defer master.Close()
 
+	// Wait for cluster to fully sync up.
 	for i := 0; i < 10; i++ {
 		if len(master.LiveServers()) == 3 {
 			break
@@ -861,19 +862,11 @@ func (s *S) TestRemovalOfClusterMember(c *C) {
 		c.Fatalf("Test started with bad cluster state: %v", master.LiveServers())
 	}
 
-	// Repeat a few times since we may not see a slave before
-	// the synchronization of the cluster moves on.
-	slave := master.Copy()
 	result := &struct{ IsMaster bool; Me string }{}
-	for i := 0; i < 30; i++ {
-		// Monotonic can hold a non-master socket persistently.
-		slave.SetMode(mgo.Monotonic, true)
-		err = slave.Run("isMaster", result)
-		c.Assert(err, IsNil)
-		if !result.IsMaster {
-			break
-		}
-	}
+	slave := master.Copy()
+	slave.SetMode(mgo.Monotonic, true) // Monotonic can hold a non-master socket persistently.
+	err = slave.Run("isMaster", result)
+	c.Assert(err, IsNil)
 	c.Assert(result.IsMaster, Equals, false)
 	slaveAddr := result.Me
 
@@ -884,11 +877,14 @@ func (s *S) TestRemovalOfClusterMember(c *C) {
 		slave.Close()
 
 		s.Stop(slaveAddr)
+		// For some reason it remains FATAL if we don't wait.
+		time.Sleep(3e9)
 	}()
 
 	c.Logf("========== Removing slave: %s ==========", slaveAddr)
 
-	err = master.Run(bson.D{{"$eval", `rs.remove("` + slaveAddr + `")`}}, nil)
+	master.Run(bson.D{{"$eval", `rs.remove("` + slaveAddr + `")`}}, nil)
+	err = master.Ping()
 	c.Assert(err, Equals, io.EOF)
 
 	master.Refresh()

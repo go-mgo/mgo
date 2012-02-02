@@ -279,6 +279,7 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 func newSession(consistency mode, cluster *mongoCluster, socket *mongoSocket, syncTimeout time.Duration) (session *Session) {
 	cluster.Acquire()
 	session = &Session{cluster_: cluster, syncTimeout: syncTimeout}
+	debugf("New session %p on cluster %p", session, cluster)
 	session.SetMode(consistency, true)
 	session.SetSafe(&Safe{})
 	session.setSocket(socket)
@@ -288,7 +289,8 @@ func newSession(consistency mode, cluster *mongoCluster, socket *mongoSocket, sy
 }
 
 func copySession(session *Session, keepAuth bool) (s *Session) {
-	session.cluster().Acquire()
+	cluster := session.cluster()
+	cluster.Acquire()
 	if session.socket != nil {
 		session.socket.Acquire()
 	}
@@ -312,6 +314,7 @@ func copySession(session *Session, keepAuth bool) (s *Session) {
 		urlauth:        session.urlauth,
 		auth:           auth,
 	}
+	debugf("New session %p on cluster %p (copy from %p)", s, cluster, session)
 	runtime.SetFinalizer(s, finalizeSession)
 	return s
 }
@@ -813,6 +816,7 @@ func (s *Session) Clone() *Session {
 func (s *Session) Close() {
 	s.m.Lock()
 	if s.cluster_ != nil {
+		debugf("Closing session %p", s)
 		s.setSocket(nil)
 		s.cluster_.Release()
 		s.cluster_ = nil

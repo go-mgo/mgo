@@ -88,9 +88,11 @@ func (server *mongoServer) AcquireSocket() (socket *mongoSocket, err error) {
 		} else {
 			server.Unlock()
 			socket, err = server.Connect()
-			server.Lock()
-			server.liveSockets = append(server.liveSockets, socket)
-			server.Unlock()
+			if err == nil {
+				server.Lock()
+				server.liveSockets = append(server.liveSockets, socket)
+				server.Unlock()
+			}
 		}
 		return
 	}
@@ -121,16 +123,20 @@ func (server *mongoServer) Connect() (*mongoSocket, error) {
 func (server *mongoServer) Close() {
 	server.Lock()
 	server.closed = true
-	for i, s := range server.liveSockets {
-		s.Close()
-		server.liveSockets[i] = nil
-	}
-	for i := range server.unusedSockets {
-		server.unusedSockets[i] = nil
-	}
+	liveSockets := server.liveSockets
+	unusedSockets := server.unusedSockets
 	server.liveSockets = nil
 	server.unusedSockets = nil
+	addr := server.Addr
 	server.Unlock()
+	logf("Connections to %s closing (%d live sockets).", addr, len(liveSockets))
+	for i, s := range liveSockets {
+		s.Close()
+		liveSockets[i] = nil
+	}
+	for i := range unusedSockets {
+		unusedSockets[i] = nil
+	}
 }
 
 func (server *mongoServer) RecycleSocket(socket *mongoSocket) {
@@ -156,6 +162,10 @@ func removeSocket(sockets []*mongoSocket, socket *mongoSocket) []*mongoSocket {
 
 func (server *mongoServer) AbendSocket(socket *mongoSocket) {
 	server.Lock()
+	if server.closed {
+		server.Unlock()
+		return
+	}
 	server.liveSockets = removeSocket(server.liveSockets, socket)
 	server.unusedSockets = removeSocket(server.unusedSockets, socket)
 	server.Unlock()
@@ -169,11 +179,11 @@ func (server *mongoServer) AbendSocket(socket *mongoSocket) {
 func (server *mongoServer) Merge(other *mongoServer) {
 	server.Lock()
 	server.master = other.master
+	server.Unlock()
 	// Sockets of other are ignored for the moment. Merging them
 	// would mean a large number of sockets being cached on longer
 	// recovering situations.
 	other.Close()
-	server.Unlock()
 }
 
 func (server *mongoServer) SetMaster(isMaster bool) {

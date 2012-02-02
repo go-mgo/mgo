@@ -35,6 +35,7 @@ import (
 	"launchpad.net/mgo/bson"
 	"os"
 	"sync"
+	"time"
 )
 
 type GridFS struct {
@@ -73,7 +74,7 @@ type GridFile struct {
 type gfsFile struct {
 	Id          interface{}    "_id"
 	ChunkSize   int            "chunkSize"
-	UploadDate  bson.Timestamp "uploadDate"
+	UploadDate  time.Time      "uploadDate"
 	Length      int64          ",minsize"
 	MD5         string
 	Filename    string    ",omitempty"
@@ -472,9 +473,9 @@ func (file *GridFile) MD5() (md5 string) {
 	return file.doc.MD5
 }
 
-// UploadDate returns the file upload time in nanoseconds.
-func (file *GridFile) UploadDate() int64 {
-	return int64(file.doc.UploadDate)
+// UploadDate returns the file upload time.
+func (file *GridFile) UploadDate() time.Time {
+	return file.doc.UploadDate
 }
 
 // Close flushes any pending changes in case the file is being written

@@ -67,9 +67,9 @@ func (s *S) TestGridFSCreate(c *C) {
 	c.Assert(fileId.Valid(), Equals, true)
 	result["_id"] = "<id>"
 
-	fileTs, ok := result["uploadDate"].(bson.Timestamp)
+	ud, ok := result["uploadDate"].(time.Time)
 	c.Assert(ok, Equals, true)
-	c.Assert(fileTs >= before && fileTs <= after, Equals, true)
+	c.Assert(ud.After(before) && ud.Before(after), Equals, true)
 	result["uploadDate"] = "<timestamp>"
 
 	expected := M{
@@ -158,8 +158,10 @@ func (s *S) TestGridFSFileDetails(c *C) {
 
 	c.Assert(file.MD5(), Equals, "1e50210a0202497fb79bc38b6ade6c34")
 
-	c.Assert(file.UploadDate() < time.Now().UnixNano(), Equals, true)
-	c.Assert(file.UploadDate() > time.Now().UnixNano()-3e9, Equals, true)
+	ud := file.UploadDate()
+	now := time.Now()
+	c.Assert(ud.Before(now), Equals, true)
+	c.Assert(ud.After(now.Add(-3 * time.Second)), Equals, true)
 
 	result := M{}
 	err = db.C("fs.files").Find(nil).One(result)

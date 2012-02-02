@@ -30,6 +30,8 @@ var rs2cfg = {_id: "rs2",
 
 for (var i = 0; i != 60; i++) {
 	try {
+		db1 = new Mongo("127.0.0.1:40001").getDB("admin")
+		db2 = new Mongo("127.0.0.1:40002").getDB("admin")
 		rs1a = new Mongo("127.0.0.1:40011").getDB("admin")
 		rs2a = new Mongo("127.0.0.1:40021").getDB("admin")
 		break
@@ -56,7 +58,10 @@ function countHealthy(rs) {
     var count = 0
     if (typeof status.members != "undefined") {
         for (var i = 0; i != status.members.length; i++) {
-            count += status.members[i].health
+            var m = status.members[i]
+            if (m.health == 1 && (m.state == 1 || m.state == 2)) {
+                count += 1
+            }
         }
     }
     return count
@@ -64,7 +69,7 @@ function countHealthy(rs) {
 
 var totalRSMembers = rs1cfg.members.length + rs2cfg.members.length
 
-for (var i = 0; i != 10; i++) {
+for (var i = 0; i != 60; i++) {
     var count = countHealthy(rs1a) + countHealthy(rs2a)
     print("Replica sets have", count, "healthy nodes.")
     if (count == totalRSMembers) {
@@ -72,7 +77,7 @@ for (var i = 0; i != 10; i++) {
         configShards()
         quit(0)
     }
-    sleep(3000)
+    sleep(1000)
 }
 
 print("Replica sets didn't sync up properly.")
