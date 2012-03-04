@@ -575,7 +575,7 @@ func (c *Collection) EnsureIndexKey(key []string) error {
 //         Key: []string{"lastname", "firstname"},
 //         Unique: true,
 //         DropDups: true,
-//         Background: true,
+//         Background: true, // See notes.
 //         Sparse: true,
 //     }
 //     err := collection.EnsureIndex(index)
@@ -588,9 +588,10 @@ func (c *Collection) EnsureIndexKey(key []string) error {
 // document per Key.  With DropDups set to true, documents with the same key
 // as a previously indexed one will be dropped rather than an error returned.
 //
-// If Background is true, the operation will return immediately and will
-// continue in background.  The index won't be used for queries until the build
-// is complete.
+// If Background is true, other connections will be allowed to proceed using
+// the collection without the index while it's being built. Note that the
+// session executing EnsureIndex will be blocked for as long as it takes for
+// the index to be built.
 //
 // If Sparse is true, only documents containing the provided Key fields will be
 // included in the index.  When using a sparse index for sorting, only indexed
