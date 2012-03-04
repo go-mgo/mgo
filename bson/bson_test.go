@@ -1080,6 +1080,9 @@ var twoWayCrossItems = []crossTypeItem{
 	{&struct{ B MyBool }{}, map[string]bool{"b": false}},
 	{&struct{ B MyBool }{}, map[string]string{}},
 	{&struct{ B bool }{}, map[string]MyBool{"b": false}},
+
+	// arrays
+	{&struct{ V [2]int }{[...]int{1, 2}}, map[string][2]int{"v": [2]int{1, 2}}},
 }
 
 // Same thing, but only one way (obj1 => obj2).

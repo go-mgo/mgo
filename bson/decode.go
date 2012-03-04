@@ -223,7 +223,41 @@ func (d *decoder) readDocTo(out reflect.Value) {
 	}
 }
 
-func (d *decoder) readArrayDoc(t reflect.Type) interface{} {
+func (d *decoder) readArrayDocTo(out reflect.Value) {
+	end := d.i - 4 + int(d.readInt32())
+	if end <= d.i || end > len(d.in) || d.in[end-1] != '\x00' {
+		corrupted()
+	}
+	i := 0
+	l := out.Len()
+	for d.in[d.i] != '\x00' {
+		if i >= l {
+			panic("Length mismatch on array field")
+		}
+		kind := d.readByte()
+		for d.i < end && d.in[d.i] != '\x00' {
+			d.i++
+		}
+		if d.i >= end {
+			corrupted()
+		}
+		d.i++
+		d.readElemTo(out.Index(i), kind)
+		if d.i >= end {
+			corrupted()
+		}
+		i++
+	}
+	if i != l {
+		panic("Length mismatch on array field")
+	}
+	d.i++ // '\x00'
+	if d.i != end {
+		corrupted()
+	}
+}
+
+func (d *decoder) readSliceDoc(t reflect.Type) interface{} {
 	tmp := make([]reflect.Value, 0, 8)
 	elemType := t.Elem()
 
@@ -344,10 +378,13 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 			outt = outt.Elem()
 		}
 		switch outt.Kind() {
+		case reflect.Array:
+			d.readArrayDocTo(out)
+			return true
 		case reflect.Slice:
-			in = d.readArrayDoc(outt)
+			in = d.readSliceDoc(outt)
 		default:
-			in = d.readArrayDoc(typeSlice)
+			in = d.readSliceDoc(typeSlice)
 		}
 	case 0x05: // Binary
 		b := d.readBinary()
