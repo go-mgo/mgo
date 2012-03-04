@@ -217,9 +217,7 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 
 	case reflect.String:
 		s := v.String()
-
 		switch v.Type() {
-
 		case typeObjectId:
 			if len(s) != 12 {
 				panic("ObjectIDs must be exactly 12 bytes long (got " +
@@ -227,11 +225,9 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 			}
 			e.addElemName('\x07', name)
 			e.addBytes([]byte(s)...)
-
 		case typeSymbol:
 			e.addElemName('\x0E', name)
 			e.addStr(s)
-
 		default:
 			e.addElemName('\x02', name)
 			e.addStr(s)

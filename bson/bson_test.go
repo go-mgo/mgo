@@ -31,8 +31,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"launchpad.net/mgo/bson"
 	. "launchpad.net/gocheck"
+	"launchpad.net/mgo/bson"
 	"reflect"
 	"testing"
 	"time"
@@ -419,7 +419,9 @@ type dOnIface struct {
 }
 
 type ignoreField struct {
+	Before string
 	Ignore string `bson:"-"`
+	After  string
 }
 
 var marshalItems = []testItemType{
@@ -428,8 +430,8 @@ var marshalItems = []testItemType{
 		"\x0Aa\x00\x0Ac\x00\x0Ab\x00\x0Ad\x00\x0Af\x00\x08e\x00\x01"},
 	{&dOnIface{bson.D{{"a", nil}, {"c", nil}, {"b", nil}, {"d", true}}},
 		"\x03d\x00" + wrapInDoc("\x0Aa\x00\x0Ac\x00\x0Ab\x00\x08d\x00\x01")},
-	//{&ignoreField{"foo"},
-	//	wrapInDoc("")},
+	{&ignoreField{"before", "ignore", "after"},
+		"\x02before\x00\a\x00\x00\x00before\x00\x02after\x00\x06\x00\x00\x00after\x00"},
 
 	// Marshalling a Raw document does nothing.
 	{bson.Raw{0x03, []byte(wrapInDoc("anything"))},
@@ -461,6 +463,12 @@ var unmarshalItems = []testItemType{
 	// Ignore non-existing field.
 	{&struct{ Byte byte }{9},
 		"\x10boot\x00\x08\x00\x00\x00" + "\x10byte\x00\x09\x00\x00\x00"},
+
+	// Do not unmarshal on ignored field.
+	{&ignoreField{"before", "", "after"},
+		"\x02before\x00\a\x00\x00\x00before\x00" +
+		"\x02-\x00\a\x00\x00\x00ignore\x00" +
+		"\x02after\x00\x06\x00\x00\x00after\x00"},
 
 	// Ignore unsuitable types silently.
 	{map[string]string{"str": "s"},
@@ -771,7 +779,7 @@ func (s *S) TestDMap(c *C) {
 
 type typeWithGetter struct {
 	result interface{}
-	err error
+	err    error
 }
 
 func (t *typeWithGetter) GetBSON() (interface{}, error) {
