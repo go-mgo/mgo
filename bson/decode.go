@@ -30,6 +30,7 @@ package bson
 import (
 	"fmt"
 	"math"
+	"net/url"
 	"reflect"
 	"sync"
 	"time"
@@ -548,6 +549,15 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 			return true
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 			panic("Can't happen. No uint types in BSON?")
+		}
+	case reflect.Struct:
+		if outt == typeURL && inv.Kind() == reflect.String {
+			u, err := url.Parse(inv.String())
+			if err != nil {
+				panic(err)
+			}
+			out.Set(reflect.ValueOf(u).Elem())
+			return true
 		}
 	}
 

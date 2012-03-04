@@ -33,6 +33,7 @@ import (
 	"errors"
 	. "launchpad.net/gocheck"
 	"launchpad.net/mgo/bson"
+	"net/url"
 	"reflect"
 	"testing"
 	"time"
@@ -922,6 +923,14 @@ var int64ptr = &int64var
 var intvar = int(42)
 var intptr = &intvar
 
+func parseURL(s string) *url.URL {
+	u, err := url.Parse(s)
+	if err != nil {
+		panic(err)
+	}
+	return u
+}
+
 // That's a pretty fun test.  It will dump the first item, generate a zero
 // value equivalent to the second one, load the dumped data onto it, and then
 // verify that the resulting value is deep-equal to the untouched second value.
@@ -1012,6 +1021,10 @@ var twoWayCrossItems = []crossTypeItem{
 	{&struct{ A bool }{true}, map[string]uint{"a": 1}},
 	{&struct{ A bool }{true}, map[string]float64{"a": 1}},
 	{&struct{ A **byte }{&byteptr}, map[string]byte{"a": 8}},
+
+	// url.URL <=> string
+	{&struct{ URL *url.URL }{parseURL("h://e.c/p")}, map[string]string{"url": "h://e.c/p"}},
+	{&struct{ URL url.URL }{*parseURL("h://e.c/p")}, map[string]string{"url": "h://e.c/p"}},
 
 	// Slices
 	{&struct{ S []int }{[]int{1, 2, 3}}, map[string][]int{"s": []int{1, 2, 3}}},

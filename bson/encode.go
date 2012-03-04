@@ -29,6 +29,7 @@ package bson
 
 import (
 	"math"
+	"net/url"
 	"reflect"
 	"strconv"
 	"time"
@@ -38,15 +39,14 @@ import (
 // Some internal infrastructure.
 
 var (
-	typeRegEx          reflect.Type
-	typeBinary         reflect.Type
-	typeObjectId       reflect.Type
-	typeSymbol         reflect.Type
-	typeTime           reflect.Type
-	typeMongoTimestamp reflect.Type
-	typeOrderKey       reflect.Type
-	typeDocElem        reflect.Type
-	typeRaw            reflect.Type
+	typeBinary         = reflect.TypeOf(Binary{})
+	typeObjectId       = reflect.TypeOf(ObjectId(""))
+	typeSymbol         = reflect.TypeOf(Symbol(""))
+	typeMongoTimestamp = reflect.TypeOf(MongoTimestamp(0))
+	typeOrderKey       = reflect.TypeOf(MinKey)
+	typeDocElem        = reflect.TypeOf(DocElem{})
+	typeRaw            = reflect.TypeOf(Raw{})
+	typeURL            = reflect.TypeOf(url.URL{})
 )
 
 const itoaCacheSize = 32
@@ -54,14 +54,6 @@ const itoaCacheSize = 32
 var itoaCache []string
 
 func init() {
-	typeBinary = reflect.TypeOf(Binary{})
-	typeObjectId = reflect.TypeOf(ObjectId(""))
-	typeSymbol = reflect.TypeOf(Symbol(""))
-	typeMongoTimestamp = reflect.TypeOf(MongoTimestamp(0))
-	typeOrderKey = reflect.TypeOf(MinKey)
-	typeDocElem = reflect.TypeOf(DocElem{})
-	typeRaw = reflect.TypeOf(Raw{})
-
 	itoaCache = make([]string, itoaCacheSize)
 	for i := 0; i != itoaCacheSize; i++ {
 		itoaCache[i] = strconv.Itoa(i)
@@ -351,6 +343,10 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 			// MongoDB handles timestamps as milliseconds.
 			e.addElemName('\x09', name)
 			e.addInt64(s.UnixNano() / 1e6)
+
+		case url.URL:
+			e.addElemName('\x02', name)
+			e.addStr(s.String())
 
 		case undefined:
 			e.addElemName('\x06', name)
