@@ -236,15 +236,15 @@ func (s *S) TestDatabaseAndCollectionNames(c *C) {
 
 	names, err := session.DatabaseNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, Equals, []string{"db1", "db2"})
+	c.Assert(names, DeepEquals, []string{"db1", "db2"})
 
 	names, err = db1.CollectionNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, Equals, []string{"col1", "col2", "system.indexes"})
+	c.Assert(names, DeepEquals, []string{"col1", "col2", "system.indexes"})
 
 	names, err = db2.CollectionNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, Equals, []string{"col3", "system.indexes"})
+	c.Assert(names, DeepEquals, []string{"col3", "system.indexes"})
 }
 
 func (s *S) TestSelect(c *C) {
@@ -476,14 +476,14 @@ func (s *S) TestDropDatabase(c *C) {
 
 	names, err := session.DatabaseNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, Equals, []string{"db2"})
+	c.Assert(names, DeepEquals, []string{"db2"})
 
 	err = db2.DropDatabase()
 	c.Assert(err, IsNil)
 
 	names, err = session.DatabaseNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, Equals, []string(nil))
+	c.Assert(names, DeepEquals, []string(nil))
 }
 
 func (s *S) TestDropCollection(c *C) {
@@ -500,14 +500,14 @@ func (s *S) TestDropCollection(c *C) {
 
 	names, err := db.CollectionNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, Equals, []string{"col2", "system.indexes"})
+	c.Assert(names, DeepEquals, []string{"col2", "system.indexes"})
 
 	err = db.C("col2").DropCollection()
 	c.Assert(err, IsNil)
 
 	names, err = db.CollectionNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, Equals, []string{"system.indexes"})
+	c.Assert(names, DeepEquals, []string{"system.indexes"})
 }
 
 func (s *S) TestFindAndModify(c *C) {
@@ -1362,11 +1362,11 @@ func (s *S) TestFindForResetsResult(c *C) {
 		delete(mresult, "_id")
 		switch i {
 		case 0:
-			c.Assert(mresult, Equals, M{"n1": 1})
+			c.Assert(mresult, DeepEquals, M{"n1": 1})
 		case 1:
-			c.Assert(mresult, Equals, M{"n2": 2})
+			c.Assert(mresult, DeepEquals, M{"n2": 2})
 		case 2:
-			c.Assert(mresult, Equals, M{"n3": 3})
+			c.Assert(mresult, DeepEquals, M{"n3": 3})
 		}
 		i++
 		return nil
@@ -1377,15 +1377,15 @@ func (s *S) TestFindForResetsResult(c *C) {
 	var iresult interface{}
 	err = query.For(&iresult, func() error {
 		mresult, ok := iresult.(bson.M)
-		c.Assert(ok, Equals, true, Bug("%#v", iresult))
+		c.Assert(ok, Equals, true, Commentf("%#v", iresult))
 		delete(mresult, "_id")
 		switch i {
 		case 0:
-			c.Assert(mresult, Equals, bson.M{"n1": 1})
+			c.Assert(mresult, DeepEquals, bson.M{"n1": 1})
 		case 1:
-			c.Assert(mresult, Equals, bson.M{"n2": 2})
+			c.Assert(mresult, DeepEquals, bson.M{"n2": 2})
 		case 2:
-			c.Assert(mresult, Equals, bson.M{"n3": 3})
+			c.Assert(mresult, DeepEquals, bson.M{"n3": 3})
 		}
 		i++
 		return nil
@@ -1424,7 +1424,7 @@ func (s *S) TestSort(c *C) {
 		l[i+1] = r.B
 	}
 
-	c.Assert(l, Equals, []int{0, 2, 1, 2, 2, 2, 0, 1, 1, 1, 2, 1, 0, 0, 1, 0, 2, 0})
+	c.Assert(l, DeepEquals, []int{0, 2, 1, 2, 2, 2, 0, 1, 1, 1, 2, 1, 0, 0, 1, 0, 2, 0})
 }
 
 func (s *S) TestPrefetching(c *C) {
@@ -1728,7 +1728,7 @@ func (s *S) TestEnsureIndex(c *C) {
 		"ns":         "mydb.mycoll",
 		"background": true,
 	}
-	c.Assert(result1, Equals, expected1)
+	c.Assert(result1, DeepEquals, expected1)
 
 	delete(result2, "v")
 	expected2 := M{
@@ -1738,7 +1738,7 @@ func (s *S) TestEnsureIndex(c *C) {
 		"unique":   true,
 		"dropDups": true,
 	}
-	c.Assert(result2, Equals, expected2)
+	c.Assert(result2, DeepEquals, expected2)
 
 	delete(result3, "v")
 	expected3 := M{
@@ -1749,7 +1749,7 @@ func (s *S) TestEnsureIndex(c *C) {
 		"max":  500,
 		"bits": 32,
 	}
-	c.Assert(result3, Equals, expected3)
+	c.Assert(result3, DeepEquals, expected3)
 
 	// Ensure the index actually works for real.
 	err = coll.Insert(M{"a": 1, "b": 1})
@@ -1826,7 +1826,7 @@ func (s *S) TestEnsureIndexKey(c *C) {
 		"key":  bson.M{"a": 1},
 		"ns":   "mydb.mycoll",
 	}
-	c.Assert(result1, Equals, expected1)
+	c.Assert(result1, DeepEquals, expected1)
 
 	delete(result2, "v")
 	expected2 := M{
@@ -1834,7 +1834,7 @@ func (s *S) TestEnsureIndexKey(c *C) {
 		"key":  bson.M{"a": 1, "b": -1},
 		"ns":   "mydb.mycoll",
 	}
-	c.Assert(result2, Equals, expected2)
+	c.Assert(result2, DeepEquals, expected2)
 }
 
 func (s *S) TestEnsureIndexDropIndex(c *C) {
@@ -1933,11 +1933,11 @@ func (s *S) TestEnsureIndexGetIndexes(c *C) {
 
 	c.Assert(indexes[0].Name, Equals, "_id_")
 	c.Assert(indexes[1].Name, Equals, "a_1")
-	c.Assert(indexes[1].Key, Equals, []string{"a"})
+	c.Assert(indexes[1].Key, DeepEquals, []string{"a"})
 	c.Assert(indexes[2].Name, Equals, "b_-1")
-	c.Assert(indexes[2].Key, Equals, []string{"-b"})
+	c.Assert(indexes[2].Key, DeepEquals, []string{"-b"})
 	c.Assert(indexes[3].Name, Equals, "c_")
-	c.Assert(indexes[3].Key, Equals, []string{"@c"})
+	c.Assert(indexes[3].Key, DeepEquals, []string{"@c"})
 }
 
 func (s *S) TestDistinct(c *C) {
@@ -1955,7 +1955,7 @@ func (s *S) TestDistinct(c *C) {
 	err = coll.Find(M{"n": M{"$gt": 2}}).Sort(M{"n": 1}).Distinct("n", &result)
 
 	sort.IntSlice(result).Sort()
-	c.Assert(result, Equals, []int{3, 4, 6})
+	c.Assert(result, DeepEquals, []int{3, 4, 6})
 }
 
 func (s *S) TestMapReduce(c *C) {
@@ -2198,7 +2198,7 @@ func (s *S) TestBuildInfo(c *C) {
 		v = append(v, 0)
 	}
 
-	c.Assert(info.VersionArray, Equals, v)
+	c.Assert(info.VersionArray, DeepEquals, v)
 	c.Assert(info.GitVersion, Matches, "[a-z0-9]+")
 	c.Assert(info.SysInfo, Matches, ".*[0-9:]+.*")
 	if info.Bits != 32 && info.Bits != 64 {

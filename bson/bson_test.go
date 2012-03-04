@@ -72,7 +72,7 @@ func testUnmarshal(c *C, data string, obj interface{}) {
 	zero := makeZeroDoc(obj)
 	err := bson.Unmarshal([]byte(data), zero)
 	c.Assert(err, IsNil)
-	c.Assert(zero, Equals, obj)
+	c.Assert(zero, DeepEquals, obj)
 }
 
 type testItemType struct {
@@ -95,8 +95,7 @@ func (s *S) TestMarshalSampleItems(c *C) {
 	for i, item := range sampleItems {
 		data, err := bson.Marshal(item.obj)
 		c.Assert(err, IsNil)
-		c.Assert(string(data), Equals, item.data,
-			Bug("Failed on item %d", i))
+		c.Assert(string(data), Equals, item.data, Commentf("Failed on item %d", i))
 	}
 }
 
@@ -105,8 +104,7 @@ func (s *S) TestUnmarshalSampleItems(c *C) {
 		value := bson.M{}
 		err := bson.Unmarshal([]byte(item.data), value)
 		c.Assert(err, IsNil)
-		c.Assert(value, Equals, item.obj,
-			Bug("Failed on item %d", i))
+		c.Assert(value, DeepEquals, item.obj, Commentf("Failed on item %d", i))
 	}
 }
 
@@ -169,7 +167,7 @@ func (s *S) TestMarshalAllItems(c *C) {
 	for i, item := range allItems {
 		data, err := bson.Marshal(item.obj)
 		c.Assert(err, IsNil)
-		c.Assert(string(data), Equals, wrapInDoc(item.data), Bug("Failed on item %d: %#v", i, item))
+		c.Assert(string(data), Equals, wrapInDoc(item.data), Commentf("Failed on item %d: %#v", i, item))
 	}
 }
 
@@ -178,7 +176,7 @@ func (s *S) TestUnmarshalAllItems(c *C) {
 		value := bson.M{}
 		err := bson.Unmarshal([]byte(wrapInDoc(item.data)), value)
 		c.Assert(err, IsNil)
-		c.Assert(value, Equals, item.obj, Bug("Failed on item %d: %#v", i, item))
+		c.Assert(value, DeepEquals, item.obj, Commentf("Failed on item %d: %#v", i, item))
 	}
 }
 
@@ -196,7 +194,7 @@ func (s *S) TestUnmarshalRawAllItems(c *C) {
 		c.Logf("Unmarshal raw: %#v, %#v", raw, pv.Interface())
 		err := raw.Unmarshal(pv.Interface())
 		c.Assert(err, IsNil)
-		c.Assert(pv.Elem().Interface(), Equals, value, Bug("Failed on item %d: %#v", i, item))
+		c.Assert(pv.Elem().Interface(), DeepEquals, value, Commentf("Failed on item %d: %#v", i, item))
 	}
 }
 
@@ -223,7 +221,7 @@ func (s *S) TestUnmarshalZeroesMap(c *C) {
 	m := bson.M{"a": 1}
 	err = bson.Unmarshal(data, &m)
 	c.Assert(err, IsNil)
-	c.Assert(m, Equals, bson.M{"b": 2})
+	c.Assert(m, DeepEquals, bson.M{"b": 2})
 }
 
 // --------------------------------------------------------------------------
@@ -298,7 +296,7 @@ func (s *S) TestOneWayMarshalItems(c *C) {
 		data, err := bson.Marshal(item.obj)
 		c.Assert(err, IsNil)
 		c.Assert(string(data), Equals, wrapInDoc(item.data),
-			Bug("Failed on item %d", i))
+			Commentf("Failed on item %d", i))
 	}
 }
 
@@ -327,7 +325,7 @@ func (s *S) TestMarshalStructSampleItems(c *C) {
 		data, err := bson.Marshal(item.obj)
 		c.Assert(err, IsNil)
 		c.Assert(string(data), Equals, item.data,
-			Bug("Failed on item %d", i))
+			Commentf("Failed on item %d", i))
 	}
 }
 
@@ -385,7 +383,7 @@ func (s *S) TestMarshalStructItems(c *C) {
 		data, err := bson.Marshal(item.obj)
 		c.Assert(err, IsNil)
 		c.Assert(string(data), Equals, wrapInDoc(item.data),
-			Bug("Failed on item %d", i))
+			Commentf("Failed on item %d", i))
 	}
 }
 
@@ -401,7 +399,7 @@ func (s *S) TestUnmarshalRawStructItems(c *C) {
 		zero := makeZeroDoc(item.obj)
 		err := raw.Unmarshal(zero)
 		c.Assert(err, IsNil)
-		c.Assert(zero, Equals, item.obj, Bug("Failed on item %d: %#v", i, item))
+		c.Assert(zero, DeepEquals, item.obj, Commentf("Failed on item %d: %#v", i, item))
 	}
 }
 
@@ -420,12 +418,18 @@ type dOnIface struct {
 	D interface{}
 }
 
+type ignoreField struct {
+	Ignore string `bson:"-"`
+}
+
 var marshalItems = []testItemType{
 	// Ordered document dump.  Will unmarshal as a dictionary by default.
 	{bson.D{{"a", nil}, {"c", nil}, {"b", nil}, {"d", nil}, {"f", nil}, {"e", true}},
 		"\x0Aa\x00\x0Ac\x00\x0Ab\x00\x0Ad\x00\x0Af\x00\x08e\x00\x01"},
 	{&dOnIface{bson.D{{"a", nil}, {"c", nil}, {"b", nil}, {"d", true}}},
 		"\x03d\x00" + wrapInDoc("\x0Aa\x00\x0Ac\x00\x0Ab\x00\x08d\x00\x01")},
+	//{&ignoreField{"foo"},
+	//	wrapInDoc("")},
 
 	// Marshalling a Raw document does nothing.
 	{bson.Raw{0x03, []byte(wrapInDoc("anything"))},
@@ -495,7 +499,7 @@ func (s *S) TestUnmarshalNilInStruct(c *C) {
 	v := &struct{ Ptr *byte }{&b}
 	err := bson.Unmarshal([]byte(wrapInDoc("\x0Aptr\x00")), v)
 	c.Assert(err, IsNil)
-	c.Assert(v, Equals, &struct{ Ptr *byte }{nil})
+	c.Assert(v, DeepEquals, &struct{ Ptr *byte }{nil})
 }
 
 // --------------------------------------------------------------------------
@@ -611,7 +615,7 @@ var unmarshalRawErrorItems = []unmarshalRawErrorType{
 func (s *S) TestUnmarshalRawErrorItems(c *C) {
 	for i, item := range unmarshalRawErrorItems {
 		err := item.raw.Unmarshal(item.obj)
-		c.Assert(err, ErrorMatches, item.error, Bug("Failed on item %d: %#v\n", i, item))
+		c.Assert(err, ErrorMatches, item.error, Commentf("Failed on item %d: %#v\n", i, item))
 	}
 }
 
@@ -699,8 +703,8 @@ func (s *S) TestUnmarshalAllItemsWithPtrSetter(c *C) {
 				}
 			} else {
 				expected := item.obj.(bson.M)["_"]
-				c.Assert(field, NotNil, Bug("Pointer not initialized (%#v)", expected))
-				c.Assert(field.received, Equals, expected)
+				c.Assert(field, NotNil, Commentf("Pointer not initialized (%#v)", expected))
+				c.Assert(field.received, DeepEquals, expected)
 			}
 		}
 	}
@@ -710,7 +714,7 @@ func (s *S) TestUnmarshalWholeDocumentWithSetter(c *C) {
 	obj := &setterType{}
 	err := bson.Unmarshal([]byte(sampleItems[0].data), obj)
 	c.Assert(err, IsNil)
-	c.Assert(obj.received, Equals, bson.M{"hello": "world"})
+	c.Assert(obj.received, DeepEquals, bson.M{"hello": "world"})
 }
 
 func (s *S) TestUnmarshalSetterOmits(c *C) {
@@ -759,7 +763,7 @@ func (s *S) TestUnmarshalSetterErrors(c *C) {
 
 func (s *S) TestDMap(c *C) {
 	d := bson.D{{"a", 1}, {"b", 2}}
-	c.Assert(d.Map(), Equals, bson.M{"a": 1, "b": 2})
+	c.Assert(d.Map(), DeepEquals, bson.M{"a": 1, "b": 2})
 }
 
 // --------------------------------------------------------------------------
@@ -788,7 +792,7 @@ func (s *S) TestMarshalAllItemsWithGetter(c *C) {
 		data, err := bson.Marshal(obj)
 		c.Assert(err, IsNil)
 		c.Assert(string(data), Equals, wrapInDoc(item.data),
-			Bug("Failed on item #%d", i))
+			Commentf("Failed on item #%d", i))
 	}
 }
 
@@ -1080,7 +1084,7 @@ func testCrossPair(c *C, dump interface{}, load interface{}) {
 	err = bson.Unmarshal(data, zero)
 	c.Assert(err, IsNil)
 	c.Logf("Loaded: %#v", zero)
-	c.Assert(zero, Equals, load)
+	c.Assert(zero, DeepEquals, load)
 }
 
 func (s *S) TestTwoWayCrossPairs(c *C) {
@@ -1143,10 +1147,10 @@ var objectIds = []objectIdParts{
 func (s *S) TestObjectIdPartsExtraction(c *C) {
 	for i, v := range objectIds {
 		t := time.Unix(v.timestamp, 0)
-		c.Assert(v.id.Time(), Equals, t, Bug("#%d Wrong timestamp value", i))
-		c.Assert(v.id.Machine(), Equals, v.machine, Bug("#%d Wrong machine id value", i))
-		c.Assert(v.id.Pid(), Equals, v.pid, Bug("#%d Wrong pid value", i))
-		c.Assert(v.id.Counter(), Equals, v.counter, Bug("#%d Wrong counter value", i))
+		c.Assert(v.id.Time(), Equals, t, Commentf("#%d Wrong timestamp value", i))
+		c.Assert(v.id.Machine(), DeepEquals, v.machine, Commentf("#%d Wrong machine id value", i))
+		c.Assert(v.id.Pid(), Equals, v.pid, Commentf("#%d Wrong pid value", i))
+		c.Assert(v.id.Counter(), Equals, v.counter, Commentf("#%d Wrong counter value", i))
 	}
 }
 
@@ -1156,7 +1160,7 @@ func (s *S) TestNow(c *C) {
 	now := bson.Now()
 	time.Sleep(1e6)
 	after := time.Now()
-	c.Assert(now.After(before) && now.Before(after), Equals, true, Bug("now=%s, before=%s, after=%s", now, before, after))
+	c.Assert(now.After(before) && now.Before(after), Equals, true, Commentf("now=%s, before=%s, after=%s", now, before, after))
 }
 
 // --------------------------------------------------------------------------
@@ -1174,19 +1178,19 @@ func (s *S) TestNewObjectId(c *C) {
 		// Test for uniqueness among all other 9 generated ids
 		for j, tid := range ids {
 			if j != i {
-				c.Assert(id, Not(Equals), tid, Bug("Generated ObjectId is not unique"))
+				c.Assert(id, Not(Equals), tid, Commentf("Generated ObjectId is not unique"))
 			}
 		}
 		// Check that timestamp was incremented and is within 30 seconds of the previous one
 		secs := id.Time().Sub(prevId.Time()).Seconds()
-		c.Assert((secs >= 0 && secs <= 30), Equals, true, Bug("Wrong timestamp in generated ObjectId"))
+		c.Assert((secs >= 0 && secs <= 30), Equals, true, Commentf("Wrong timestamp in generated ObjectId"))
 		// Check that machine ids are the same
-		c.Assert(id.Machine(), Equals, prevId.Machine())
+		c.Assert(id.Machine(), DeepEquals, prevId.Machine())
 		// Check that pids are the same
 		c.Assert(id.Pid(), Equals, prevId.Pid())
 		// Test for proper increment
 		delta := int(id.Counter() - prevId.Counter())
-		c.Assert(delta, Equals, 1, Bug("Wrong increment in generated ObjectId"))
+		c.Assert(delta, Equals, 1, Commentf("Wrong increment in generated ObjectId"))
 	}
 }
 
@@ -1194,7 +1198,7 @@ func (s *S) TestNewObjectIdWithTime(c *C) {
 	t := time.Unix(12345678, 0)
 	id := bson.NewObjectIdWithTime(t)
 	c.Assert(id.Time(), Equals, t)
-	c.Assert(id.Machine(), Equals, []byte{0x00, 0x00, 0x00})
+	c.Assert(id.Machine(), DeepEquals, []byte{0x00, 0x00, 0x00})
 	c.Assert(int(id.Pid()), Equals, 0)
 	c.Assert(int(id.Counter()), Equals, 0)
 }
@@ -1227,7 +1231,7 @@ func (s *S) TestObjectIdJSONUnmarshalingError(c *C) {
 	err := json.Unmarshal([]byte(`{"Id":"4d88e15b60f486e428412dc9A"}`), &v)
 	c.Assert(err, ErrorMatches, `Invalid ObjectId in JSON: "4d88e15b60f486e428412dc9A"`)
 	err = json.Unmarshal([]byte(`{"Id":"4d88e15b60f486e428412dcZ"}`), &v)
-	c.Assert(err, ErrorMatches, `Invalid ObjectId in JSON: "4d88e15b60f486e428412dcZ" \(invalid hex char: 90\)`)
+	c.Assert(err, ErrorMatches, `Invalid ObjectId in JSON: "4d88e15b60f486e428412dcZ" .*`)
 }
 
 // --------------------------------------------------------------------------

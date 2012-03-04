@@ -477,7 +477,7 @@ func (s *S) TestPrimaryShutdownMonotonicWithSlave(c *C) {
 	err = session.Run("isMaster", imresult)
 	c.Assert(err, IsNil)
 	master := ssresult.Host
-	c.Assert(imresult.IsMaster, Equals, true, Bug("%s is not the master", master))
+	c.Assert(imresult.IsMaster, Equals, true, Commentf("%s is not the master", master))
 
 	// Create new monotonic session with an explicit address to ensure
 	// a slave is synchronized before the master, otherwise a connection
@@ -507,7 +507,7 @@ func (s *S) TestPrimaryShutdownMonotonicWithSlave(c *C) {
 	err = session.Run("isMaster", imresult)
 	c.Assert(err, IsNil)
 	slave := ssresult.Host
-	c.Assert(imresult.IsMaster, Equals, false, Bug("%s is not a slave", slave))
+	c.Assert(imresult.IsMaster, Equals, false, Commentf("%s is not a slave", slave))
 
 	c.Assert(master, Not(Equals), slave)
 
@@ -519,7 +519,7 @@ func (s *S) TestPrimaryShutdownMonotonicWithSlave(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(ssresult.Host, Equals, slave,
-		Bug("Monotonic session moved from %s to %s", slave, ssresult.Host))
+		Commentf("Monotonic session moved from %s to %s", slave, ssresult.Host))
 
 	// If we try to insert something, it'll have to hold until the new
 	// master is available to move the connection, and work correctly.
@@ -532,7 +532,7 @@ func (s *S) TestPrimaryShutdownMonotonicWithSlave(c *C) {
 	c.Assert(err, IsNil)
 	err = session.Run("isMaster", imresult)
 	c.Assert(err, IsNil)
-	c.Assert(imresult.IsMaster, Equals, true, Bug("%s is not the master", master))
+	c.Assert(imresult.IsMaster, Equals, true, Commentf("%s is not the master", master))
 
 	// ... which is not the old one, since it's still dead.
 	c.Assert(ssresult.Host, Not(Equals), master)
@@ -788,7 +788,7 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 	err = session.Run("isMaster", imresult)
 	c.Assert(err, IsNil)
 	master := ssresult.Host
-	c.Assert(imresult.IsMaster, Equals, true, Bug("%s is not the master", master))
+	c.Assert(imresult.IsMaster, Equals, true, Commentf("%s is not the master", master))
 
 	// Collect op counters for everyone.
 	opc21a, err := getOpCounters("localhost:40021")
