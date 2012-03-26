@@ -76,7 +76,7 @@ type Getter interface {
 //
 //     type MyString string
 //
-//     func (s *MyString) SetBSON(raw bson.Raw) os.Error {
+//     func (s *MyString) SetBSON(raw bson.Raw) error {
 //         return raw.Unmarshal(s)
 //     }
 //
