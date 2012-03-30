@@ -32,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	"launchpad.net/mgo/bson"
+	"math"
 	"reflect"
 	"runtime"
 	"sort"
@@ -1389,13 +1390,19 @@ func (q *Query) Skip(n int) *Query {
 // returned by Next, the following call will return NotFound.
 func (q *Query) Limit(n int) *Query {
 	q.m.Lock()
-	q.op.limit = int32(n)
-	if n == 1 {
-		q.limit = -1
-	} else if n < 0 {
+	switch {
+	case n == 1:
+		q.limit = 1
+		q.op.limit = -1
+	case n == math.MinInt32: // -MinInt32 == -MinInt32
+		q.limit = math.MaxInt32
+		q.op.limit = math.MinInt32 + 1
+	case n < 0:
 		q.limit = int32(-n)
-	} else {
+		q.op.limit = int32(n)
+	default:
 		q.limit = int32(n)
+		q.op.limit = int32(n)
 	}
 	q.m.Unlock()
 	return q

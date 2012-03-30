@@ -31,6 +31,7 @@ import (
 	. "launchpad.net/gocheck"
 	"launchpad.net/mgo"
 	"launchpad.net/mgo/bson"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -872,6 +873,16 @@ func (s *S) TestFindIterLimitWithMore(c *C) {
 		nresults++
 	}
 	c.Assert(nresults, Equals, total)
+
+	// Edge case, -MinInt == -MinInt.
+	nresults = 0
+	iter = coll.Find(nil).Limit(math.MinInt32).Iter()
+	for iter.Next(&discard) {
+		nresults++
+	}
+	if nresults < total/2 || nresults >= total {
+		c.Fatalf("Bad result size with MinInt32 limit: %d", nresults)
+	}
 }
 
 func (s *S) TestFindIterLimitWithBatch(c *C) {
