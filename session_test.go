@@ -825,6 +825,55 @@ func (s *S) TestFindIterLimit(c *C) {
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
+
+func (s *S) TestFindIterLimitWithMore(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	// Insane amounts of logging otherwise due to the
+	// amount of data being shuffled.
+	mgo.SetDebug(false)
+	defer mgo.SetDebug(true)
+
+	// Should amount to more than 4MB bson payload,
+	// the default limit per result chunk.
+	const total = 4096
+	var d struct{ A [1024]byte }
+	docs := make([]interface{}, total)
+	for i := 0; i < total; i++ {
+		docs[i] = &d
+	}
+	err = coll.Insert(docs...)
+	c.Assert(err, IsNil)
+
+	n, err := coll.Count()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, total)
+
+	// First, try restricting to a single chunk with a negative limit.
+	nresults := 0
+	iter := coll.Find(nil).Limit(-total).Iter()
+	var discard struct{}
+	for iter.Next(&discard) {
+		nresults++
+	}
+	if nresults < total/2 || nresults >= total {
+		c.Fatalf("Bad result size with negative limit: %d", nresults)
+	}
+
+	// Try again, with a positive limit. Should reach the end now,
+	// using multiple chunks.
+	nresults = 0
+	iter = coll.Find(nil).Limit(total).Iter()
+	for iter.Next(&discard) {
+		nresults++
+	}
+	c.Assert(nresults, Equals, total)
+}
+
 func (s *S) TestFindIterLimitWithBatch(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)

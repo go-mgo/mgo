@@ -1389,8 +1389,14 @@ func (q *Query) Skip(n int) *Query {
 // returned by Next, the following call will return NotFound.
 func (q *Query) Limit(n int) *Query {
 	q.m.Lock()
-	q.limit = int32(n)
-	q.op.limit = -int32(n)
+	q.op.limit = int32(n)
+	if n == 1 {
+		q.limit = -1
+	} else if n < 0 {
+		q.limit = int32(-n)
+	} else {
+		q.limit = int32(n)
+	}
 	q.m.Unlock()
 	return q
 }
@@ -2019,7 +2025,10 @@ func (iter *Iter) getMore() {
 	debugf("Iter %p requesting more documents", iter)
 	iter.pendingDocs++
 	if iter.limit > 0 && iter.op.limit > iter.limit {
-		iter.op.limit = -iter.limit
+		iter.op.limit = iter.limit
+	}
+	if iter.op.limit == 1 {
+		iter.op.limit = -1
 	}
 	err = socket.Query(&iter.op)
 	if err != nil {
