@@ -120,6 +120,8 @@ func (server *mongoServer) Connect() (*mongoSocket, error) {
 	return newSocket(server, conn), nil
 }
 
+// Close forces closing all sockets that are alive, whether
+// they're currently in use or not.
 func (server *mongoServer) Close() {
 	server.Lock()
 	server.closed = true
@@ -139,6 +141,7 @@ func (server *mongoServer) Close() {
 	}
 }
 
+// RecycleSocket puts socket back into the unused cache.
 func (server *mongoServer) RecycleSocket(socket *mongoSocket) {
 	server.Lock()
 	if !server.closed {
@@ -160,6 +163,8 @@ func removeSocket(sockets []*mongoSocket, socket *mongoSocket) []*mongoSocket {
 	return sockets
 }
 
+// AbendSocket notifies the server that the given socket has terminated
+// abnormally, and thus should be discarded rather than cached.
 func (server *mongoServer) AbendSocket(socket *mongoSocket) {
 	server.Lock()
 	if server.closed {
@@ -176,6 +181,8 @@ func (server *mongoServer) AbendSocket(socket *mongoSocket) {
 	}
 }
 
+// Merge other into server, which must both be communicating with
+// the same server address.
 func (server *mongoServer) Merge(other *mongoServer) {
 	server.Lock()
 	server.master = other.master
