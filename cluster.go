@@ -28,7 +28,6 @@ package mgo
 
 import (
 	"errors"
-	"math/rand"
 	"sync"
 	"time"
 )
@@ -47,7 +46,6 @@ type mongoCluster struct {
 	dynaSeeds    []string
 	servers      mongoServers
 	masters      mongoServers
-	slaves       mongoServers
 	references   int
 	syncing      bool
 	direct       bool
@@ -102,7 +100,6 @@ func (cluster *mongoCluster) LiveServers() (servers []string) {
 func (cluster *mongoCluster) removeServer(server *mongoServer) {
 	cluster.Lock()
 	cluster.masters.Remove(server)
-	cluster.slaves.Remove(server)
 	other := cluster.servers.Remove(server)
 	cluster.Unlock()
 	if other != nil {
@@ -130,7 +127,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 		}
 	}()
 
-	socket, err := server.AcquireSocket()
+	socket, err := server.AcquireSocket(0)
 	if err != nil {
 		log("SYNC Failed to get socket to ", addr, ": ", err.Error())
 		return
@@ -185,22 +182,19 @@ func (cluster *mongoCluster) mergeServer(server *mongoServer) {
 	if previous == nil {
 		cluster.servers.Add(server)
 		if isMaster {
-			log("SYNC Adding ", server.Addr, " to cluster as a master.")
 			cluster.masters.Add(server)
+			log("SYNC Adding ", server.Addr, " to cluster as a master.")
 		} else {
 			log("SYNC Adding ", server.Addr, " to cluster as a slave.")
-			cluster.slaves.Add(server)
 		}
 	} else {
 		if isMaster != previous.IsMaster() {
 			if isMaster {
 				log("SYNC Server ", server.Addr, " is now a master.")
-				cluster.slaves.Remove(previous)
 				cluster.masters.Add(previous)
 			} else {
 				log("SYNC Server ", server.Addr, " is now a slave.")
 				cluster.masters.Remove(previous)
-				cluster.slaves.Add(previous)
 			}
 		}
 		previous.Merge(server)
@@ -247,8 +241,8 @@ func (cluster *mongoCluster) syncServers() {
 }
 
 // How long to wait for a checkup of the cluster topology if nothing
-// else kicks a synchronization first.
-const syncServersDelay = 5 * time.Minute
+// else kicks a synchronization before that.
+const syncServersDelay = 3 * time.Minute
 
 // syncServersLoop loops while the cluster is alive to keep its idea of
 // the server topology up-to-date. It must be called just once from
@@ -394,8 +388,8 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 	}
 
 	cluster.Lock()
-	log("SYNC Synchronization completed: ", cluster.masters.Len(),
-		" master(s) and, ", cluster.slaves.Len(), " slave(s) alive.")
+	ml := cluster.masters.Len()
+	log("SYNC Synchronization completed: %d master(s) and %d slave(s) alive.", ml, cluster.servers.Len()-ml)
 
 	// Update dynamic seeds, but only if we have any good servers. Otherwise,
 	// leave them alone for better chances of a successful sync in the future.
@@ -410,16 +404,21 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 	cluster.Unlock()
 }
 
+const socketsPerServer = 512
+
 // AcquireSocket returns a socket to a server in the cluster.  If slaveOk is
 // true, it will attempt to return a socket to a slave server.  If it is
 // false, the socket will necessarily be to a master server.
 func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Duration) (s *mongoSocket, err error) {
 	started := time.Now()
+	warnedLimit := false
 	for {
 		cluster.RLock()
 		for {
-			debugf("Cluster has %d known masters and %d known slaves.", cluster.masters.Len(), cluster.slaves.Len())
-			if !cluster.masters.Empty() || slaveOk && !cluster.slaves.Empty() {
+			ml := cluster.masters.Len()
+			sl := cluster.servers.Len()
+			debugf("Cluster has %d known masters and %d known slaves.", ml, sl-ml)
+			if ml > 0 || slaveOk && sl > 0 {
 				break
 			}
 			if syncTimeout != 0 && started.Before(time.Now().Add(-syncTimeout)) {
@@ -428,20 +427,27 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Durati
 			}
 			log("Waiting for servers to synchronize...")
 			cluster.syncServers()
+
+			// Remember: this will release and reacquire the lock.
 			cluster.serverSynced.Wait()
 		}
 
 		var server *mongoServer
-		if !slaveOk || cluster.slaves.Empty() {
-			i := rand.Intn(cluster.masters.Len())
-			server = cluster.masters.Get(i)
+		if slaveOk {
+			server = cluster.servers.MostAvailable()
 		} else {
-			i := rand.Intn(cluster.slaves.Len())
-			server = cluster.slaves.Get(i)
+			server = cluster.masters.MostAvailable()
 		}
 		cluster.RUnlock()
 
-		s, err = server.AcquireSocket()
+		s, err = server.AcquireSocket(socketsPerServer)
+		if err == errSocketLimit {
+			if !warnedLimit {
+				log("WARNING: Per-server connection limit reached.")
+			}
+			time.Sleep(1e8)
+			continue
+		}
 		if err != nil {
 			cluster.removeServer(server)
 			cluster.syncServers()

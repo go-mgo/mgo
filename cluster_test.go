@@ -910,3 +910,46 @@ func (s *S) TestRemovalOfClusterMember(c *C) {
 		c.Errorf("Removed server still considered live: %#s", live)
 	}
 }
+
+func (s *S) TestSocketLimit(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+	const socketLimit = 512
+
+	session, err := mgo.Dial("localhost:40011")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	stats := mgo.GetStats()
+	for stats.MasterConns+stats.SlaveConns != 3 {
+		stats = mgo.GetStats()
+		c.Log("Waiting for all connections to be established...")
+		time.Sleep(5e8)
+	}
+	c.Assert(stats.SocketsAlive, Equals, 3)
+
+	// Consume the whole limit for the master.
+	var master []*mgo.Session
+	for i := 0; i < socketLimit; i++ {
+		s := session.Copy()
+		defer s.Close()
+		err := s.Ping()
+		c.Assert(err, IsNil)
+		master = append(master, s)
+	}
+
+	before := time.Now()
+	go func() {
+		time.Sleep(5e9)
+		master[0].Refresh()
+	}()
+
+	// Now a single ping must block, since it would need another
+	// connection to the master, over the limit. Once the goroutine
+	// above releases its socket, it should move on.
+	session.Ping()
+	delay := time.Now().Sub(before)
+	c.Assert(delay > 5e9, Equals, true)
+	c.Assert(delay < 7e9, Equals, true)
+}
