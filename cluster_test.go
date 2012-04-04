@@ -915,7 +915,9 @@ func (s *S) TestSocketLimit(c *C) {
 	if *fast {
 		c.Skip("-fast")
 	}
-	const socketLimit = 512
+	const socketLimit = 64
+	restore := mgo.HackSocketsPerServer(socketLimit)
+	defer restore()
 
 	session, err := mgo.Dial("localhost:40011")
 	c.Assert(err, IsNil)
@@ -941,7 +943,7 @@ func (s *S) TestSocketLimit(c *C) {
 
 	before := time.Now()
 	go func() {
-		time.Sleep(5e9)
+		time.Sleep(3e9)
 		master[0].Refresh()
 	}()
 
@@ -950,6 +952,6 @@ func (s *S) TestSocketLimit(c *C) {
 	// above releases its socket, it should move on.
 	session.Ping()
 	delay := time.Now().Sub(before)
-	c.Assert(delay > 5e9, Equals, true)
-	c.Assert(delay < 7e9, Equals, true)
+	c.Assert(delay > 3e9, Equals, true)
+	c.Assert(delay < 6e9, Equals, true)
 }
