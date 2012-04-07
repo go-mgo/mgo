@@ -2268,3 +2268,21 @@ func (s *S) TestBuildInfo(c *C) {
 		c.Fatalf("info.MaxObjectSize seems too small: %d", info.MaxObjectSize)
 	}
 }
+
+func (s *S) TestZeroTimeRoundtrip(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	var d struct{ T time.Time }
+	conn := session.DB("mydb").C("mycoll")
+	err = conn.Insert(d)
+	c.Assert(err, IsNil)
+
+	var result bson.M
+	err = conn.Find(nil).One(&result)
+	c.Assert(err, IsNil)
+	t, isTime := result["t"].(time.Time)
+	c.Assert(isTime, Equals, true)
+	c.Assert(t, Equals, time.Time{})
+}

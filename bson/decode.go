@@ -401,7 +401,12 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 		in = d.readBool()
 	case 0x09: // Timestamp
 		// MongoDB handles timestamps as milliseconds.
-		in = time.Unix(0, d.readInt64() * 1e6)
+		i := d.readInt64()
+		if i == -62135596800000 {
+			in = time.Time{} // In UTC for convenience.
+		} else {
+			in = time.Unix(i/1e3, i%1e3*1e6)
+		}
 	case 0x0A: // Nil
 		in = nil
 	case 0x0B: // RegEx

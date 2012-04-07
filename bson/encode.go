@@ -347,7 +347,7 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 		case time.Time:
 			// MongoDB handles timestamps as milliseconds.
 			e.addElemName('\x09', name)
-			e.addInt64(s.UnixNano() / 1e6)
+			e.addInt64(s.Unix() * 1000 + int64(s.Nanosecond() / 1e6))
 
 		case url.URL:
 			e.addElemName('\x02', name)

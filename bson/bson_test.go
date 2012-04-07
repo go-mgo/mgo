@@ -468,8 +468,8 @@ var unmarshalItems = []testItemType{
 	// Do not unmarshal on ignored field.
 	{&ignoreField{"before", "", "after"},
 		"\x02before\x00\a\x00\x00\x00before\x00" +
-		"\x02-\x00\a\x00\x00\x00ignore\x00" +
-		"\x02after\x00\x06\x00\x00\x00after\x00"},
+			"\x02-\x00\a\x00\x00\x00ignore\x00" +
+			"\x02after\x00\x06\x00\x00\x00after\x00"},
 
 	// Ignore unsuitable types silently.
 	{map[string]string{"str": "s"},
@@ -1089,6 +1089,13 @@ var twoWayCrossItems = []crossTypeItem{
 
 	// arrays
 	{&struct{ V [2]int }{[...]int{1, 2}}, map[string][2]int{"v": [2]int{1, 2}}},
+
+	// zero time
+	{&struct{ V time.Time }{}, map[string]interface{}{"v": time.Time{}}},
+
+	// zero time + 1 second + 1 millisecond; overflows int64 as nanoseconds
+	{&struct{ V time.Time }{time.Unix(-62135596799, 1e6).Local()},
+		map[string]interface{}{"v": time.Unix(-62135596799, 1e6).Local()}},
 }
 
 // Same thing, but only one way (obj1 => obj2).
