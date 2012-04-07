@@ -47,6 +47,7 @@ var (
 	typeDocElem        = reflect.TypeOf(DocElem{})
 	typeRaw            = reflect.TypeOf(Raw{})
 	typeURL            = reflect.TypeOf(url.URL{})
+	typeTime           = reflect.TypeOf(time.Time{})
 )
 
 const itoaCacheSize = 32
@@ -158,6 +159,10 @@ func isZero(v reflect.Value) bool {
 		return v.Uint() == 0
 	case reflect.Bool:
 		return !v.Bool()
+	case reflect.Struct:
+		if v.Type() == typeTime {
+			return v.Interface().(time.Time).IsZero()
+		}
 	}
 	return false
 }

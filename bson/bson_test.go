@@ -884,6 +884,9 @@ type condMap struct {
 type namedCondStr struct {
 	V string "myv,omitempty"
 }
+type condTime struct {
+	V time.Time ",omitempty"
+}
 
 type shortInt struct {
 	V int64 ",minsize"
@@ -1051,6 +1054,9 @@ var twoWayCrossItems = []crossTypeItem{
 	{&condPtr{&truevar}, map[string]bool{"v": true}},
 	{&condPtr{&falsevar}, map[string]bool{"v": false}},
 	{&condPtr{}, map[string]string{}},
+
+	{&condTime{time.Unix(123456789, 123e6)}, map[string]time.Time{"v": time.Unix(123456789, 123e6)}},
+	{&condTime{}, map[string]string{}},
 
 	{&namedCondStr{"yo"}, map[string]string{"myv": "yo"}},
 	{&namedCondStr{}, map[string]string{}},
