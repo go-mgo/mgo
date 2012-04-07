@@ -167,14 +167,14 @@ func (s *S) TestInsertFindAll(c *C) {
 	}
 
 	// nil slice
-	err = coll.Find(nil).Sort(M{"a": 1}).All(&result)
+	err = coll.Find(nil).Sort("a").All(&result)
 	c.Assert(err, IsNil)
 	assertResult()
 
 	// Previously allocated slice
 	allocd := make([]R, 5)
 	result = allocd
-	err = coll.Find(nil).Sort(M{"a": 1}).All(&result)
+	err = coll.Find(nil).Sort("a").All(&result)
 	c.Assert(err, IsNil)
 	assertResult()
 
@@ -550,7 +550,7 @@ func (s *S) TestFindAndModify(c *C) {
 	c.Assert(result["n"], IsNil)
 
 	result = make(M)
-	err = coll.Find(nil).Sort(M{"n": -1}).Modify(mgo.Change{Update: M{"$inc": M{"n": 1}}, New: true}, result)
+	err = coll.Find(nil).Sort("-n").Modify(mgo.Change{Update: M{"$inc": M{"n": 1}}, New: true}, result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 52)
 
@@ -615,7 +615,7 @@ func (s *S) TestCountQuerySorted(c *C) {
 		c.Assert(err, IsNil)
 	}
 
-	n, err := coll.Find(M{"n": M{"$gt": 40}}).Sort(M{"n": 1}).Count()
+	n, err := coll.Find(M{"n": M{"$gt": 40}}).Sort("n").Count()
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, 2)
 }
@@ -733,7 +733,7 @@ func (s *S) TestFindIterAll(c *C) {
 
 	mgo.ResetStats()
 
-	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
+	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2)
 	iter := query.Iter()
 	result := struct{ N int }{}
 	for i := 2; i < 7; i++ {
@@ -770,7 +770,7 @@ func (s *S) TestFindIterTwiceWithSameQuery(c *C) {
 		coll.Insert(M{"n": i})
 	}
 
-	query := coll.Find(M{}).Sort(M{"n": 1})
+	query := coll.Find(M{}).Sort("n")
 
 	result1 := query.Skip(1).Iter()
 	result2 := query.Skip(2).Iter()
@@ -817,7 +817,7 @@ func (s *S) TestFindIterLimit(c *C) {
 
 	mgo.ResetStats()
 
-	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Limit(3)
+	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Limit(3)
 	iter := query.Iter()
 
 	result := struct{ N int }{}
@@ -918,7 +918,7 @@ func (s *S) TestFindIterLimitWithBatch(c *C) {
 
 	mgo.ResetStats()
 
-	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Limit(3).Batch(2)
+	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Limit(3).Batch(2)
 	iter := query.Iter()
 	result := struct{ N int }{}
 	for i := 2; i < 5; i++ {
@@ -967,7 +967,7 @@ func (s *S) TestFindIterSortWithBatch(c *C) {
 
 	mgo.ResetStats()
 
-	query := coll.Find(M{"n": M{"$lte": 44}}).Sort(M{"n": -1}).Batch(2)
+	query := coll.Find(M{"n": M{"$lte": 44}}).Sort("-n").Batch(2)
 	iter := query.Iter()
 	ns = []int{46, 45, 44, 43, 42, 41, 40}
 	result := struct{ N int }{}
@@ -1025,7 +1025,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 
 	timeout := 3 * time.Second
 
-	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
+	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2)
 	iter := query.Tail(timeout)
 
 	n := len(ns)
@@ -1119,7 +1119,7 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 
 	timeout := 1 * time.Second
 
-	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
+	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2)
 	iter := query.Tail(timeout)
 
 	n := len(ns)
@@ -1214,7 +1214,7 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 
 	mgo.ResetStats()
 
-	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
+	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2)
 	iter := query.Tail(-1)
 	c.Assert(err, IsNil)
 
@@ -1303,7 +1303,7 @@ func (s *S) TestFindForOnIter(c *C) {
 
 	mgo.ResetStats()
 
-	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
+	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2)
 	iter := query.Iter()
 
 	i := 2
@@ -1345,7 +1345,7 @@ func (s *S) TestFindFor(c *C) {
 
 	mgo.ResetStats()
 
-	query := coll.Find(M{"n": M{"$gte": 42}}).Sort(M{"$natural": 1}).Prefetch(0).Batch(2)
+	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2)
 
 	i := 2
 	var result *struct{ N int }
@@ -1409,7 +1409,7 @@ func (s *S) TestFindForResetsResult(c *C) {
 		coll.Insert(M{"n" + strconv.Itoa(n): n})
 	}
 
-	query := coll.Find(nil).Sort(M{"$natural": 1})
+	query := coll.Find(nil).Sort("$natural")
 
 	i := 0
 	var sresult *struct{ N1, N2, N3 int }
@@ -1505,7 +1505,6 @@ func (s *S) TestFindIterSnapshot(c *C) {
 			c.Fatalf("seen duplicated key: %d", result.Id)
 		}
 		seen[result.Id] = true
-		println(result.Id)
 	}
 	c.Assert(iter.Err(), IsNil)
 }
@@ -1528,20 +1527,44 @@ func (s *S) TestSort(c *C) {
 	coll.Insert(M{"a": 1, "b": 0})
 
 	query := coll.Find(M{})
-	query.Sort(bson.D{{"a", -1}}) // Should be ignored.
-	iter := query.Sort(bson.D{{"b", -1}, {"a", 1}}).Iter()
+	for i := 0; i < 2; i++ {
+		query.Sort(bson.D{{"a", -1}}) // Should be ignored.
+		if i == 0 {
+			query.Sort("-b", "a")
+		} else {
+			// Deprecated format.
+			query.Sort(bson.D{{"b", -1}, {"a", 1}}).Iter()
+		}
+		iter := query.Iter()
 
-	l := make([]int, 18)
-	r := struct{ A, B int }{}
-	for i := 0; i != len(l); i += 2 {
-		ok := iter.Next(&r)
-		c.Assert(ok, Equals, true)
-		c.Assert(err, IsNil)
-		l[i] = r.A
-		l[i+1] = r.B
+		l := make([]int, 18)
+		r := struct{ A, B int }{}
+		for i := 0; i != len(l); i += 2 {
+			ok := iter.Next(&r)
+			c.Assert(ok, Equals, true)
+			c.Assert(err, IsNil)
+			l[i] = r.A
+			l[i+1] = r.B
+		}
+
+		c.Assert(l, DeepEquals, []int{0, 2, 1, 2, 2, 2, 0, 1, 1, 1, 2, 1, 0, 0, 1, 0, 2, 0})
 	}
+}
 
-	c.Assert(l, DeepEquals, []int{0, 2, 1, 2, 2, 2, 0, 1, 1, 1, 2, 1, 0, 0, 1, 0, 2, 0})
+func (s *S) TestSortWithBadArgs(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	f1 := func() { coll.Find(nil).Sort("") }
+	f2 := func() { coll.Find(nil).Sort("+") }
+	f3 := func() { coll.Find(nil).Sort("foo", "-") }
+
+	for _, f := range []func(){f1, f2, f3} {
+		c.Assert(f, PanicMatches, "Sort: empty field name")
+	}
 }
 
 func (s *S) TestPrefetching(c *C) {
@@ -2069,7 +2092,7 @@ func (s *S) TestDistinct(c *C) {
 	}
 
 	var result []int
-	err = coll.Find(M{"n": M{"$gt": 2}}).Sort(M{"n": 1}).Distinct("n", &result)
+	err = coll.Find(M{"n": M{"$gt": 2}}).Sort("n").Distinct("n", &result)
 
 	sort.IntSlice(result).Sort()
 	c.Assert(result, DeepEquals, []int{3, 4, 6})
@@ -2112,7 +2135,7 @@ func (s *S) TestMapReduce(c *C) {
 	}
 
 	// Weak attempt of testing that Sort gets delivered.
-	_, err = coll.Find(nil).Sort(M{"n": -1}).MapReduce(job, &result)
+	_, err = coll.Find(nil).Sort("-n").MapReduce(job, &result)
 	_, isQueryError := err.(*mgo.QueryError)
 	c.Assert(isQueryError, Equals, true)
 }

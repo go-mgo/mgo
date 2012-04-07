@@ -1450,17 +1450,54 @@ func (q *Query) wrap() *queryWrapper {
 	return w
 }
 
-// Sort asks the database to order returned documents according to the rules
-// provided in the given document.
+// Sort asks the database to order returned documents according to the
+// provided field names. A field name may be prefixed by - (minus) for
+// it to be sorted in reverse order.
+//
+// NOTE: The first field has a type of interface{} because originally
+// this method expected a document in the same format used by the MongoDB
+// shell, and this continues to work at the moment for compatibility
+// reasons. That said, this format is DEPRECATED and will soon be
+// dropped entirely.
+//
+// For example:
+//
+//     query1 := collection.Find(nil).Sort("firstname", "lastname")
+//     query2 := collection.Find(nil).Sort("-age")
+//     query3 := collection.Find(nil).Sort("$natural")
 //
 // Relevant documentation:
 //
 //     http://www.mongodb.org/display/DOCS/Sorting+and+Natural+Order
 //
-func (q *Query) Sort(order interface{}) *Query {
+func (q *Query) Sort(first interface{}, more ...string) *Query {
 	q.m.Lock()
 	w := q.wrap()
-	w.OrderBy = order
+	if field, ok := first.(string); ok {
+		var order bson.D
+		for i := 0; i < len(more)+1; i++ {
+			if i > 0 {
+				field = more[i-1]
+			}
+			n := 1
+			if field != "" {
+				switch field[0] {
+				case '+':
+					field = field[1:]
+				case '-':
+					n = -1
+					field = field[1:]
+				}
+			}
+			if field == "" {
+				panic("Sort: empty field name")
+			}
+			order = append(order, bson.DocElem{field, n})
+		}
+		w.OrderBy = order
+	} else {
+		w.OrderBy = first
+	}
 	q.m.Unlock()
 	return q
 }

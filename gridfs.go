@@ -238,7 +238,7 @@ func (gfs *GridFS) OpenId(id interface{}) (file *GridFile, err error) {
 //
 func (gfs *GridFS) Open(name string) (file *GridFile, err error) {
 	var doc gfsFile
-	err = gfs.Files.Find(bson.M{"filename": name}).Sort(bson.M{"uploadDate": -1}).One(&doc)
+	err = gfs.Files.Find(bson.M{"filename": name}).Sort("-uploadDate").One(&doc)
 	if err != nil {
 		return
 	}
@@ -265,7 +265,7 @@ func (gfs *GridFS) Open(name string) (file *GridFile, err error) {
 // For example:
 //
 //     gfs := db.GridFS("fs")
-//     query := gfs.Find(nil).Sort(bson.M{"filename": 1})
+//     query := gfs.Find(nil).Sort("filename")
 //     iter := query.Iter()
 //     var f *mgo.GridFile
 //     for gfs.OpenNext(iter, &f) {

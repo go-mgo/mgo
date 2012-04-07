@@ -239,7 +239,7 @@ func (s *S) TestGridFSCreateWithChunking(c *C) {
 	c.Assert(result, DeepEquals, expected)
 
 	// Check the chunks.
-	iter := db.C("fs.chunks").Find(nil).Sort(M{"n": 1}).Iter()
+	iter := db.C("fs.chunks").Find(nil).Sort("n").Iter()
 	dataChunks := []string{"abcde", "fghij", "klmno", "pqrst", "uv"}
 	for i := 0; ; i++ {
 		result = M{}
@@ -569,7 +569,7 @@ func (s *S) TestGridFSOpenNext(c *C) {
 	var f *mgo.GridFile
 	var b [1]byte
 
-	iter := gfs.Find(nil).Sort(bson.M{"filename": -1}).Iter()
+	iter := gfs.Find(nil).Sort("-filename").Iter()
 
 	ok := gfs.OpenNext(iter, &f)
 	c.Assert(ok, Equals, true)
