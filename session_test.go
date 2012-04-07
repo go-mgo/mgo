@@ -102,6 +102,20 @@ func (s *S) TestURLMany(c *C) {
 	c.Assert(result.Ok, Equals, 1)
 }
 
+func (s *S) TestURLParsing(c *C) {
+	urls := []string{
+		"localhost:40001?foo=1&bar=2",
+		"localhost:40001?foo=1;bar=2",
+	}
+	for _, url := range urls {
+		session, err := mgo.Dial(url)
+		if session != nil {
+			session.Close()
+		}
+		c.Assert(err, ErrorMatches, "Unsupported connection URL option: (foo=1|bar=2)")
+	}
+}
+
 func (s *S) TestInsertFindOne(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)

@@ -225,13 +225,17 @@ func DialWithTimeout(url string, timeout time.Duration) (session *Session, err e
 	return session, nil
 }
 
+func isOptSep(c rune) bool {
+	return c == ';' || c == '&'
+}
+
 func parseURL(url string) (servers []string, auth authInfo, options map[string]string, err error) {
 	if strings.HasPrefix(url, "mongodb://") {
 		url = url[10:]
 	}
 	options = make(map[string]string)
 	if c := strings.Index(url, "?"); c != -1 {
-		for _, pair := range strings.Split(url[c+1:], ";") {
+		for _, pair := range strings.FieldsFunc(url[c+1:], isOptSep) {
 			l := strings.SplitN(pair, "=", 2)
 			if len(l) != 2 || l[0] == "" || l[1] == "" {
 				err = errors.New("Connection option must be key=value: " + pair)
