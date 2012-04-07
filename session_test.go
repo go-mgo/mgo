@@ -1467,6 +1467,49 @@ func (s *S) TestFindForResetsResult(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (s *S) TestFindIterSnapshot(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	// Insane amounts of logging otherwise due to the
+	// amount of data being shuffled.
+	mgo.SetDebug(false)
+	defer mgo.SetDebug(true)
+
+	coll := session.DB("mydb").C("mycoll")
+
+	var a [1024000]byte
+
+	for n := 0; n < 10; n++ {
+		err := coll.Insert(M{"_id": n, "n": n, "a1": &a})
+		c.Assert(err, IsNil)
+	}
+
+	query := coll.Find(M{"n": M{"$gt": -1}}).Batch(2).Prefetch(0)
+	query.Snapshot()
+	iter := query.Iter()
+
+	seen := map[int]bool{}
+	result := struct{ Id int "_id" }{}
+	for iter.Next(&result) {
+		if len(seen) == 2 {
+			// Grow all entries so that they have to move.
+			// Backwards so that the order is inverted.
+			for n := 10; n >= 0; n-- {
+				_, err := coll.Upsert(M{"_id": n}, M{"$set": M{"a2": &a}})
+				c.Assert(err, IsNil)
+			}
+		}
+		if seen[result.Id] {
+			c.Fatalf("seen duplicated key: %d", result.Id)
+		}
+		seen[result.Id] = true
+		println(result.Id)
+	}
+	c.Assert(iter.Err(), IsNil)
+}
+
 func (s *S) TestSort(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)

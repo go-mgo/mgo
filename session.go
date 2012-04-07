@@ -1429,10 +1429,11 @@ func (q *Query) Select(selector interface{}) *Query {
 }
 
 type queryWrapper struct {
-	Query   interface{} "$query"
-	OrderBy interface{} "$orderby,omitempty"
-	Hint    interface{} "$hint,omitempty"
-	Explain bool        "$explain,omitempty"
+	Query    interface{} "$query"
+	OrderBy  interface{} "$orderby,omitempty"
+	Hint     interface{} "$hint,omitempty"
+	Explain  bool        "$explain,omitempty"
+	Snapshot bool        "$snapshot,omitempty"
 }
 
 func (q *Query) wrap() *queryWrapper {
@@ -1522,6 +1523,37 @@ func (q *Query) Hint(indexKey []string) *Query {
 	if err != nil {
 		panic(err)
 	}
+	return q
+}
+
+// Snapshot will force the performed query to make use of an available
+// index on the _id field to prevent the same document from being returned
+// more than once in a single iteration. This might happen without this
+// setting in situations when the document changes in size and thus has to
+// be moved while the iteration is running.
+//
+// Because snapshot mode traverses the _id index, it may not be used with
+// sorting or explicit hints. It also cannot use any other index for the
+// query.
+//
+// Even with snapshot mode, items inserted or deleted during the query may
+// or may not be returned; that is, this mode is not a true point-in-time
+// snapshot.
+//
+// The same effect of Snapshot may be obtained by using any unique index on
+// field(s) that will not be modified (best to use Hint explicitly too).
+// A non-unique index (such as creation time) may be made unique by
+// appending _id to the index when creating it.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/How+to+do+Snapshotted+Queries+in+the+Mongo+Database
+//
+func (q *Query) Snapshot() *Query {
+	q.m.Lock()
+	w := q.wrap()
+	w.Snapshot = true
+	q.m.Unlock()
 	return q
 }
 
