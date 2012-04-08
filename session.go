@@ -163,7 +163,7 @@ const defaultPrefetch = 0.25
 //         This enables forcing the communication with a specific
 //         server or set of servers (even if they are slaves).  Note
 //         that to talk to a slave you'll need to relax the consistency
-//         requirements via the Monotonic or Eventual session methods.
+//         requirements using a Monotonic or Eventual mode via SetMode.
 //
 // Relevant documentation:
 //
@@ -1148,8 +1148,48 @@ func (s *Session) Run(cmd interface{}, result interface{}) error {
 
 // Ping runs a trivial ping command just to get in touch with the server.
 func (s *Session) Ping() error {
-	result := struct{}{} // We don't care.
-	return s.Run("ping", &result)
+	return s.Run("ping", nil)
+}
+
+// Fsync flushes in-memory writes to disk on the server the session
+// is established with. If async is true, the call returns immediately,
+// otherwise it returns after the flush has been made.
+func (s *Session) Fsync(async bool) error {
+	return s.Run(bson.D{{"fsync", 1}, {"async", async}}, nil)
+}
+
+// FsyncLock locks all writes in the specific server the session is
+// established with and returns. Any writes attempted to the server
+// after it is successfully locked will block until FsyncUnlock is
+// called for the same server.
+//
+// This method works on slaves as well, preventing the oplog from being
+// flushed while the server is locked, but since only the server
+// connected to is locked, for locking specific slaves it may be
+// necessary to establish a connection directly to the slave (see
+// Dial's connect=direct option).
+//
+// As an important caveat, note that once a write is attempted and
+// blocks, follow up reads will block as well due to the way the
+// lock is internally implemented in the server. More details at:
+//
+//     https://jira.mongodb.org/browse/SERVER-4243
+//
+// FsyncLock is often used for performing consistent backups of
+// the database files on disk.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/fsync+Command
+//     http://www.mongodb.org/display/DOCS/Backups
+//
+func (s *Session) FsyncLock() error {
+	return s.Run(bson.D{{"fsync", 1}, {"lock", true}}, nil)
+}
+
+// FsyncUnlock releases the server for writes. See FsyncLock for details.
+func (s *Session) FsyncUnlock() error {
+	return s.DB("admin").C("$cmd.sys.unlock").Find(nil).One(nil) // WTF?
 }
 
 // Find prepares a query using the provided document.  The document may be a

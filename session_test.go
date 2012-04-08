@@ -2366,3 +2366,44 @@ func (s *S) TestZeroTimeRoundtrip(c *C) {
 	c.Assert(isTime, Equals, true)
 	c.Assert(t, Equals, time.Time{})
 }
+
+func (s *S) TestFsyncLock(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	clone := session.Clone()
+	defer clone.Close()
+
+	err = session.FsyncLock()
+	c.Assert(err, IsNil)
+
+	done := make(chan time.Time)
+	go func() {
+		time.Sleep(3e9)
+		now := time.Now()
+		err := session.FsyncUnlock()
+		c.Check(err, IsNil)
+		done <- now
+	}()
+
+	err = clone.DB("mydb").C("mycoll").Insert(bson.M{"n": 1})
+	unlocked := time.Now()
+	unlocking := <-done
+	c.Assert(err, IsNil)
+
+	c.Assert(unlocked.After(unlocking), Equals, true)
+	c.Assert(unlocked.Sub(unlocking) < 1e9, Equals, true)
+}
+
+func (s *S) TestFsync(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	// Not much to do here. Just a smoke check.
+	err = session.Fsync(false)
+	c.Assert(err, IsNil)
+	err = session.Fsync(true)
+	c.Assert(err, IsNil)
+}
