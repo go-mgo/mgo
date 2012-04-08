@@ -1594,28 +1594,25 @@ func (q *Query) Snapshot() *Query {
 	return q
 }
 
-func checkQueryError(d []byte) error {
-	found := false
+func checkQueryError(fullname string, d []byte) error {
 	l := len(d)
-	for i := 0; i < l; i++ {
-		if d[i] != '\x02' || l-i < 6 {
-			continue
-		}
-		if d[i+1] == '$' && d[i+2] == 'e' && d[i+3] == 'r' && d[i+4] == 'r' && d[i+5] == '\x00' {
-			found = true
-			break
-		}
-		if l-i < 8 {
-			continue
-		}
-		if d[i+1] == 'e' && d[i+2] == 'r' && d[i+3] == 'r' && d[i+4] == 'm' && d[i+5] == 's' && d[i+6] == 'g' && d[i+7] == '\x00' {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if l < 16 {
 		return nil
 	}
+	if d[5] == '$' && d[6] == 'e' && d[7] == 'r' && d[8] == 'r' && d[9] == '\x00' && d[4] == '\x02' {
+		goto Error
+	}
+	if len(fullname) < 5 || fullname[len(fullname)-5:] != ".$cmd" {
+		return nil
+	}
+	for i := 0; i+8 < l; i++ {
+		if d[i] == '\x02' && d[i+1] == 'e' && d[i+2] == 'r' && d[i+3] == 'r' && d[i+4] == 'm' && d[i+5] == 's' && d[i+6] == 'g' && d[i+7] == '\x00' {
+			goto Error
+		}
+	}
+	return nil
+
+Error:
 	result := &queryError{}
 	bson.Unmarshal(d, result)
 	if result.Err == "" && result.ErrMsg == "" {
@@ -1677,8 +1674,7 @@ func (q *Query) One(result interface{}) (err error) {
 		debugf("Query %p document unmarshaling failed: %#v", q, err)
 		return err
 	}
-
-	return checkQueryError(data)
+	return checkQueryError(op.collection, data)
 }
 
 // The DBRef type implements support for the database reference MongoDB
@@ -1986,8 +1982,8 @@ func (iter *Iter) Next(result interface{}) bool {
 			return false
 		}
 		debugf("Iter %p document unmarshaled: %#v", iter, result)
-		// XXX Only have to check first document for a query error.
-		err = checkQueryError(docData)
+		// XXX Only have to check first document for a query error?
+		err = checkQueryError(iter.op.collection, docData)
 		if err != nil {
 			iter.err = err
 			return false
