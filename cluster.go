@@ -121,43 +121,47 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 	addr := server.Addr
 	log("SYNC Processing ", addr, "...")
 
-	defer func() {
-		if err != nil {
-			cluster.removeServer(server)
+	var result isMasterResult
+	var tryerr error
+	for retry := 0; ; retry++ {
+		if retry == 3 {
+			return nil, tryerr
 		}
-	}()
 
-	socket, err := server.AcquireSocket(0)
-	if err != nil {
-		log("SYNC Failed to get socket to ", addr, ": ", err.Error())
-		return
+		socket, err := server.AcquireSocket(0)
+		if err != nil {
+			tryerr = err
+			logf("SYNC Failed to get socket to %s: %v", addr, err)
+			continue
+		}
+
+		// Monotonic will let us talk to a slave and still hold the socket.
+		session := newSession(Monotonic, cluster, socket, 10 * time.Second)
+
+		// session holds the socket now.
+		socket.Release()
+
+		err = session.Run("ismaster", &result)
+		session.Close()
+		if err != nil {
+			tryerr = err
+			logf("SYNC Command 'ismaster' to %s failed: %v", addr, err)
+			continue
+		}
+		debugf("SYNC Result of 'ismaster' from %s: %#v", addr, result)
+		break
 	}
-
-	// Monotonic will let us talk to a slave and still hold the socket.
-	session := newSession(Monotonic, cluster, socket, 10 * time.Second)
-	defer session.Close()
-
-	// session holds the socket now.
-	socket.Release()
-
-	result := isMasterResult{}
-	err = session.Run("ismaster", &result)
-	if err != nil {
-		log("SYNC Command 'ismaster' to ", addr, " failed: ", err.Error())
-		return
-	}
-	debugf("SYNC Result of 'ismaster' from %s: %#v", addr, result)
 
 	if result.IsMaster {
-		log("SYNC ", addr, " is a master.")
+		debugf("SYNC %s is a master.", addr)
 		// Made an incorrect assumption above, so fix stats.
 		stats.conn(-1, false)
 		server.SetMaster(true)
 		stats.conn(+1, true)
 	} else if result.Secondary {
-		log("SYNC ", addr, " is a slave.")
+		debugf("SYNC %s is a slave.", addr)
 	} else {
-		log("SYNC ", addr, " is neither a master nor a slave.")
+		logf("SYNC %s is neither a master nor a slave.", addr)
 		// Made an incorrect assumption above, so fix stats.
 		stats.conn(-1, false)
 		return nil, errors.New(addr + " is not a master nor slave")
@@ -389,7 +393,7 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 
 	cluster.Lock()
 	ml := cluster.masters.Len()
-	log("SYNC Synchronization completed: %d master(s) and %d slave(s) alive.", ml, cluster.servers.Len()-ml)
+	logf("SYNC Synchronization completed: %d master(s) and %d slave(s) alive.", ml, cluster.servers.Len()-ml)
 
 	// Update dynamic seeds, but only if we have any good servers. Otherwise,
 	// leave them alone for better chances of a successful sync in the future.
