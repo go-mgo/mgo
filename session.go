@@ -1243,6 +1243,7 @@ type queryError struct {
 	Assertion     string
 	Code          int
 	AssertionCode int "assertionCode"
+	LastError     *LastError "lastErrorObject"
 }
 
 type QueryError struct {
@@ -1655,6 +1656,9 @@ func checkQueryError(fullname string, d []byte) error {
 Error:
 	result := &queryError{}
 	bson.Unmarshal(d, result)
+	if result.LastError != nil {
+		return result.LastError
+	}
 	if result.Err == "" && result.ErrMsg == "" {
 		return nil
 	}

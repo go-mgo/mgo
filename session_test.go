@@ -566,6 +566,23 @@ func (s *S) TestFindAndModify(c *C) {
 	c.Assert(len(result), Equals, 0)
 }
 
+func (s *S) TestFindAndModifyBug997828(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"n": "not-a-number"})
+
+	result := make(M)
+	err = coll.Find(M{"n": "not-a-number"}).Modify(mgo.Change{Update: M{"$inc": M{"n": 1}}}, result)
+	c.Assert(err, ErrorMatches, `Cannot apply \$inc modifier to non-number`)
+	lerr, _ := err.(*mgo.LastError)
+	c.Assert(lerr, NotNil)
+	c.Assert(lerr.Code, Equals, 10140)
+}
+
 func (s *S) TestCountCollection(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
