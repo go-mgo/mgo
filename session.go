@@ -1707,16 +1707,14 @@ func (q *Query) One(result interface{}) (err error) {
 	if data == nil {
 		return NotFound
 	}
-	if result == nil {
-		return nil
-	}
-
-	err = bson.Unmarshal(data, result)
-	if err == nil {
-		debugf("Query %p document unmarshaled: %#v", q, result)
-	} else {
-		debugf("Query %p document unmarshaling failed: %#v", q, err)
-		return err
+	if result != nil {
+		err = bson.Unmarshal(data, result)
+		if err == nil {
+			debugf("Query %p document unmarshaled: %#v", q, result)
+		} else {
+			debugf("Query %p document unmarshaling failed: %#v", q, err)
+			return err
+		}
 	}
 	return checkQueryError(op.collection, data)
 }

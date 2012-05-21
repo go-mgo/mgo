@@ -132,6 +132,16 @@ func (s *S) TestInsertFindOne(c *C) {
 	c.Assert(result.B, Equals, 2)
 }
 
+func (s *S) TestInsertFindOneNil(c *C) {
+	session, err := mgo.Dial("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	err = coll.Find(nil).One(nil)
+	c.Assert(err, ErrorMatches, "unauthorized.*")
+}
+
 func (s *S) TestInsertFindOneMap(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
