@@ -735,13 +735,32 @@ func (s *S) TestFindNil(c *C) {
 	defer session.Close()
 
 	coll := session.DB("mydb").C("mycoll")
-	coll.Insert(M{"n": 1})
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, IsNil)
 
 	result := struct{ N int }{}
 
 	err = coll.Find(nil).One(&result)
 	c.Assert(err, IsNil)
 	c.Assert(result.N, Equals, 1)
+}
+
+func (s *S) TestFindId(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	err = coll.Insert(M{"_id": 41, "n": 41})
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{"_id": 42, "n": 42})
+	c.Assert(err, IsNil)
+
+	result := struct{ N int }{}
+
+	err = coll.FindId(42).One(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result.N, Equals, 42)
 }
 
 func (s *S) TestFindIterAll(c *C) {

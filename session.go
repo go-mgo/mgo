@@ -1224,6 +1224,16 @@ func (c *Collection) Find(query interface{}) *Query {
 	return q
 }
 
+// FindId prepares a query to find a document by its _id field.
+// It is a convenience helper equivalent to:
+//
+//     query := collection.Find(bson.M{"_id": id})
+//
+// See the Find method for more details.
+func (c *Collection) FindId(id interface{}) *Query {
+	return c.Find(bson.D{{"_id", id}})
+}
+
 type LastError struct {
 	Err             string
 	Code, N, Waited int
