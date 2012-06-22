@@ -31,8 +31,8 @@ import (
 	"flag"
 	"fmt"
 	. "launchpad.net/gocheck"
-	"launchpad.net/mgo"
-	"launchpad.net/mgo/bson"
+	"labix.org/v2/mgo"
+	"labix.org/v2/mgo/bson"
 	"os/exec"
 
 	"strings"

@@ -31,7 +31,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"launchpad.net/mgo/bson"
+	"labix.org/v2/mgo/bson"
 	"math"
 	"reflect"
 	"runtime"

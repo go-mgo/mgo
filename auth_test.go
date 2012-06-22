@@ -28,7 +28,7 @@ package mgo_test
 
 import (
 	. "launchpad.net/gocheck"
-	"launchpad.net/mgo"
+	"labix.org/v2/mgo"
 	"sync"
 )
 
