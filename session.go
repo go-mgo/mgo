@@ -1423,6 +1423,12 @@ func (c *Collection) DropCollection() error {
 }
 
 // The CollectionInfo type holds metadata about a collection.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/createCollection+Command
+//     http://www.mongodb.org/display/DOCS/Capped+Collections
+//
 type CollectionInfo struct {
 	// DisableIdIndex prevents the automatic creation of the index
 	// on the _id field for the collection.
@@ -1447,6 +1453,12 @@ type CollectionInfo struct {
 // MongoDB creates collections automatically on use, so this method
 // is only necessary when creating collection with non-default
 // characteristics, such as capped collections.
+//
+// Relevant documentation:
+//
+//     http://www.mongodb.org/display/DOCS/createCollection+Command
+//     http://www.mongodb.org/display/DOCS/Capped+Collections
+//
 func (c *Collection) Create(info *CollectionInfo) error {
 	cmd := make(bson.D, 0, 4)
 	cmd = append(cmd, bson.DocElem{"create", c.Name})
