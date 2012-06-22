@@ -815,7 +815,7 @@ func (s *S) TestFindOneNotFound(c *C) {
 	result := struct{ A, B int }{}
 	err = coll.Find(M{"a": 1}).One(&result)
 	c.Assert(err, Equals, mgo.ErrNotFound)
-	c.Assert(err, ErrorMatches, "Document not found")
+	c.Assert(err, ErrorMatches, "not found")
 	c.Assert(err == mgo.ErrNotFound, Equals, true)
 }
 

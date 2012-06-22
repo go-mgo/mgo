@@ -113,7 +113,7 @@ type Iter struct {
 	timedout       bool
 }
 
-var ErrNotFound = errors.New("Document not found")
+var ErrNotFound = errors.New("not found")
 
 const defaultPrefetch = 0.25
 
