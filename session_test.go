@@ -706,10 +706,10 @@ func (s *S) TestQueryHint(c *C) {
 	defer session.Close()
 
 	coll := session.DB("mydb").C("mycoll")
-	coll.EnsureIndexKey([]string{"a"})
+	coll.EnsureIndexKey("a")
 
 	m := M{}
-	err = coll.Find(nil).Hint([]string{"a"}).Explain(m)
+	err = coll.Find(nil).Hint("a").Explain(m)
 	c.Assert(err, IsNil)
 	c.Assert(m["indexBounds"], NotNil)
 	c.Assert(m["indexBounds"].(bson.M)["a"], NotNil)
@@ -1004,7 +1004,7 @@ func (s *S) TestFindIterSortWithBatch(c *C) {
 
 	// Without this, the logic above breaks because Mongo refuses to
 	// return a cursor with an in-memory sort.
-	coll.EnsureIndexKey([]string{"n"})
+	coll.EnsureIndexKey("n")
 
 	// Ping the database to ensure the nonce has been received already.
 	c.Assert(session.Ping(), IsNil)
@@ -1990,10 +1990,10 @@ func (s *S) TestEnsureIndexKey(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
-	err = coll.EnsureIndexKey([]string{"a"})
+	err = coll.EnsureIndexKey("a")
 	c.Assert(err, IsNil)
 
-	err = coll.EnsureIndexKey([]string{"a", "-b"})
+	err = coll.EnsureIndexKey("a", "-b")
 	c.Assert(err, IsNil)
 
 	sysidx := session.DB("mydb").C("system.indexes")
@@ -2030,13 +2030,13 @@ func (s *S) TestEnsureIndexDropIndex(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
-	err = coll.EnsureIndexKey([]string{"a"})
+	err = coll.EnsureIndexKey("a")
 	c.Assert(err, IsNil)
 
-	err = coll.EnsureIndexKey([]string{"-b"})
+	err = coll.EnsureIndexKey("-b")
 	c.Assert(err, IsNil)
 
-	err = coll.DropIndex([]string{"-b"})
+	err = coll.DropIndex("-b")
 	c.Assert(err, IsNil)
 
 	sysidx := session.DB("mydb").C("system.indexes")
@@ -2048,13 +2048,13 @@ func (s *S) TestEnsureIndexDropIndex(c *C) {
 	err = sysidx.Find(M{"name": "b_1"}).One(dummy)
 	c.Assert(err, Equals, mgo.NotFound)
 
-	err = coll.DropIndex([]string{"a"})
+	err = coll.DropIndex("a")
 	c.Assert(err, IsNil)
 
 	err = sysidx.Find(M{"name": "a_1"}).One(dummy)
 	c.Assert(err, Equals, mgo.NotFound)
 
-	err = coll.DropIndex([]string{"a"})
+	err = coll.DropIndex("a")
 	c.Assert(err, ErrorMatches, "index not found")
 }
 
@@ -2065,13 +2065,13 @@ func (s *S) TestEnsureIndexCaching(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
-	err = coll.EnsureIndexKey([]string{"a"})
+	err = coll.EnsureIndexKey("a")
 	c.Assert(err, IsNil)
 
 	mgo.ResetStats()
 
 	// Second EnsureIndex should be cached and do nothing.
-	err = coll.EnsureIndexKey([]string{"a"})
+	err = coll.EnsureIndexKey("a")
 	c.Assert(err, IsNil)
 
 	stats := mgo.GetStats()
@@ -2080,19 +2080,19 @@ func (s *S) TestEnsureIndexCaching(c *C) {
 	// Resetting the cache should make it contact the server again.
 	session.ResetIndexCache()
 
-	err = coll.EnsureIndexKey([]string{"a"})
+	err = coll.EnsureIndexKey("a")
 	c.Assert(err, IsNil)
 
 	stats = mgo.GetStats()
 	c.Assert(stats.SentOps, Equals, 2)
 
 	// Dropping the index should also drop the cached index key.
-	err = coll.DropIndex([]string{"a"})
+	err = coll.DropIndex("a")
 	c.Assert(err, IsNil)
 
 	mgo.ResetStats()
 
-	err = coll.EnsureIndexKey([]string{"a"})
+	err = coll.EnsureIndexKey("a")
 	c.Assert(err, IsNil)
 
 	stats = mgo.GetStats()
@@ -2106,13 +2106,13 @@ func (s *S) TestEnsureIndexGetIndexes(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
-	err = coll.EnsureIndexKey([]string{"-b"})
+	err = coll.EnsureIndexKey("-b")
 	c.Assert(err, IsNil)
 
-	err = coll.EnsureIndexKey([]string{"a"})
+	err = coll.EnsureIndexKey("a")
 	c.Assert(err, IsNil)
 
-	err = coll.EnsureIndexKey([]string{"@c"})
+	err = coll.EnsureIndexKey("@c")
 	c.Assert(err, IsNil)
 
 	indexes, err := coll.Indexes()

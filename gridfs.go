@@ -606,7 +606,7 @@ func (file *GridFile) insertFile() {
 		file.doc.UploadDate = bson.Now()
 		file.doc.MD5 = hexsum
 		file.err = file.gfs.Files.Insert(file.doc)
-		file.gfs.Chunks.EnsureIndexKey([]string{"files_id", "n"})
+		file.gfs.Chunks.EnsureIndexKey("files_id", "n")
 	}
 }
 

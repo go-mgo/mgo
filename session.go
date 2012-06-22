@@ -556,15 +556,34 @@ func parseIndexKey(key []string) (name string, realKey bson.D, err error) {
 //
 // This example:
 //
-//     err := collection.EnsureIndexKey([]string{"a", "b"})
+//     err := collection.EnsureIndexKey("a", "b")
 //
 // Is equivalent to:
 //
 //     err := collection.EnsureIndex(mgo.Index{Key: []string{"a", "b"}})
 //
 // See the EnsureIndex method for more details.
-func (c *Collection) EnsureIndexKey(key []string) error {
-	return c.EnsureIndex(Index{Key: key})
+//
+// NOTE: The first field has a type of interface{} because originally
+// this method expected a single []string argument. This continues to
+// work at the moment for compatibility reasons. That said, this format
+// is DEPRECATED and will soon be dropped entirely.
+func (c *Collection) EnsureIndexKey(first interface{}, more ...string) error {
+	return c.EnsureIndex(Index{Key: fieldList(first, more)})
+}
+
+// fieldList implements a compatibility scheme so we can deprecate the
+// use of arguments in the style F([]string{a, b}) in favor of F(a, b).
+func fieldList(first interface{}, more []string) (fields []string) {
+	if field, ok := first.(string); ok {
+		fields = append([]string{field}, more...)
+	} else {
+		fields, ok = first.([]string)
+		if !ok {
+			panic("non-string field name")
+		}
+	}
+	return fields
 }
 
 // EnsureIndex ensures an index with the given key exists, creating it with
@@ -676,11 +695,16 @@ func (c *Collection) EnsureIndex(index Index) error {
 //
 // For example:
 //
-//     err := collection.DropIndex([]string{"lastname", "firstname"})
+//     err := collection.DropIndex("lastname", "firstname")
 //
 // See the EnsureIndex method for more details on indexes.
-func (c *Collection) DropIndex(key []string) error {
-	name, _, err := parseIndexKey(key)
+//
+// NOTE: The first field has a type of interface{} because originally
+// this method expected a single []string argument. This continues to
+// work at the moment for compatibility reasons. That said, this format
+// is DEPRECATED and will soon be dropped entirely.
+func (c *Collection) DropIndex(first interface{}, more ...string) error {
+	name, _, err := parseIndexKey(fieldList(first, more))
 	if err != nil {
 		return err
 	}
@@ -717,7 +741,7 @@ func (c *Collection) DropIndex(key []string) error {
 //       panic(err)
 //   }
 //   for _, index := range indexes {
-//       err = collection.DropIndex(index.Key)
+//       err = collection.DropIndex(index.Key...)
 //       if err != nil {
 //           panic(err)
 //       }
@@ -1505,12 +1529,6 @@ func (q *Query) wrap() *queryWrapper {
 // provided field names. A field name may be prefixed by - (minus) for
 // it to be sorted in reverse order.
 //
-// NOTE: The first field has a type of interface{} because originally
-// this method expected a document in the same format used by the MongoDB
-// shell, and this continues to work at the moment for compatibility
-// reasons. That said, this format is DEPRECATED and will soon be
-// dropped entirely.
-//
 // For example:
 //
 //     query1 := collection.Find(nil).Sort("firstname", "lastname")
@@ -1521,6 +1539,11 @@ func (q *Query) wrap() *queryWrapper {
 //
 //     http://www.mongodb.org/display/DOCS/Sorting+and+Natural+Order
 //
+// NOTE: The first field has a type of interface{} because originally
+// this method expected a document in the same format used by the MongoDB
+// shell, and this continues to work at the moment for compatibility
+// reasons. That said, this format is DEPRECATED and will soon be
+// dropped entirely.
 func (q *Query) Sort(first interface{}, more ...string) *Query {
 	q.m.Lock()
 	w := q.wrap()
@@ -1589,22 +1612,27 @@ func (q *Query) Explain(result interface{}) error {
 
 // Hint will include an explicit "hint" in the query to force the server
 // to use a specified index, potentially improving performance in some
-// situations.  The indexKey parameter must be set to the key of the
-// index to be used.  For details on how the indexKey may be built, see
-// the EnsureIndex method.
+// situations.  The provided parameters are the fields that compose the
+// key of the index to be used.  For details on how the indexKey may be
+// built, see the EnsureIndex method.
 //
 // For example:
 //
-//     query := collection.Find(bson.M{"a": 4, "b": 5, "c": 6}).Hint([]string{"a", "b"})
+//     query := collection.Find(bson.M{"firstname": "Joe", "lastname": "Winter"})
+//     query.Hint("lastname", "firstname")
 //
 // Relevant documentation:
 //
 //     http://www.mongodb.org/display/DOCS/Optimization
 //     http://www.mongodb.org/display/DOCS/Query+Optimizer
-//     
-func (q *Query) Hint(indexKey []string) *Query {
+//
+// NOTE: The first field has a type of interface{} because originally
+// this method expected a single []string argument. This continues to
+// work at the moment for compatibility reasons. That said, this format
+// is DEPRECATED and will soon be dropped entirely.
+func (q *Query) Hint(first interface{}, more ...string) *Query {
 	q.m.Lock()
-	_, realKey, err := parseIndexKey(indexKey)
+	_, realKey, err := parseIndexKey(fieldList(first, more))
 	w := q.wrap()
 	w.Hint = realKey
 	q.m.Unlock()
