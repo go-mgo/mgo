@@ -535,6 +535,74 @@ func (s *S) TestDropCollection(c *C) {
 	c.Assert(names, DeepEquals, []string{"system.indexes"})
 }
 
+func (s *S) TestCreateCollectionCapped(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	info := &mgo.CollectionInfo{
+		Capped: true,
+		MaxBytes: 1024,
+		MaxDocs: 3,
+	}
+	err = coll.Create(info)
+	c.Assert(err, IsNil)
+
+	ns := []int{1, 2, 3, 4, 5}
+	for _, n := range ns {
+		err := coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
+	}
+
+	n, err := coll.Find(nil).Count()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 3)
+}
+
+func (s *S) TestCreateCollectionNoIndex(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	info := &mgo.CollectionInfo{
+		DisableIdIndex: true,
+	}
+	err = coll.Create(info)
+	c.Assert(err, IsNil)
+
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+
+	indexes, err := coll.Indexes()
+	c.Assert(indexes, HasLen, 0)
+}
+
+func (s *S) TestCreateCollectionForceIndex(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	info := &mgo.CollectionInfo{
+		ForceIdIndex: true,
+		Capped: true,
+		MaxBytes: 1024,
+	}
+	err = coll.Create(info)
+	c.Assert(err, IsNil)
+
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+
+	indexes, err := coll.Indexes()
+	c.Assert(indexes, HasLen, 1)
+}
+
 func (s *S) TestFindAndModify(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)

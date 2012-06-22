@@ -1276,7 +1276,7 @@ type queryError struct {
 	ErrMsg        string
 	Assertion     string
 	Code          int
-	AssertionCode int "assertionCode"
+	AssertionCode int        "assertionCode"
 	LastError     *LastError "lastErrorObject"
 }
 
@@ -1420,6 +1420,53 @@ func (db *Database) DropDatabase() error {
 // DropCollection removes the entire collection including all of its documents.
 func (c *Collection) DropCollection() error {
 	return c.Database.Run(bson.D{{"drop", c.Name}}, nil)
+}
+
+// The CollectionInfo type holds metadata about a collection.
+type CollectionInfo struct {
+	// DisableIdIndex prevents the automatic creation of the index
+	// on the _id field for the collection.
+        DisableIdIndex bool
+
+	// ForceIdIndex enforces the automatic creation of the index
+	// on the _id field for the collection. Capped collections,
+	// for example, do not have such an index by default.
+	ForceIdIndex bool
+
+	// If Capped is true new documents will replace old ones when
+	// the collection is full. MaxBytes must necessarily be set
+	// to define the size when the collection wraps around.
+	// MaxDocs optionally defines the number of documents when it
+	// wraps, but MaxBytes still needs to be set.
+	Capped   bool
+	MaxBytes int
+	MaxDocs  int
+}
+
+// Create explicitly creates the c collection with details of info.
+// MongoDB creates collections automatically on use, so this method
+// is only necessary when creating collection with non-default
+// characteristics, such as capped collections.
+func (c *Collection) Create(info *CollectionInfo) error {
+	cmd := make(bson.D, 0, 4)
+	cmd = append(cmd, bson.DocElem{"create", c.Name})
+	if info.Capped {
+		if info.MaxBytes < 1 {
+			return fmt.Errorf("Collection.Create: with Capped, MaxBytes must also be set")
+		}
+		cmd = append(cmd, bson.DocElem{"capped", true})
+		cmd = append(cmd, bson.DocElem{"size", info.MaxBytes})
+		if info.MaxDocs > 0 {
+			cmd = append(cmd, bson.DocElem{"max", info.MaxDocs})
+		}
+	}
+	if info.DisableIdIndex {
+		cmd = append(cmd, bson.DocElem{"autoIndexId", false})
+	}
+	if info.ForceIdIndex {
+		cmd = append(cmd, bson.DocElem{"autoIndexId", true})
+	}
+	return c.Database.Run(cmd, nil)
 }
 
 // Batch sets the batch size used when fetching documents from the database.
