@@ -220,27 +220,27 @@ func (s *S) TestFindRef(c *C) {
 	ref1 := &mgo.DBRef{Collection: "col1", Id: 1}
 	ref2 := &mgo.DBRef{Collection: "col1", Id: 2, Database: "db2"}
 
-	err = db1.FindRef(ref1, &result)
+	err = db1.FindRef(ref1).One(&result)
 	c.Assert(err, IsNil)
 	c.Assert(result.N, Equals, 1)
 
-	err = db1.FindRef(ref2, &result)
+	err = db1.FindRef(ref2).One(&result)
 	c.Assert(err, IsNil)
 	c.Assert(result.N, Equals, 3)
 
-	err = db2.FindRef(ref1, &result)
+	err = db2.FindRef(ref1).One(&result)
 	c.Assert(err, Equals, mgo.ErrNotFound)
 
-	err = db2.FindRef(ref2, &result)
+	err = db2.FindRef(ref2).One(&result)
 	c.Assert(err, IsNil)
 	c.Assert(result.N, Equals, 3)
 
-	err = session.FindRef(ref2, &result)
+	err = session.FindRef(ref2).One(&result)
 	c.Assert(err, IsNil)
 	c.Assert(result.N, Equals, 3)
 
-	err = session.FindRef(ref1, &result)
-	c.Assert(err, ErrorMatches, "Can't resolve database for &mgo.DBRef{Collection:\"col1\", Id:1, Database:\"\"}")
+	f := func() { session.FindRef(ref1).One(&result) }
+	c.Assert(f, PanicMatches, "Can't resolve database for &mgo.DBRef{Collection:\"col1\", Id:1, Database:\"\"}")
 }
 
 func (s *S) TestDatabaseAndCollectionNames(c *C) {

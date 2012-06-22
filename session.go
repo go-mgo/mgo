@@ -563,8 +563,8 @@ func parseIndexKey(key []string) (name string, realKey bson.D, err error) {
 //     err := collection.EnsureIndex(mgo.Index{Key: []string{"a", "b"}})
 //
 // See the EnsureIndex method for more details.
-func (c *Collection) EnsureIndexKey(fields ...string) error {
-	return c.EnsureIndex(Index{Key: fields})
+func (c *Collection) EnsureIndexKey(key ...string) error {
+	return c.EnsureIndex(Index{Key: key})
 }
 
 // EnsureIndex ensures an index with the given key exists, creating it with
@@ -679,8 +679,8 @@ func (c *Collection) EnsureIndex(index Index) error {
 //     err := collection.DropIndex("lastname", "firstname")
 //
 // See the EnsureIndex method for more details on indexes.
-func (c *Collection) DropIndex(fields ...string) error {
-	name, _, err := parseIndexKey(fields)
+func (c *Collection) DropIndex(key ...string) error {
+	name, _, err := parseIndexKey(key)
 	if err != nil {
 		return err
 	}
@@ -1800,12 +1800,8 @@ type DBRef struct {
 
 // NOTE: Order of fields for DBRef above does matter, per documentation.
 
-type id struct {
-	Id interface{} "_id"
-}
-
-// FindRef retrieves the document in the provided reference and stores it
-// in result.  If the reference includes the DB field, the document will
+// FindRef returns a query that looks for the document in the provided
+// reference. If the reference includes the DB field, the document will
 // be retrieved from the respective database.
 //
 // See also the DBRef type and the FindRef method on Session.
@@ -1814,18 +1810,18 @@ type id struct {
 // 
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
-func (db *Database) FindRef(ref *DBRef, result interface{}) error {
+func (db *Database) FindRef(ref *DBRef) *Query {
 	var c *Collection
 	if ref.Database == "" {
 		c = db.C(ref.Collection)
 	} else {
 		c = db.Session.DB(ref.Database).C(ref.Collection)
 	}
-	return c.Find(id{ref.Id}).One(result)
+	return c.FindId(ref.Id)
 }
 
-// FindRef retrieves the document in the provided reference and stores it
-// in result.  For a DBRef to be resolved correctly at the session level
+// FindRef returns a query that looks for the document in the provided
+// reference. For a DBRef to be resolved correctly at the session level
 // it must necessarily have the optional DB field defined.
 //
 // See also the DBRef type and the FindRef method on Database.
@@ -1834,12 +1830,12 @@ func (db *Database) FindRef(ref *DBRef, result interface{}) error {
 // 
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
-func (s *Session) FindRef(ref *DBRef, result interface{}) error {
+func (s *Session) FindRef(ref *DBRef) *Query {
 	if ref.Database == "" {
-		return errors.New(fmt.Sprintf("Can't resolve database for %#v", ref))
+		panic(errors.New(fmt.Sprintf("Can't resolve database for %#v", ref)))
 	}
 	c := s.DB(ref.Database).C(ref.Collection)
-	return c.Find(id{ref.Id}).One(result)
+	return c.FindId(ref.Id)
 }
 
 // CollectionNames returns the collection names present in database.
