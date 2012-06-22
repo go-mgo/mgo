@@ -158,7 +158,7 @@ func (gfs *GridFS) Create(name string) (file *GridFile, err error) {
 }
 
 // OpenId returns a file with the provided id in case it exists or an error
-// instead.  If the file isn't found, err will be set to mgo.NotFound.
+// instead.  If the file isn't found, err will be set to mgo.ErrNotFound.
 //
 // It's important to Close files whether they are being written to
 // or read from, and to check the err result to ensure the operation
@@ -206,7 +206,7 @@ func (gfs *GridFS) OpenId(id interface{}) (file *GridFile, err error) {
 }
 
 // Open returns the most recent uploaded file with the provided name, or an
-// error instead.  If the file isn't found, err will be set to mgo.NotFound.
+// error instead.  If the file isn't found, err will be set to mgo.ErrNotFound.
 //
 // It's important to Close files whether they are being written to
 // or read from, and to check the err result to ensure the operation
@@ -317,7 +317,8 @@ func (gfs *GridFS) RemoveId(id interface{}) error {
 	if err != nil {
 		return err
 	}
-	return gfs.Chunks.RemoveAll(bson.M{"files_id": id})
+	_, err = gfs.Chunks.RemoveAll(bson.M{"files_id": id})
+	return err
 }
 
 type gfsDocId struct {

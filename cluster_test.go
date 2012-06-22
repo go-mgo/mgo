@@ -810,7 +810,7 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 	result := &struct{}{}
 	for i := 0; i != 5; i++ {
 		err := coll.Find(nil).One(result)
-		c.Assert(err, Equals, mgo.NotFound)
+		c.Assert(err, Equals, mgo.ErrNotFound)
 	}
 
 	// Collect op counters for everyone again.

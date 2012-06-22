@@ -113,7 +113,7 @@ type Iter struct {
 	timedout       bool
 }
 
-var NotFound = errors.New("Document not found")
+var ErrNotFound = errors.New("Document not found")
 
 const defaultPrefetch = 0.25
 
@@ -563,27 +563,8 @@ func parseIndexKey(key []string) (name string, realKey bson.D, err error) {
 //     err := collection.EnsureIndex(mgo.Index{Key: []string{"a", "b"}})
 //
 // See the EnsureIndex method for more details.
-//
-// NOTE: The first field has a type of interface{} because originally
-// this method expected a single []string argument. This continues to
-// work at the moment for compatibility reasons. That said, this format
-// is DEPRECATED and will soon be dropped entirely.
-func (c *Collection) EnsureIndexKey(first interface{}, more ...string) error {
-	return c.EnsureIndex(Index{Key: fieldList(first, more)})
-}
-
-// fieldList implements a compatibility scheme so we can deprecate the
-// use of arguments in the style F([]string{a, b}) in favor of F(a, b).
-func fieldList(first interface{}, more []string) (fields []string) {
-	if field, ok := first.(string); ok {
-		fields = append([]string{field}, more...)
-	} else {
-		fields, ok = first.([]string)
-		if !ok {
-			panic("non-string field name")
-		}
-	}
-	return fields
+func (c *Collection) EnsureIndexKey(fields ...string) error {
+	return c.EnsureIndex(Index{Key: fields})
 }
 
 // EnsureIndex ensures an index with the given key exists, creating it with
@@ -698,13 +679,8 @@ func (c *Collection) EnsureIndex(index Index) error {
 //     err := collection.DropIndex("lastname", "firstname")
 //
 // See the EnsureIndex method for more details on indexes.
-//
-// NOTE: The first field has a type of interface{} because originally
-// this method expected a single []string argument. This continues to
-// work at the moment for compatibility reasons. That said, this format
-// is DEPRECATED and will soon be dropped entirely.
-func (c *Collection) DropIndex(first interface{}, more ...string) error {
-	name, _, err := parseIndexKey(fieldList(first, more))
+func (c *Collection) DropIndex(fields ...string) error {
+	name, _, err := parseIndexKey(fields)
 	if err != nil {
 		return err
 	}
@@ -750,7 +726,7 @@ func (c *Collection) DropIndex(first interface{}, more ...string) error {
 // See the EnsureIndex method for more details on indexes.
 func (c *Collection) Indexes() (indexes []Index, err error) {
 	query := c.Database.C("system.indexes").Find(bson.M{"ns": c.FullName})
-	iter := query.Sort(bson.D{{"name", 1}}).Iter()
+	iter := query.Sort("name").Iter()
 	for {
 		var spec indexSpec
 		if !iter.Next(&spec) {
@@ -1263,7 +1239,7 @@ type LastError struct {
 	Code, N, Waited int
 	FSyncFiles      int "fsyncFiles"
 	WTimeout        bool
-	Updated         bool        "updatedExisting"
+	UpdatedExisting bool        "updatedExisting"
 	UpsertedId      interface{} "upserted"
 }
 
@@ -1300,11 +1276,10 @@ func (c *Collection) Insert(docs ...interface{}) error {
 }
 
 // Update finds a single document matching the provided selector document
-// and modifies it according to the change document.  In case the session
-// is in safe mode (see the SetSafe method) a getLastError command will
-// follow the update request and NotFound will be returned in case no
-// documents are updated, or a value of type *LastError in case some other
-// error is detected.
+// and modifies it according to the change document.
+// If the session is in safe mode (see SetSafe) a ErrNotFound error is
+// returned if a document isn't found, or a value of type *LastError
+// when some other error is detected.
 //
 // Relevant documentation:
 //
@@ -1314,52 +1289,54 @@ func (c *Collection) Insert(docs ...interface{}) error {
 func (c *Collection) Update(selector interface{}, change interface{}) error {
 	session := c.Database.Session
 	lerr, err := session.writeQuery(&updateOp{c.FullName, selector, change, 0})
-	if err == nil && lerr != nil && !lerr.Updated {
-		return NotFound
+	if err == nil && lerr != nil && !lerr.UpdatedExisting {
+		return ErrNotFound
 	}
 	return err
-
 }
 
-type idType struct {
-	Id interface{} "_id"
+// ChangeInfo holds details about the outcome of a change operation.
+type ChangeInfo struct {
+	Updated    int         // Number of existing documents updated
+	Removed    int         // Number of documents removed
+	UpsertedId interface{} // Upserted _id field, when not explicitly provided
 }
 
 // UpdateAll finds all documents matching the provided selector document
-// and modifies them according to the change document.  In case the session
-// is in safe mode (see the SetSafe method) a getLastError command will
-// follow the update request and NotFound will be returned in case no
-// documents are updated, or a value of type *LastError in case some other
-// error is detected.
+// and modifies them according to the change document.
+// If the session is in safe mode (see SetSafe) details of the executed
+// operation are returned in info or an error of type *LastError when
+// some problem is detected. It is not an error for the update to not be
+// applied on any documents because the selector doesn't match.
 //
 // Relevant documentation:
 //
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (c *Collection) UpdateAll(selector interface{}, change interface{}) error {
+func (c *Collection) UpdateAll(selector interface{}, change interface{}) (info *ChangeInfo, err error) {
 	session := c.Database.Session
 	lerr, err := session.writeQuery(&updateOp{c.FullName, selector, change, 2})
-	if err == nil && lerr != nil && !lerr.Updated {
-		return NotFound
+	if err == nil && lerr != nil {
+		info = &ChangeInfo{Updated: lerr.N}
 	}
-	return err
+	return info, err
 }
 
 // Upsert finds a single document matching the provided selector document
 // and modifies it according to the change document.  If no document matching
-// the selector is found, the change document is newly inserted and the
-// returned id value is set to the id of the inserted document.  In case the
-// session is in safe mode (see the SetSafe method) a getLastError command will
-// follow the upsert request and a value of type *LastError in case some error
-// is detected.
+// the selector is found, the change document is applied to the selector
+// document and the result is inserted in the collection.
+// If the session is in safe mode (see SetSafe) details of the executed
+// operation are returned in info, or an error of type *LastError when
+// some problem is detected.
 //
 // Relevant documentation:
 //
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (c *Collection) Upsert(selector interface{}, change interface{}) (id interface{}, err error) {
+func (c *Collection) Upsert(selector interface{}, change interface{}) (info *ChangeInfo, err error) {
 	data, err := bson.Marshal(change)
 	if err != nil {
 		return nil, err
@@ -1367,25 +1344,22 @@ func (c *Collection) Upsert(selector interface{}, change interface{}) (id interf
 	change = bson.Raw{0x03, data}
 	session := c.Database.Session
 	lerr, err := session.writeQuery(&updateOp{c.FullName, selector, change, 1})
-	if lerr != nil {
-		id = lerr.UpsertedId
-		if id == nil && !lerr.Updated {
-			// Sad. Will unmarhsal the document to make the interface even.
-			var doc idType
-			err = bson.Unmarshal(data, &doc)
-			if err != nil {
-				return nil, err
-			}
-			id = doc.Id
+	if err == nil && lerr != nil {
+		info = &ChangeInfo{}
+		if lerr.UpdatedExisting {
+			info.Updated = lerr.N
+		} else {
+			info.UpsertedId = lerr.UpsertedId
 		}
 	}
-	return id, err
+	return info, err
 }
 
 // Remove finds a single document matching the provided selector document
-// and removes it from the database.  In case the session is in safe mode
-// (see the SetSafe method) and an error happens when attempting the change,
-// the returned error will be of type *LastError.
+// and removes it from the database.
+// If the session is in safe mode (see SetSafe) a ErrNotFound error is
+// returned if a document isn't found, or a value of type *LastError
+// when some other error is detected.
 //
 // Relevant documentation:
 //
@@ -1393,7 +1367,10 @@ func (c *Collection) Upsert(selector interface{}, change interface{}) (id interf
 //
 func (c *Collection) Remove(selector interface{}) error {
 	session := c.Database.Session
-	_, err := session.writeQuery(&deleteOp{c.FullName, selector, 1})
+	lerr, err := session.writeQuery(&deleteOp{c.FullName, selector, 1})
+	if err == nil && lerr != nil && lerr.N == 0 {
+		return ErrNotFound
+	}
 	return err
 }
 
@@ -1406,10 +1383,13 @@ func (c *Collection) Remove(selector interface{}) error {
 //
 //     http://www.mongodb.org/display/DOCS/Removing
 //
-func (c *Collection) RemoveAll(selector interface{}) error {
+func (c *Collection) RemoveAll(selector interface{}) (info *ChangeInfo, err error) {
 	session := c.Database.Session
-	_, err := session.writeQuery(&deleteOp{c.FullName, selector, 0})
-	return err
+	lerr, err := session.writeQuery(&deleteOp{c.FullName, selector, 0})
+	if err == nil && lerr != nil {
+		info = &ChangeInfo{Removed: lerr.N}
+	}
+	return info, err
 }
 
 // DropDatabase removes the entire database including all of its collections.
@@ -1432,7 +1412,7 @@ func (c *Collection) DropCollection() error {
 type CollectionInfo struct {
 	// DisableIdIndex prevents the automatic creation of the index
 	// on the _id field for the collection.
-        DisableIdIndex bool
+	DisableIdIndex bool
 
 	// ForceIdIndex enforces the automatic creation of the index
 	// on the _id field for the collection. Capped collections,
@@ -1525,7 +1505,7 @@ func (q *Query) Skip(n int) *Query {
 
 // Limit restricts the maximum number of documents retrieved to n, and also
 // changes the batch size to the same value.  Once n documents have been
-// returned by Next, the following call will return NotFound.
+// returned by Next, the following call will return ErrNotFound.
 func (q *Query) Limit(n int) *Query {
 	q.m.Lock()
 	switch {
@@ -1598,39 +1578,27 @@ func (q *Query) wrap() *queryWrapper {
 //
 //     http://www.mongodb.org/display/DOCS/Sorting+and+Natural+Order
 //
-// NOTE: The first field has a type of interface{} because originally
-// this method expected a document in the same format used by the MongoDB
-// shell, and this continues to work at the moment for compatibility
-// reasons. That said, this format is DEPRECATED and will soon be
-// dropped entirely.
-func (q *Query) Sort(first interface{}, more ...string) *Query {
+func (q *Query) Sort(fields ...string) *Query {
 	q.m.Lock()
 	w := q.wrap()
-	if field, ok := first.(string); ok {
-		var order bson.D
-		for i := 0; i < len(more)+1; i++ {
-			if i > 0 {
-				field = more[i-1]
+	var order bson.D
+	for _, field := range fields {
+		n := 1
+		if field != "" {
+			switch field[0] {
+			case '+':
+				field = field[1:]
+			case '-':
+				n = -1
+				field = field[1:]
 			}
-			n := 1
-			if field != "" {
-				switch field[0] {
-				case '+':
-					field = field[1:]
-				case '-':
-					n = -1
-					field = field[1:]
-				}
-			}
-			if field == "" {
-				panic("Sort: empty field name")
-			}
-			order = append(order, bson.DocElem{field, n})
 		}
-		w.OrderBy = order
-	} else {
-		w.OrderBy = first
+		if field == "" {
+			panic("Sort: empty field name")
+		}
+		order = append(order, bson.DocElem{field, n})
 	}
+	w.OrderBy = order
 	q.m.Unlock()
 	return q
 }
@@ -1685,13 +1653,9 @@ func (q *Query) Explain(result interface{}) error {
 //     http://www.mongodb.org/display/DOCS/Optimization
 //     http://www.mongodb.org/display/DOCS/Query+Optimizer
 //
-// NOTE: The first field has a type of interface{} because originally
-// this method expected a single []string argument. This continues to
-// work at the moment for compatibility reasons. That said, this format
-// is DEPRECATED and will soon be dropped entirely.
-func (q *Query) Hint(first interface{}, more ...string) *Query {
+func (q *Query) Hint(indexKey ...string) *Query {
 	q.m.Lock()
-	_, realKey, err := parseIndexKey(fieldList(first, more))
+	_, realKey, err := parseIndexKey(indexKey)
 	w := q.wrap()
 	w.Hint = realKey
 	q.m.Unlock()
@@ -1802,7 +1766,7 @@ func (q *Query) One(result interface{}) (err error) {
 		return err
 	}
 	if data == nil {
-		return NotFound
+		return ErrNotFound
 	}
 	if result != nil {
 		err = bson.Unmarshal(data, result)
@@ -2040,7 +2004,7 @@ func (iter *Iter) Err() error {
 	iter.m.Lock()
 	err := iter.err
 	iter.m.Unlock()
-	if err == NotFound {
+	if err == ErrNotFound {
 		return nil
 	}
 	return err
@@ -2105,7 +2069,7 @@ func (iter *Iter) Next(result interface{}) bool {
 		iter.limit--
 		if iter.limit == 0 {
 			// XXX Must kill the cursor here.
-			iter.err = NotFound
+			iter.err = ErrNotFound
 		}
 		if iter.op.cursorId != 0 && iter.err == nil {
 			iter.docsBeforeMore--
@@ -2133,7 +2097,7 @@ func (iter *Iter) Next(result interface{}) bool {
 		iter.m.Unlock()
 		return false
 	} else if iter.op.cursorId == 0 {
-		iter.err = NotFound
+		iter.err = ErrNotFound
 		debugf("Iter %p exhausted with cursor=0", iter)
 		iter.m.Unlock()
 		return false
@@ -2423,7 +2387,7 @@ type MapReduceTime struct {
 // occurrences of a field named n on each document in a collection, and
 // will return results inline:
 //
-//     job := mgo.MapReduce{
+//     job := &mgo.MapReduce{
 //             Map:      "function() { emit(this.n, 1) }",
 //             Reduce:   "function(key, values) { return Array.sum(values) }",
 //     }
@@ -2442,7 +2406,7 @@ type MapReduceTime struct {
 //
 //     http://www.mongodb.org/display/DOCS/MapReduce
 //
-func (q *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduceInfo, err error) {
+func (q *Query) MapReduce(job *MapReduce, result interface{}) (info *MapReduceInfo, err error) {
 	q.m.Lock()
 	session := q.session
 	op := q.op // Copy.
@@ -2524,10 +2488,10 @@ func (q *Query) MapReduce(job MapReduce, result interface{}) (info *MapReduceInf
 }
 
 type Change struct {
-	Update interface{} // The change document
-	Upsert bool        // Whether to insert in case the document isn't found
-	Remove bool        // Whether to remove the document found rather than updating
-	New    bool        // Should the modified document be returned rather than the old one
+	Update    interface{} // The change document
+	Upsert    bool        // Whether to insert in case the document isn't found
+	Remove    bool        // Whether to remove the document found rather than updating
+	ReturnNew bool        // Should the modified document be returned rather than the old one
 }
 
 type findModifyCmd struct {
@@ -2537,23 +2501,27 @@ type findModifyCmd struct {
 }
 
 type valueResult struct {
-	Value bson.Raw
+	Value     bson.Raw
+	LastError LastError "lastErrorObject"
 }
 
-// Modify allows updating, upserting or removing a document matching the query
+// Apply allows updating, upserting or removing a document matching a query
 // and atomically returning either the old version (the default) or the new
-// version of the document (when change.New is true).  In case no objects are
-// found Modify returns NotFound.
+// version of the document (when ReturnNew is true). If no objects are
+// found Apply returns ErrNotFound.
 //
-// The Sort and Select query methods affect the result of Modify.  In case
+// The Sort and Select query methods affect the result of Apply.  In case
 // multiple documents match the query, Sort enables selecting which document to
 // act upon by ordering it first.  Select enables retrieving only a selection
 // of fields of the new or old document.
 //
 // This simple example increments a counter and prints its new value:
 //
-//     change := mgo.Change{Update: bson.M{"$inc": bson.M{"n": 1}}, New: true}
-//     err = col.Find(M{"_id": id}).Modify(change, &doc)
+//     change := mgo.Change{
+//             Update: bson.M{"$inc": bson.M{"n": 1}},
+//             ReturnNew: true,
+//     }
+//     info, err = col.Find(M{"_id": id}).Apply(change, &doc)
 //     fmt.Println(doc.N)
 //
 // Relevant documentation:
@@ -2562,7 +2530,7 @@ type valueResult struct {
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (q *Query) Modify(change Change, result interface{}) (err error) {
+func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err error) {
 	q.m.Lock()
 	session := q.session
 	op := q.op // Copy.
@@ -2570,7 +2538,7 @@ func (q *Query) Modify(change Change, result interface{}) (err error) {
 
 	c := strings.Index(op.collection, ".")
 	if c < 0 {
-		return errors.New("Bad collection name: " + op.collection)
+		return nil, errors.New("bad collection name: " + op.collection)
 	}
 
 	dbname := op.collection[:c]
@@ -2588,7 +2556,7 @@ func (q *Query) Modify(change Change, result interface{}) (err error) {
 		Update:     change.Update,
 		Upsert:     change.Upsert,
 		Remove:     change.Remove,
-		New:        change.New,
+		New:        change.ReturnNew,
 		Query:      qdoc,
 		Sort:       sort,
 		Fields:     op.selector,
@@ -2598,14 +2566,27 @@ func (q *Query) Modify(change Change, result interface{}) (err error) {
 	err = session.DB(dbname).Run(&cmd, &doc)
 	if err != nil {
 		if qerr, ok := err.(*QueryError); ok && qerr.Message == "No matching object found" {
-			return NotFound
+			return nil, ErrNotFound
 		}
-		return err
+		return nil, err
 	}
 	if doc.Value.Kind == 0x0A {
-		return NotFound
+		return nil, ErrNotFound
 	}
-	return doc.Value.Unmarshal(result)
+	err = doc.Value.Unmarshal(result)
+	if err != nil {
+		return nil, err
+	}
+	info = &ChangeInfo{}
+	lerr := &doc.LastError
+	if lerr.UpdatedExisting {
+		info.Updated = lerr.N
+	} else if change.Remove {
+		info.Removed = lerr.N
+	} else if change.Upsert {
+		info.UpsertedId = lerr.UpsertedId
+	}
+	return info, nil
 }
 
 // The BuildInfo type encapsulates details about the running MongoDB server.
@@ -2733,7 +2714,7 @@ func (iter *Iter) replyFunc() replyFunc {
 				// It's a tailable cursor.
 				iter.op.cursorId = op.cursorId
 			} else {
-				iter.err = NotFound
+				iter.err = ErrNotFound
 			}
 		} else {
 			rdocs := int(op.replyDocs)

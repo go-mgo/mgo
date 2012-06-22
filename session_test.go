@@ -229,7 +229,7 @@ func (s *S) TestFindRef(c *C) {
 	c.Assert(result.N, Equals, 3)
 
 	err = db2.FindRef(ref1, &result)
-	c.Assert(err, Equals, mgo.NotFound)
+	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = db2.FindRef(ref2, &result)
 	c.Assert(err, IsNil)
@@ -310,10 +310,10 @@ func (s *S) TestUpdate(c *C) {
 	c.Assert(result["n"], Equals, 43)
 
 	err = coll.Update(M{"k": 47}, M{"k": 47, "n": 47})
-	c.Assert(err, Equals, mgo.NotFound)
+	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = coll.Find(M{"k": 47}).One(result)
-	c.Assert(err, Equals, mgo.NotFound)
+	c.Assert(err, Equals, mgo.ErrNotFound)
 }
 
 func (s *S) TestUpdateNil(c *C) {
@@ -335,7 +335,7 @@ func (s *S) TestUpdateNil(c *C) {
 
 	err = coll.Insert(M{"k": 45, "n": 45})
 	c.Assert(err, IsNil)
-	err = coll.UpdateAll(nil, M{"$inc": M{"n": 1}})
+	_, err = coll.UpdateAll(nil, M{"$inc": M{"n": 1}})
 	c.Assert(err, IsNil)
 
 	err = coll.Find(M{"k": 42}).One(result)
@@ -360,39 +360,40 @@ func (s *S) TestUpsert(c *C) {
 		c.Assert(err, IsNil)
 	}
 
-	id, err := coll.Upsert(M{"k": 42}, M{"k": 42, "n": 24})
+	info, err := coll.Upsert(M{"k": 42}, M{"k": 42, "n": 24})
 	c.Assert(err, IsNil)
-	c.Assert(id, IsNil)
+	c.Assert(info.Updated, Equals, 1)
+	c.Assert(info.UpsertedId, IsNil)
 
-	result := make(M)
+	result := M{}
 	err = coll.Find(M{"k": 42}).One(result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 24)
 
 	// Insert with internally created id.
-	id, err = coll.Upsert(M{"k": 47}, M{"k": 47, "n": 47})
+	info, err = coll.Upsert(M{"k": 47}, M{"k": 47, "n": 47})
 	c.Assert(err, IsNil)
-	c.Assert(id, NotNil)
+	c.Assert(info.Updated, Equals, 0)
+	c.Assert(info.UpsertedId, NotNil)
 
 	err = coll.Find(M{"k": 47}).One(result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 47)
 
-	result = make(M)
-	err = coll.Find(M{"_id": id}).One(result)
+	result = M{}
+	err = coll.Find(M{"_id": info.UpsertedId}).One(result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 47)
 
 	// Insert with provided id.
-	id, err = coll.Upsert(M{"k": 48}, M{"k": 48, "n": 48, "_id": 48})
+	info, err = coll.Upsert(M{"k": 48}, M{"k": 48, "n": 48, "_id": 48})
 	c.Assert(err, IsNil)
-	c.Assert(id, NotNil)
+	c.Assert(info.Updated, Equals, 0)
+	c.Assert(info.UpsertedId, IsNil) // Unfortunate, but that's what Mongo gives us.
 
 	err = coll.Find(M{"k": 48}).One(result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 48)
-
-	c.Assert(id, Equals, 48)
 }
 
 func (s *S) TestUpdateAll(c *C) {
@@ -408,8 +409,9 @@ func (s *S) TestUpdateAll(c *C) {
 		c.Assert(err, IsNil)
 	}
 
-	err = coll.UpdateAll(M{"k": M{"$gt": 42}}, M{"$inc": M{"n": 1}})
+	info, err := coll.UpdateAll(M{"k": M{"$gt": 42}}, M{"$inc": M{"n": 1}})
 	c.Assert(err, IsNil)
+	c.Assert(info.Updated, Equals, 4)
 
 	result := make(M)
 	err = coll.Find(M{"k": 42}).One(result)
@@ -424,8 +426,9 @@ func (s *S) TestUpdateAll(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 45)
 
-	err = coll.UpdateAll(M{"k": 47}, M{"k": 47, "n": 47})
-	c.Assert(err, Equals, mgo.NotFound)
+	info, err = coll.UpdateAll(M{"k": 47}, M{"k": 47, "n": 47})
+	c.Assert(err, Equals, nil)
+	c.Assert(info.Updated, Equals, 0)
 }
 
 func (s *S) TestRemove(c *C) {
@@ -450,7 +453,7 @@ func (s *S) TestRemove(c *C) {
 	c.Assert(result.N, Equals, 42)
 
 	err = coll.Find(M{"n": 43}).One(result)
-	c.Assert(err, Equals, mgo.NotFound)
+	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = coll.Find(M{"n": 44}).One(result)
 	c.Assert(err, IsNil)
@@ -470,8 +473,11 @@ func (s *S) TestRemoveAll(c *C) {
 		c.Assert(err, IsNil)
 	}
 
-	err = coll.RemoveAll(M{"n": M{"$gt": 42}})
+	info, err := coll.RemoveAll(M{"n": M{"$gt": 42}})
 	c.Assert(err, IsNil)
+	c.Assert(info.Updated, Equals, 0)
+	c.Assert(info.Removed, Equals, 4)
+	c.Assert(info.UpsertedId, IsNil)
 
 	result := &struct{ N int }{}
 	err = coll.Find(M{"n": 42}).One(result)
@@ -479,10 +485,10 @@ func (s *S) TestRemoveAll(c *C) {
 	c.Assert(result.N, Equals, 42)
 
 	err = coll.Find(M{"n": 43}).One(result)
-	c.Assert(err, Equals, mgo.NotFound)
+	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = coll.Find(M{"n": 44}).One(result)
-	c.Assert(err, Equals, mgo.NotFound)
+	c.Assert(err, Equals, mgo.ErrNotFound)
 }
 
 func (s *S) TestDropDatabase(c *C) {
@@ -612,36 +618,52 @@ func (s *S) TestFindAndModify(c *C) {
 
 	err = coll.Insert(M{"n": 42})
 
-	result := make(M)
-	err = coll.Find(M{"n": 42}).Modify(mgo.Change{Update: M{"$inc": M{"n": 1}}}, result)
+	result := M{}
+	info, err := coll.Find(M{"n": 42}).Apply(mgo.Change{Update: M{"$inc": M{"n": 1}}}, result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 42)
+	c.Assert(info.Updated, Equals, 1)
+	c.Assert(info.Removed, Equals, 0)
+	c.Assert(info.UpsertedId, IsNil)
 
-	result = make(M)
-	err = coll.Find(M{"n": 43}).Modify(mgo.Change{Update: M{"$inc": M{"n": 1}}, New: true}, result)
+	result = M{}
+	info, err = coll.Find(M{"n": 43}).Apply(mgo.Change{Update: M{"$inc": M{"n": 1}}, ReturnNew: true}, result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 44)
+	c.Assert(info.Updated, Equals, 1)
+	c.Assert(info.Removed, Equals, 0)
+	c.Assert(info.UpsertedId, IsNil)
 
-	result = make(M)
-	err = coll.Find(M{"n": 50}).Modify(mgo.Change{Upsert: true, Update: M{"n": 51, "o": 52}}, result)
+	result = M{}
+	info, err = coll.Find(M{"n": 50}).Apply(mgo.Change{Upsert: true, Update: M{"n": 51, "o": 52}}, result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], IsNil)
+	c.Assert(info.Updated, Equals, 0)
+	c.Assert(info.Removed, Equals, 0)
+	c.Assert(info.UpsertedId, NotNil)
 
-	result = make(M)
-	err = coll.Find(nil).Sort("-n").Modify(mgo.Change{Update: M{"$inc": M{"n": 1}}, New: true}, result)
+	result = M{}
+	info, err = coll.Find(nil).Sort("-n").Apply(mgo.Change{Update: M{"$inc": M{"n": 1}}, ReturnNew: true}, result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 52)
+	c.Assert(info.Updated, Equals, 1)
+	c.Assert(info.Removed, Equals, 0)
+	c.Assert(info.UpsertedId, IsNil)
 
-	result = make(M)
-	err = coll.Find(M{"n": 52}).Select(M{"o": 1}).Modify(mgo.Change{Remove: true}, result)
+	result = M{}
+	info, err = coll.Find(M{"n": 52}).Select(M{"o": 1}).Apply(mgo.Change{Remove: true}, result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], IsNil)
 	c.Assert(result["o"], Equals, 52)
+	c.Assert(info.Updated, Equals, 0)
+	c.Assert(info.Removed, Equals, 1)
+	c.Assert(info.UpsertedId, IsNil)
 
-	result = make(M)
-	err = coll.Find(M{"n": 60}).Modify(mgo.Change{Remove: true}, result)
-	c.Assert(err, Equals, mgo.NotFound)
+	result = M{}
+	info, err = coll.Find(M{"n": 60}).Apply(mgo.Change{Remove: true}, result)
+	c.Assert(err, Equals, mgo.ErrNotFound)
 	c.Assert(len(result), Equals, 0)
+	c.Assert(info, IsNil)
 }
 
 func (s *S) TestFindAndModifyBug997828(c *C) {
@@ -654,7 +676,7 @@ func (s *S) TestFindAndModifyBug997828(c *C) {
 	err = coll.Insert(M{"n": "not-a-number"})
 
 	result := make(M)
-	err = coll.Find(M{"n": "not-a-number"}).Modify(mgo.Change{Update: M{"$inc": M{"n": 1}}}, result)
+	_, err = coll.Find(M{"n": "not-a-number"}).Apply(mgo.Change{Update: M{"$inc": M{"n": 1}}}, result)
 	c.Assert(err, ErrorMatches, `Cannot apply \$inc modifier to non-number`)
 	lerr, _ := err.(*mgo.LastError)
 	c.Assert(lerr, NotNil)
@@ -792,9 +814,9 @@ func (s *S) TestFindOneNotFound(c *C) {
 
 	result := struct{ A, B int }{}
 	err = coll.Find(M{"a": 1}).One(&result)
-	c.Assert(err, Equals, mgo.NotFound)
+	c.Assert(err, Equals, mgo.ErrNotFound)
 	c.Assert(err, ErrorMatches, "Document not found")
-	c.Assert(err == mgo.NotFound, Equals, true)
+	c.Assert(err == mgo.ErrNotFound, Equals, true)
 }
 
 func (s *S) TestFindNil(c *C) {
@@ -1641,28 +1663,21 @@ func (s *S) TestSort(c *C) {
 	coll.Insert(M{"a": 1, "b": 0})
 
 	query := coll.Find(M{})
-	for i := 0; i < 2; i++ {
-		query.Sort(bson.D{{"a", -1}}) // Should be ignored.
-		if i == 0 {
-			query.Sort("-b", "a")
-		} else {
-			// Deprecated format.
-			query.Sort(bson.D{{"b", -1}, {"a", 1}}).Iter()
-		}
-		iter := query.Iter()
+	query.Sort("-a") // Should be ignored.
+	query.Sort("-b", "a")
+	iter := query.Iter()
 
-		l := make([]int, 18)
-		r := struct{ A, B int }{}
-		for i := 0; i != len(l); i += 2 {
-			ok := iter.Next(&r)
-			c.Assert(ok, Equals, true)
-			c.Assert(err, IsNil)
-			l[i] = r.A
-			l[i+1] = r.B
-		}
-
-		c.Assert(l, DeepEquals, []int{0, 2, 1, 2, 2, 2, 0, 1, 1, 1, 2, 1, 0, 0, 1, 0, 2, 0})
+	l := make([]int, 18)
+	r := struct{ A, B int }{}
+	for i := 0; i != len(l); i += 2 {
+		ok := iter.Next(&r)
+		c.Assert(ok, Equals, true)
+		c.Assert(err, IsNil)
+		l[i] = r.A
+		l[i+1] = r.B
 	}
+
+	c.Assert(l, DeepEquals, []int{0, 2, 1, 2, 2, 2, 0, 1, 1, 1, 2, 1, 0, 0, 1, 0, 2, 0})
 }
 
 func (s *S) TestSortWithBadArgs(c *C) {
@@ -2114,13 +2129,13 @@ func (s *S) TestEnsureIndexDropIndex(c *C) {
 	c.Assert(err, IsNil)
 
 	err = sysidx.Find(M{"name": "b_1"}).One(dummy)
-	c.Assert(err, Equals, mgo.NotFound)
+	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = coll.DropIndex("a")
 	c.Assert(err, IsNil)
 
 	err = sysidx.Find(M{"name": "a_1"}).One(dummy)
-	c.Assert(err, Equals, mgo.NotFound)
+	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = coll.DropIndex("a")
 	c.Assert(err, ErrorMatches, "index not found")
@@ -2223,7 +2238,7 @@ func (s *S) TestMapReduce(c *C) {
 		coll.Insert(M{"n": i})
 	}
 
-	job := mgo.MapReduce{
+	job := &mgo.MapReduce{
 		Map:    "function() { emit(this.n, 1); }",
 		Reduce: "function(key, values) { return Array.sum(values); }",
 	}
@@ -2265,7 +2280,7 @@ func (s *S) TestMapReduceFinalize(c *C) {
 		coll.Insert(M{"n": i})
 	}
 
-	job := mgo.MapReduce{
+	job := &mgo.MapReduce{
 		Map:      "function() { emit(this.n, 1) }",
 		Reduce:   "function(key, values) { return Array.sum(values) }",
 		Finalize: "function(key, count) { return {count: count} }",
@@ -2296,7 +2311,7 @@ func (s *S) TestMapReduceToCollection(c *C) {
 		coll.Insert(M{"n": i})
 	}
 
-	job := mgo.MapReduce{
+	job := &mgo.MapReduce{
 		Map:    "function() { emit(this.n, 1); }",
 		Reduce: "function(key, values) { return Array.sum(values); }",
 		Out:    "mr",
@@ -2338,7 +2353,7 @@ func (s *S) TestMapReduceToOtherDb(c *C) {
 		coll.Insert(M{"n": i})
 	}
 
-	job := mgo.MapReduce{
+	job := &mgo.MapReduce{
 		Map:    "function() { emit(this.n, 1); }",
 		Reduce: "function(key, values) { return Array.sum(values); }",
 		Out:    bson.D{{"replace", "mr"}, {"db", "otherdb"}},
@@ -2378,7 +2393,7 @@ func (s *S) TestMapReduceScope(c *C) {
 
 	coll.Insert(M{"n": 1})
 
-	job := mgo.MapReduce{
+	job := &mgo.MapReduce{
 		Map:    "function() { emit(this.n, x); }",
 		Reduce: "function(key, values) { return Array.sum(values); }",
 		Scope:  M{"x": 42},
@@ -2399,7 +2414,7 @@ func (s *S) TestMapReduceVerbose(c *C) {
 
 	coll.Insert(M{"n": 1})
 
-	job := mgo.MapReduce{
+	job := &mgo.MapReduce{
 		Map:     "function() { emit(this.n, 1); }",
 		Reduce:  "function(key, values) { return Array.sum(values); }",
 		Verbose: true,
@@ -2423,7 +2438,7 @@ func (s *S) TestMapReduceLimit(c *C) {
 		coll.Insert(M{"n": i})
 	}
 
-	job := mgo.MapReduce{
+	job := &mgo.MapReduce{
 		Map:    "function() { emit(this.n, 1); }",
 		Reduce: "function(key, values) { return Array.sum(values); }",
 	}

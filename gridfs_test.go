@@ -272,11 +272,11 @@ func (s *S) TestGridFSOpenNotFound(c *C) {
 
 	gfs := db.GridFS("fs")
 	file, err := gfs.OpenId("non-existent")
-	c.Assert(err == mgo.NotFound, Equals, true)
+	c.Assert(err == mgo.ErrNotFound, Equals, true)
 	c.Assert(file, IsNil)
 
 	file, err = gfs.Open("non-existent")
-	c.Assert(err == mgo.NotFound, Equals, true)
+	c.Assert(err == mgo.ErrNotFound, Equals, true)
 	c.Assert(file, IsNil)
 }
 
@@ -540,7 +540,7 @@ func (s *S) TestGridFSRemove(c *C) {
 	c.Assert(err, IsNil)
 
 	_, err = gfs.Open("myfile.txt")
-	c.Assert(err == mgo.NotFound, Equals, true)
+	c.Assert(err == mgo.ErrNotFound, Equals, true)
 
 	n, err := db.C("fs.chunks").Find(nil).Count()
 	c.Assert(err, IsNil)
