@@ -2043,21 +2043,20 @@ func (iter *Iter) Timeout() bool {
 //    }
 //
 func (iter *Iter) Next(result interface{}) bool {
-	timeouts := false
-	timeout := time.Time{}
-	if iter.timeout >= 0 {
-		timeouts = true
-		timeout = time.Now().Add(iter.timeout)
-	}
-
 	iter.m.Lock()
 	iter.timedout = false
+	timeout := time.Time{}
 	for iter.err == nil && iter.docData.Len() == 0 && (iter.docsToReceive > 0 || iter.op.cursorId != 0) {
-		if iter.docsToReceive == 0 && iter.op.cursorId != 0 {
-			if timeouts && time.Now().After(timeout) {
-				iter.timedout = true
-				iter.m.Unlock()
-				return false
+		if iter.docsToReceive == 0 {
+			if iter.timeout >= 0  {
+				if timeout.IsZero() {
+					timeout = time.Now().Add(iter.timeout)
+				}
+				if time.Now().After(timeout) {
+					iter.timedout = true
+					iter.m.Unlock()
+					return false
+				}
 			}
 			iter.getMore()
 		}
