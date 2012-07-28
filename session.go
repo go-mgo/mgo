@@ -1224,8 +1224,7 @@ func (c *Collection) Find(query interface{}) *Query {
 	return q
 }
 
-// FindId prepares a query to find a document by its _id field.
-// It is a convenience helper equivalent to:
+// FindId is a convenience helper equivalent to:
 //
 //     query := collection.Find(bson.M{"_id": id})
 //
@@ -1295,6 +1294,15 @@ func (c *Collection) Update(selector interface{}, change interface{}) error {
 	return err
 }
 
+// UpdateId is a convenience helper equivalent to:
+//
+//     err := collection.Update(bson.M{"_id": id}, change)
+//
+// See the Update method for more details.
+func (c *Collection) UpdateId(id interface{}, change interface{}) error {
+	return c.Update(bson.D{{"_id", id}}, change)
+}
+
 // ChangeInfo holds details about the outcome of a change operation.
 type ChangeInfo struct {
 	Updated    int         // Number of existing documents updated
@@ -1355,6 +1363,15 @@ func (c *Collection) Upsert(selector interface{}, change interface{}) (info *Cha
 	return info, err
 }
 
+// UpsertId is a convenience helper equivalent to:
+//
+//     info, err := collection.Upsert(bson.M{"_id": id}, change)
+//
+// See the Upsert method for more details.
+func (c *Collection) UpsertId(id interface{}, change interface{}) (info *ChangeInfo, err error) {
+	return c.Upsert(bson.D{{"_id", id}}, change)
+}
+
 // Remove finds a single document matching the provided selector document
 // and removes it from the database.
 // If the session is in safe mode (see SetSafe) a ErrNotFound error is
@@ -1372,6 +1389,15 @@ func (c *Collection) Remove(selector interface{}) error {
 		return ErrNotFound
 	}
 	return err
+}
+
+// RemoveId is a convenience helper equivalent to:
+//
+//     err := collection.Remove(bson.M{"_id": id})
+//
+// See the Remove method for more details.
+func (c *Collection) RemoveId(id interface{}) error {
+	return c.Remove(bson.D{{"_id", id}})
 }
 
 // RemoveAll finds all documents matching the provided selector document

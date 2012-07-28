@@ -316,6 +316,34 @@ func (s *S) TestUpdate(c *C) {
 	c.Assert(err, Equals, mgo.ErrNotFound)
 }
 
+func (s *S) TestUpdateId(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{40, 41, 42, 43, 44, 45, 46}
+	for _, n := range ns {
+		err := coll.Insert(M{"_id": n, "n": n})
+		c.Assert(err, IsNil)
+	}
+
+	err = coll.UpdateId(42, M{"$inc": M{"n": 1}})
+	c.Assert(err, IsNil)
+
+	result := make(M)
+	err = coll.FindId(42).One(result)
+	c.Assert(err, IsNil)
+	c.Assert(result["n"], Equals, 43)
+
+	err = coll.UpdateId(47, M{"k": 47, "n": 47})
+	c.Assert(err, Equals, mgo.ErrNotFound)
+
+	err = coll.FindId(47).One(result)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+}
+
 func (s *S) TestUpdateNil(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
@@ -396,6 +424,39 @@ func (s *S) TestUpsert(c *C) {
 	c.Assert(result["n"], Equals, 48)
 }
 
+func (s *S) TestUpsertId(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{40, 41, 42, 43, 44, 45, 46}
+	for _, n := range ns {
+		err := coll.Insert(M{"_id": n, "n": n})
+		c.Assert(err, IsNil)
+	}
+
+	info, err := coll.UpsertId(42, M{"n": 24})
+	c.Assert(err, IsNil)
+	c.Assert(info.Updated, Equals, 1)
+	c.Assert(info.UpsertedId, IsNil)
+
+	result := M{}
+	err = coll.FindId(42).One(result)
+	c.Assert(err, IsNil)
+	c.Assert(result["n"], Equals, 24)
+
+	info, err = coll.UpsertId(47, M{"_id": 47, "n": 47})
+	c.Assert(err, IsNil)
+	c.Assert(info.Updated, Equals, 0)
+	c.Assert(info.UpsertedId, IsNil)
+
+	err = coll.FindId(47).One(result)
+	c.Assert(err, IsNil)
+	c.Assert(result["n"], Equals, 47)
+}
+
 func (s *S) TestUpdateAll(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
@@ -458,6 +519,24 @@ func (s *S) TestRemove(c *C) {
 	err = coll.Find(M{"n": 44}).One(result)
 	c.Assert(err, IsNil)
 	c.Assert(result.N, Equals, 44)
+}
+
+func (s *S) TestRemoveId(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"_id": 40}, M{"_id": 41}, M{"_id": 42})
+	c.Assert(err, IsNil)
+
+	err = coll.RemoveId(41)
+	c.Assert(err, IsNil)
+
+	c.Assert(coll.FindId(40).One(nil), IsNil)
+	c.Assert(coll.FindId(41).One(nil), Equals, mgo.ErrNotFound)
+	c.Assert(coll.FindId(42).One(nil), IsNil)
 }
 
 func (s *S) TestRemoveAll(c *C) {
