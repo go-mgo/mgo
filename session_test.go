@@ -28,9 +28,9 @@ package mgo_test
 
 import (
 	"errors"
-	. "launchpad.net/gocheck"
 	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
+	. "launchpad.net/gocheck"
 	"math"
 	"sort"
 	"strconv"
@@ -549,9 +549,9 @@ func (s *S) TestCreateCollectionCapped(c *C) {
 	coll := session.DB("mydb").C("mycoll")
 
 	info := &mgo.CollectionInfo{
-		Capped: true,
+		Capped:   true,
 		MaxBytes: 1024,
-		MaxDocs: 3,
+		MaxDocs:  3,
 	}
 	err = coll.Create(info)
 	c.Assert(err, IsNil)
@@ -596,8 +596,8 @@ func (s *S) TestCreateCollectionForceIndex(c *C) {
 
 	info := &mgo.CollectionInfo{
 		ForceIdIndex: true,
-		Capped: true,
-		MaxBytes: 1024,
+		Capped:       true,
+		MaxBytes:     1024,
 	}
 	err = coll.Create(info)
 	c.Assert(err, IsNil)
@@ -975,7 +975,6 @@ func (s *S) TestFindIterLimit(c *C) {
 	c.Assert(stats.ReceivedDocs, Equals, 3)
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
-
 
 func (s *S) TestFindIterLimitWithMore(c *C) {
 	session, err := mgo.Dial("localhost:40001")
@@ -1627,7 +1626,9 @@ func (s *S) TestFindIterSnapshot(c *C) {
 	iter := query.Iter()
 
 	seen := map[int]bool{}
-	result := struct{ Id int "_id" }{}
+	result := struct {
+		Id int "_id"
+	}{}
 	for iter.Next(&result) {
 		if len(seen) == 2 {
 			// Grow all entries so that they have to move.
@@ -1703,50 +1704,54 @@ func (s *S) TestPrefetching(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
-	mgo.SetDebug(false)
-	docs := make([]interface{}, 600)
+	//mgo.SetDebug(false)
+	docs := make([]interface{}, 800)
 	for i := 0; i != 600; i++ {
 		docs[i] = bson.D{{"n", i}}
 	}
 	coll.Insert(docs...)
 
-	// Same test three times.  Once with prefetching via query, then with the
-	// default prefetching, and a third time tweaking the default settings in
-	// the session.
-	for testi := 0; testi < 3; testi++ {
+	for testi := 0; testi < 5; testi++ {
 		mgo.ResetStats()
 
 		var iter *mgo.Iter
-		var nextn int
+		var beforeMore int
 
 		switch testi {
-		case 0: // First, using query methods.
-			iter = coll.Find(M{}).Prefetch(0.27).Batch(100).Iter()
-			nextn = 72
-
-		case 1: // Then, the default session value.
+		case 0: // The default session value.
 			session.SetBatch(100)
 			iter = coll.Find(M{}).Iter()
-			nextn = 74
+			beforeMore = 75
 
-		case 2: // Then, tweaking the session value.
+		case 2: // Changing the session value.
 			session.SetBatch(100)
 			session.SetPrefetch(0.27)
 			iter = coll.Find(M{}).Iter()
-			nextn = 72
+			beforeMore = 73
+
+		case 1: // Changing via query methods.
+			iter = coll.Find(M{}).Prefetch(0.27).Batch(100).Iter()
+			beforeMore = 73
+
+		case 3: // With prefetch on first document.
+			iter = coll.Find(M{}).Prefetch(1.0).Batch(100).Iter()
+			beforeMore = 0
+
+		case 4: // Without prefetch.
+			iter = coll.Find(M{}).Prefetch(0).Batch(100).Iter()
+			beforeMore = 100
 		}
 
 		pings := 0
-		for batchi := 0; batchi < 2; batchi++ {
-			if batchi > 0 {
-				nextn = 99
-			}
-
+		for batchi := 0; batchi < len(docs)/100-1; batchi++ {
+			c.Logf("Iterating over %d documents on batch %d", beforeMore, batchi)
 			var result struct{ N int }
-			for i := 0; i < nextn; i++ {
+			for i := 0; i < beforeMore; i++ {
 				ok := iter.Next(&result)
-				c.Assert(ok, Equals, true)
+				c.Assert(ok, Equals, true, Commentf("iter.Err: %v", iter.Err()))
 			}
+			beforeMore = 99
+			c.Logf("Done iterating.")
 
 			session.Run("ping", nil) // Roundtrip to settle down.
 			pings++
@@ -1754,8 +1759,10 @@ func (s *S) TestPrefetching(c *C) {
 			stats := mgo.GetStats()
 			c.Assert(stats.ReceivedDocs, Equals, (batchi+1)*100+pings)
 
+			c.Logf("Iterating over one more document on batch %d", batchi)
 			ok := iter.Next(&result)
-			c.Assert(ok, Equals, true)
+			c.Assert(ok, Equals, true, Commentf("iter.Err: %v", iter.Err()))
+			c.Logf("Done iterating.")
 
 			session.Run("ping", nil) // Roundtrip to settle down.
 			pings++

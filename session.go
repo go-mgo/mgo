@@ -107,7 +107,7 @@ type Iter struct {
 	op             getMoreOp
 	prefetch       float64
 	limit          int32
-	pendingDocs    int
+	docsToReceive  int
 	docsBeforeMore int
 	timeout        time.Duration
 	timedout       bool
@@ -1889,12 +1889,17 @@ func (q *Query) Iter() *Iter {
 	limit := q.limit
 	q.m.Unlock()
 
-	iter := &Iter{session: session, prefetch: prefetch, limit: limit}
+	iter := &Iter{
+		session: session,
+		prefetch: prefetch,
+		limit: limit,
+		timeout: -1,
+	}
 	iter.gotReply.L = &iter.m
 	iter.op.collection = op.collection
 	iter.op.limit = op.limit
 	iter.op.replyFunc = iter.replyFunc()
-	iter.pendingDocs++
+	iter.docsToReceive++
 	op.replyFunc = iter.op.replyFunc
 	op.flags |= session.slaveOkFlag()
 
@@ -1967,7 +1972,7 @@ func (q *Query) Tail(timeout time.Duration) *Iter {
 	iter.op.collection = op.collection
 	iter.op.limit = op.limit
 	iter.op.replyFunc = iter.replyFunc()
-	iter.pendingDocs++
+	iter.docsToReceive++
 	op.replyFunc = iter.op.replyFunc
 	op.flags |= 2 | 32 | session.slaveOkFlag() // Tailable | AwaitData [| SlaveOk]
 
@@ -2047,9 +2052,8 @@ func (iter *Iter) Next(result interface{}) bool {
 
 	iter.m.Lock()
 	iter.timedout = false
-	for iter.err == nil && iter.docData.Len() == 0 && (iter.pendingDocs > 0 || iter.op.cursorId != 0) {
-		if iter.pendingDocs == 0 && iter.op.cursorId != 0 {
-			// Tailable cursor exhausted.
+	for iter.err == nil && iter.docData.Len() == 0 && (iter.docsToReceive > 0 || iter.op.cursorId != 0) {
+		if iter.docsToReceive == 0 && iter.op.cursorId != 0 {
 			if timeouts && time.Now().After(timeout) {
 				iter.timedout = true
 				iter.m.Unlock()
@@ -2068,10 +2072,10 @@ func (iter *Iter) Next(result interface{}) bool {
 			iter.err = ErrNotFound
 		}
 		if iter.op.cursorId != 0 && iter.err == nil {
-			iter.docsBeforeMore--
 			if iter.docsBeforeMore == 0 {
 				iter.getMore()
 			}
+			iter.docsBeforeMore-- // Goes negative.
 		}
 		iter.m.Unlock()
 		err := bson.Unmarshal(docData, result)
@@ -2198,7 +2202,6 @@ func (iter *Iter) getMore() {
 	defer socket.Release()
 
 	debugf("Iter %p requesting more documents", iter)
-	iter.pendingDocs++
 	if iter.limit > 0 && iter.op.limit > iter.limit {
 		iter.op.limit = iter.limit
 	}
@@ -2209,6 +2212,7 @@ func (iter *Iter) getMore() {
 	if err != nil {
 		iter.err = err
 	}
+	iter.docsToReceive++
 }
 
 type countCmd struct {
@@ -2700,7 +2704,7 @@ func (s *Session) setSocket(socket *mongoSocket) {
 func (iter *Iter) replyFunc() replyFunc {
 	return func(err error, op *replyOp, docNum int, docData []byte) {
 		iter.m.Lock()
-		iter.pendingDocs--
+		iter.docsToReceive--
 		if err != nil {
 			iter.err = err
 			debugf("Iter %p received an error: %s", iter, err.Error())
@@ -2715,7 +2719,7 @@ func (iter *Iter) replyFunc() replyFunc {
 		} else {
 			rdocs := int(op.replyDocs)
 			if docNum == 0 {
-				iter.pendingDocs += rdocs - 1
+				iter.docsToReceive += rdocs - 1
 				iter.docsBeforeMore = iter.docData.Len() + rdocs - int(iter.prefetch*float64(rdocs))
 				iter.op.cursorId = op.cursorId
 			}
