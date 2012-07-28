@@ -2716,7 +2716,7 @@ func (iter *Iter) replyFunc() replyFunc {
 			rdocs := int(op.replyDocs)
 			if docNum == 0 {
 				iter.pendingDocs += rdocs - 1
-				iter.docsBeforeMore = rdocs - int(iter.prefetch*float64(rdocs))
+				iter.docsBeforeMore = iter.docData.Len() + rdocs - int(iter.prefetch*float64(rdocs))
 				iter.op.cursorId = op.cursorId
 			}
 			// XXX Handle errors and flags.

@@ -1703,16 +1703,17 @@ func (s *S) TestPrefetching(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
-	docs := make([]interface{}, 200)
-	for i := 0; i != 200; i++ {
-		docs[i] = M{"n": i}
+	mgo.SetDebug(false)
+	docs := make([]interface{}, 600)
+	for i := 0; i != 600; i++ {
+		docs[i] = bson.D{{"n", i}}
 	}
 	coll.Insert(docs...)
 
 	// Same test three times.  Once with prefetching via query, then with the
 	// default prefetching, and a third time tweaking the default settings in
 	// the session.
-	for testi := 0; testi != 3; testi++ {
+	for testi := 0; testi < 3; testi++ {
 		mgo.ResetStats()
 
 		var iter *mgo.Iter
@@ -1721,38 +1722,47 @@ func (s *S) TestPrefetching(c *C) {
 		switch testi {
 		case 0: // First, using query methods.
 			iter = coll.Find(M{}).Prefetch(0.27).Batch(100).Iter()
-			nextn = 73
+			nextn = 72
 
 		case 1: // Then, the default session value.
 			session.SetBatch(100)
 			iter = coll.Find(M{}).Iter()
-			nextn = 75
+			nextn = 74
 
 		case 2: // Then, tweaking the session value.
 			session.SetBatch(100)
 			session.SetPrefetch(0.27)
 			iter = coll.Find(M{}).Iter()
-			nextn = 73
+			nextn = 72
 		}
 
-		result := struct{ N int }{}
-		for i := 0; i != nextn; i++ {
+		pings := 0
+		for batchi := 0; batchi < 2; batchi++ {
+			if batchi > 0 {
+				nextn = 99
+			}
+
+			var result struct{ N int }
+			for i := 0; i < nextn; i++ {
+				ok := iter.Next(&result)
+				c.Assert(ok, Equals, true)
+			}
+
+			session.Run("ping", nil) // Roundtrip to settle down.
+			pings++
+
+			stats := mgo.GetStats()
+			c.Assert(stats.ReceivedDocs, Equals, (batchi+1)*100+pings)
+
 			ok := iter.Next(&result)
 			c.Assert(ok, Equals, true)
+
+			session.Run("ping", nil) // Roundtrip to settle down.
+			pings++
+
+			stats = mgo.GetStats()
+			c.Assert(stats.ReceivedDocs, Equals, (batchi+2)*100+pings)
 		}
-
-		stats := mgo.GetStats()
-		c.Assert(stats.ReceivedDocs, Equals, 100)
-
-		ok := iter.Next(&result)
-		c.Assert(ok, Equals, true)
-
-		// Ping the database just to wait for the fetch above
-		// to get delivered.
-		session.Run("ping", M{}) // XXX Should support nil here.
-
-		stats = mgo.GetStats()
-		c.Assert(stats.ReceivedDocs, Equals, 201) // 200 + the ping result
 	}
 }
 

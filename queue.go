@@ -84,5 +84,8 @@ func (q *queue) expand() {
 		copy(elems[newpopi:], q.elems[q.popi:])
 		q.popi = newpopi
 	}
+	for i := range q.elems {
+		q.elems[i] = nil // Help GC.
+	}
 	q.elems = elems
 }
