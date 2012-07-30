@@ -1236,10 +1236,10 @@ func (c *Collection) FindId(id interface{}) *Query {
 type LastError struct {
 	Err             string
 	Code, N, Waited int
-	FSyncFiles      int "fsyncFiles"
+	FSyncFiles      int `bson:"fsyncFiles"`
 	WTimeout        bool
-	UpdatedExisting bool        "updatedExisting"
-	UpsertedId      interface{} "upserted"
+	UpdatedExisting bool        `bson:"updatedExisting"`
+	UpsertedId      interface{} `bson:"upserted"`
 }
 
 func (err *LastError) Error() string {
@@ -1270,7 +1270,7 @@ func (err *QueryError) Error() string {
 // happens while inserting the provided documents, the returned error will
 // be of type *LastError.
 func (c *Collection) Insert(docs ...interface{}) error {
-	_, err := c.Database.Session.writeQuery(&insertOp{c.FullName, docs})
+	_, err := c.writeQuery(&insertOp{c.FullName, docs})
 	return err
 }
 
@@ -1286,8 +1286,7 @@ func (c *Collection) Insert(docs ...interface{}) error {
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
 func (c *Collection) Update(selector interface{}, change interface{}) error {
-	session := c.Database.Session
-	lerr, err := session.writeQuery(&updateOp{c.FullName, selector, change, 0})
+	lerr, err := c.writeQuery(&updateOp{c.FullName, selector, change, 0})
 	if err == nil && lerr != nil && !lerr.UpdatedExisting {
 		return ErrNotFound
 	}
@@ -1323,8 +1322,7 @@ type ChangeInfo struct {
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
 func (c *Collection) UpdateAll(selector interface{}, change interface{}) (info *ChangeInfo, err error) {
-	session := c.Database.Session
-	lerr, err := session.writeQuery(&updateOp{c.FullName, selector, change, 2})
+	lerr, err := c.writeQuery(&updateOp{c.FullName, selector, change, 2})
 	if err == nil && lerr != nil {
 		info = &ChangeInfo{Updated: lerr.N}
 	}
@@ -1350,8 +1348,7 @@ func (c *Collection) Upsert(selector interface{}, change interface{}) (info *Cha
 		return nil, err
 	}
 	change = bson.Raw{0x03, data}
-	session := c.Database.Session
-	lerr, err := session.writeQuery(&updateOp{c.FullName, selector, change, 1})
+	lerr, err := c.writeQuery(&updateOp{c.FullName, selector, change, 1})
 	if err == nil && lerr != nil {
 		info = &ChangeInfo{}
 		if lerr.UpdatedExisting {
@@ -1383,8 +1380,7 @@ func (c *Collection) UpsertId(id interface{}, change interface{}) (info *ChangeI
 //     http://www.mongodb.org/display/DOCS/Removing
 //
 func (c *Collection) Remove(selector interface{}) error {
-	session := c.Database.Session
-	lerr, err := session.writeQuery(&deleteOp{c.FullName, selector, 1})
+	lerr, err := c.writeQuery(&deleteOp{c.FullName, selector, 1})
 	if err == nil && lerr != nil && lerr.N == 0 {
 		return ErrNotFound
 	}
@@ -1410,8 +1406,7 @@ func (c *Collection) RemoveId(id interface{}) error {
 //     http://www.mongodb.org/display/DOCS/Removing
 //
 func (c *Collection) RemoveAll(selector interface{}) (info *ChangeInfo, err error) {
-	session := c.Database.Session
-	lerr, err := session.writeQuery(&deleteOp{c.FullName, selector, 0})
+	lerr, err := c.writeQuery(&deleteOp{c.FullName, selector, 0})
 	if err == nil && lerr != nil {
 		info = &ChangeInfo{Removed: lerr.N}
 	}
@@ -1743,6 +1738,7 @@ func checkQueryError(fullname string, d []byte) error {
 Error:
 	result := &queryError{}
 	bson.Unmarshal(d, result)
+	logf("queryError: %#v\n", result)
 	if result.LastError != nil {
 		return result.LastError
 	}
@@ -1916,10 +1912,10 @@ func (q *Query) Iter() *Iter {
 	q.m.Unlock()
 
 	iter := &Iter{
-		session: session,
+		session:  session,
 		prefetch: prefetch,
-		limit: limit,
-		timeout: -1,
+		limit:    limit,
+		timeout:  -1,
 	}
 	iter.gotReply.L = &iter.m
 	iter.op.collection = op.collection
@@ -2074,7 +2070,7 @@ func (iter *Iter) Next(result interface{}) bool {
 	timeout := time.Time{}
 	for iter.err == nil && iter.docData.Len() == 0 && (iter.docsToReceive > 0 || iter.op.cursorId != 0) {
 		if iter.docsToReceive == 0 {
-			if iter.timeout >= 0  {
+			if iter.timeout >= 0 {
 				if timeout.IsZero() {
 					timeout = time.Now().Add(iter.timeout)
 				}
@@ -2761,7 +2757,8 @@ func (iter *Iter) replyFunc() replyFunc {
 // by a getLastError command in case the session is in safe mode.  The
 // LastError result is made available in lerr, and if lerr.Err is set it
 // will also be returned as err.
-func (s *Session) writeQuery(op interface{}) (lerr *LastError, err error) {
+func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
+	s := c.Database.Session
 	socket, err := s.acquireSocket(false)
 	if err != nil {
 		return nil, err
@@ -2780,6 +2777,7 @@ func (s *Session) writeQuery(op interface{}) (lerr *LastError, err error) {
 		var replyErr error
 		mutex.Lock()
 		query := *safeOp // Copy the data.
+		query.collection = c.Database.Name + ".$cmd"
 		query.replyFunc = func(err error, reply *replyOp, docNum int, docData []byte) {
 			replyData = docData
 			replyErr = err
@@ -2793,6 +2791,13 @@ func (s *Session) writeQuery(op interface{}) (lerr *LastError, err error) {
 		if replyErr != nil {
 			return nil, replyErr // XXX TESTME
 		}
+		if hasErrMsg(replyData) {
+			// Looks like getLastError itself failed.
+			err = checkQueryError(query.collection, replyData)
+			if err != nil {
+				return nil, err
+			}
+		}
 		result := &LastError{}
 		bson.Unmarshal(replyData, &result)
 		debugf("Result from writing query: %#v", result)
@@ -2802,4 +2807,11 @@ func (s *Session) writeQuery(op interface{}) (lerr *LastError, err error) {
 		return result, nil
 	}
 	panic("unreachable")
+}
+
+func hasErrMsg(d []byte) bool {
+	return len(d) > 16 &&
+		d[5] == 'e' && d[6] == 'r' && d[7] == 'r' &&
+		d[8] == 'm' && d[9] == 's' && d[10] == 'g' &&
+		d[11] == '\x00' && d[4] == '\x02'
 }

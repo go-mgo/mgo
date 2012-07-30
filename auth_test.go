@@ -39,7 +39,7 @@ func (s *S) TestAuthLogin(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
-	c.Assert(err, ErrorMatches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized|need to login")
 
 	admindb := session.DB("admin")
 
@@ -66,7 +66,7 @@ func (s *S) TestAuthLoginLogout(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
-	c.Assert(err, ErrorMatches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized|need to login")
 
 	// Must have dropped auth from the session too.
 	session = session.Copy()
@@ -74,7 +74,7 @@ func (s *S) TestAuthLoginLogout(c *C) {
 
 	coll = session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
-	c.Assert(err, ErrorMatches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized|need to login")
 }
 
 func (s *S) TestAuthLoginLogoutAll(c *C) {
@@ -90,7 +90,7 @@ func (s *S) TestAuthLoginLogoutAll(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
-	c.Assert(err, ErrorMatches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized|need to login")
 
 	// Must have dropped auth from the session too.
 	session = session.Copy()
@@ -98,7 +98,7 @@ func (s *S) TestAuthLoginLogoutAll(c *C) {
 
 	coll = session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
-	c.Assert(err, ErrorMatches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized|need to login")
 }
 
 func (s *S) TestAuthAddUser(c *C) {
@@ -335,7 +335,7 @@ func (s *S) TestAuthLoginCachingWithNewSession(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 1})
-	c.Assert(err, ErrorMatches, "unauthorized")
+	c.Assert(err, ErrorMatches, "unauthorized|need to login")
 }
 
 func (s *S) TestAuthLoginCachingAcrossPool(c *C) {
