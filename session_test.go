@@ -756,7 +756,7 @@ func (s *S) TestFindAndModifyBug997828(c *C) {
 
 	result := make(M)
 	_, err = coll.Find(M{"n": "not-a-number"}).Apply(mgo.Change{Update: M{"$inc": M{"n": 1}}}, result)
-	c.Assert(err, ErrorMatches, `Cannot apply \$inc modifier to non-number`)
+	c.Assert(err, ErrorMatches, `(exception: )?Cannot apply \$inc modifier to non-number`)
 	lerr, _ := err.(*mgo.LastError)
 	c.Assert(lerr, NotNil)
 	c.Assert(lerr.Code, Equals, 10140)
@@ -2554,10 +2554,14 @@ func (s *S) TestBuildInfo(c *C) {
 	c.Assert(err, IsNil)
 
 	var v []int
-	for _, a := range strings.Split(info.Version, ".") {
-		i, err := strconv.Atoi(a)
+	for i, a := range strings.Split(info.Version, ".") {
+		if i == 2 && strings.Contains(a, "-rc") {
+			a = a[:strings.Index(a, "-rc")]
+			info.VersionArray[len(info.VersionArray)-1] = 0
+		}
+		n, err := strconv.Atoi(a)
 		c.Assert(err, IsNil)
-		v = append(v, i)
+		v = append(v, n)
 	}
 	for len(v) < 4 {
 		v = append(v, 0)
