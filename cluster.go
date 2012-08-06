@@ -374,6 +374,8 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 				if merge {
 					cluster.mergeServer(server)
 				}
+			} else {
+				server.Close()
 			}
 		}()
 	}
