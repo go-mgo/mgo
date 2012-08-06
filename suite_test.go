@@ -60,6 +60,19 @@ func TestAll(t *testing.T) {
 type S struct {
 	session *mgo.Session
 	stopped bool
+	build mgo.BuildInfo
+}
+
+func (s *S) versionAtLeast(v ...int) bool {
+	for i := range v {
+		if i == len(s.build.VersionArray) {
+			return false
+		}
+		if s.build.VersionArray[i] < v[i] {
+			return false
+		}
+	}
+	return true
 }
 
 var _ = Suite(&S{})
@@ -68,6 +81,12 @@ func (s *S) SetUpSuite(c *C) {
 	mgo.SetDebug(true)
 	mgo.SetStats(true)
 	s.StartAll()
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	s.build, err = session.BuildInfo()
+	c.Check(err, IsNil)
+	session.Close()
 }
 
 func (s *S) SetUpTest(c *C) {

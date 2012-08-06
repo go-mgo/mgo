@@ -2591,12 +2591,14 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 		}
 		return nil, err
 	}
-	if doc.Value.Kind == 0x0A {
+	if doc.LastError.N == 0 {
 		return nil, ErrNotFound
 	}
-	err = doc.Value.Unmarshal(result)
-	if err != nil {
-		return nil, err
+	if doc.Value.Kind != 0x0A {
+		err = doc.Value.Unmarshal(result)
+		if err != nil {
+			return nil, err
+		}
 	}
 	info = &ChangeInfo{}
 	lerr := &doc.LastError

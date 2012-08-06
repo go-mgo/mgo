@@ -757,9 +757,15 @@ func (s *S) TestFindAndModifyBug997828(c *C) {
 	result := make(M)
 	_, err = coll.Find(M{"n": "not-a-number"}).Apply(mgo.Change{Update: M{"$inc": M{"n": 1}}}, result)
 	c.Assert(err, ErrorMatches, `(exception: )?Cannot apply \$inc modifier to non-number`)
-	lerr, _ := err.(*mgo.LastError)
-	c.Assert(lerr, NotNil)
-	c.Assert(lerr.Code, Equals, 10140)
+	if s.versionAtLeast(2, 1) {
+		qerr, _ := err.(*mgo.QueryError)
+		c.Assert(qerr, NotNil, Commentf("err: %#v", err))
+		c.Assert(qerr.Code, Equals, 10140)
+	} else {
+		lerr, _ := err.(*mgo.LastError)
+		c.Assert(lerr, NotNil, Commentf("err: %#v", err))
+		c.Assert(lerr.Code, Equals, 10140)
+	}
 }
 
 func (s *S) TestCountCollection(c *C) {
