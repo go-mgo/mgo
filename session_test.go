@@ -689,13 +689,15 @@ func (s *S) TestCreateCollectionForceIndex(c *C) {
 }
 
 func (s *S) TestFindAndModify(c *C) {
-	session, err := mgo.Dial("localhost:40001")
+	session, err := mgo.Dial("localhost:40011")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
 	coll := session.DB("mydb").C("mycoll")
 
 	err = coll.Insert(M{"n": 42})
+
+	session.SetMode(mgo.Monotonic, true)
 
 	result := M{}
 	info, err := coll.Find(M{"n": 42}).Apply(mgo.Change{Update: M{"$inc": M{"n": 1}}}, result)

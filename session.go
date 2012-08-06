@@ -2583,6 +2583,10 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 		Fields:     op.selector,
 	}
 
+	session = session.Clone()
+	defer session.Close()
+	session.SetMode(Strong, false)
+
 	var doc valueResult
 	err = session.DB(dbname).Run(&cmd, &doc)
 	if err != nil {
