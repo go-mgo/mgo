@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-var duration = flag.Duration("duration", 1*time.Second, "duration for each simulation")
+var duration = flag.Duration("duration", 200*time.Millisecond, "duration for each simulation")
 
 type params struct {
 	killChance     float64
@@ -20,21 +20,14 @@ type params struct {
 	unsafe         bool
 	workers        int
 	accounts       int
+	changeHalf     bool
 	reinsertCopy   bool
 	reinsertZeroed bool
 
 	changes int
 }
 
-func (s *S) TestSimulateFake(c *C) {
-	simulate(c, params{
-		unsafe:   true,
-		workers:  1,
-		accounts: 4,
-	})
-}
-
-func (s *S) TestSimulate1Worker(c *C) {
+func (s *S) TestSim1Worker(c *C) {
 	simulate(c, params{
 		workers:        1,
 		accounts:       4,
@@ -44,7 +37,7 @@ func (s *S) TestSimulate1Worker(c *C) {
 	})
 }
 
-func (s *S) TestSimulate4WorkersDense(c *C) {
+func (s *S) TestSim4WorkersDense(c *C) {
 	simulate(c, params{
 		workers:        4,
 		accounts:       2,
@@ -54,7 +47,7 @@ func (s *S) TestSimulate4WorkersDense(c *C) {
 	})
 }
 
-func (s *S) TestSimulate4WorkersSparse(c *C) {
+func (s *S) TestSim4WorkersSparse(c *C) {
 	simulate(c, params{
 		workers:        4,
 		accounts:       10,
@@ -64,16 +57,40 @@ func (s *S) TestSimulate4WorkersSparse(c *C) {
 	})
 }
 
-func (s *S) TestSimulateReinsertCopyFake(c *C) {
+func (s *S) TestSimHalf1Worker(c *C) {
 	simulate(c, params{
-		unsafe:       true,
-		workers:      1,
-		accounts:     10,
-		reinsertCopy: true,
+		workers:        1,
+		accounts:       4,
+		changeHalf:     true,
+		killChance:     0.01,
+		slowdownChance: 0.3,
+		slowdown:       100 * time.Millisecond,
 	})
 }
 
-func (s *S) TestSimulateReinsertCopy1Worker(c *C) {
+func (s *S) TestSimHalf4WorkersDense(c *C) {
+	simulate(c, params{
+		workers:        4,
+		accounts:       2,
+		changeHalf:     true,
+		killChance:     0.01,
+		slowdownChance: 0.3,
+		slowdown:       100 * time.Millisecond,
+	})
+}
+
+func (s *S) TestSimHalf4WorkersSparse(c *C) {
+	simulate(c, params{
+		workers:        4,
+		accounts:       10,
+		changeHalf:     true,
+		killChance:     0.01,
+		slowdownChance: 0.3,
+		slowdown:       100 * time.Millisecond,
+	})
+}
+
+func (s *S) TestSimReinsertCopy1Worker(c *C) {
 	simulate(c, params{
 		workers:        1,
 		accounts:       10,
@@ -84,7 +101,7 @@ func (s *S) TestSimulateReinsertCopy1Worker(c *C) {
 	})
 }
 
-func (s *S) TestSimulateReinsertCopy4Workers(c *C) {
+func (s *S) TestSimReinsertCopy4Workers(c *C) {
 	simulate(c, params{
 		workers:        4,
 		accounts:       10,
@@ -95,16 +112,7 @@ func (s *S) TestSimulateReinsertCopy4Workers(c *C) {
 	})
 }
 
-func (s *S) TestSimulateReinsertZeroedFake(c *C) {
-	simulate(c, params{
-		unsafe:         true,
-		workers:        1,
-		accounts:       10,
-		reinsertZeroed: true,
-	})
-}
-
-func (s *S) TestSimulateReinsertZeroed1Worker(c *C) {
+func (s *S) TestSimReinsertZeroed1Worker(c *C) {
 	simulate(c, params{
 		workers:        1,
 		accounts:       10,
@@ -115,7 +123,7 @@ func (s *S) TestSimulateReinsertZeroed1Worker(c *C) {
 	})
 }
 
-func (s *S) TestSimulateReinsertZeroed4Workers(c *C) {
+func (s *S) TestSimReinsertZeroed4Workers(c *C) {
 	simulate(c, params{
 		workers:        4,
 		accounts:       10,
@@ -150,12 +158,7 @@ func simulate(c *C, params params) {
 	db := session.DB("test")
 	tc := db.C("tc")
 
-	var runner *txn.Runner
-	if params.unsafe {
-		runner = txn.NewFakeRunner(tc)
-	} else {
-		runner = txn.NewRunner(tc)
-	}
+	runner := txn.NewRunner(tc)
 
 	accounts := db.C("accounts")
 	for i := 0; i < params.accounts; i++ {
@@ -233,6 +236,26 @@ func simulate(c *C, params params) {
 						DocId:      change.target,
 						Assert:     txn.DocExists,
 						Change:     M{"$inc": M{"balance": change.amount}},
+					}}
+				case params.changeHalf:
+					ops = []txn.Operation{{
+						Collection: "accounts",
+						DocId:      change.origin,
+						Assert:     M{"balance": M{"$gte": change.amount}},
+						Change:     M{"$inc": M{"balance": -change.amount/2}},
+					}, {
+						Collection: "accounts",
+						DocId:      change.target,
+						Assert:     txn.DocExists,
+						Change:     M{"$inc": M{"balance": change.amount/2}},
+					}, {
+						Collection: "accounts",
+						DocId:      change.origin,
+						Change:     M{"$inc": M{"balance": -change.amount/2}},
+					}, {
+						Collection: "accounts",
+						DocId:      change.target,
+						Change:     M{"$inc": M{"balance": change.amount/2}},
 					}}
 				default:
 					ops = []txn.Operation{{

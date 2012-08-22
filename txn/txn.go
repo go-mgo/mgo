@@ -192,8 +192,6 @@ func (op *Operation) name() string {
 type Runner struct {
 	tc *mgo.Collection
 	sc *mgo.Collection
-
-	fake bool
 }
 
 // NewRunner returns a new transaction runner that uses tc to hold its
@@ -207,16 +205,7 @@ type Runner struct {
 // will be used for implementing the transactional behavior of insert
 // and remove operations.
 func NewRunner(tc *mgo.Collection) *Runner {
-	return &Runner{tc, tc.Database.C(tc.Name + ".stash"), false}
-}
-
-// NewFakeRunner returns a new transaction runner that doesn't present
-// real transactional behavior. It runs operations serially as they
-// would have been normally executed. This may be useful in tests,
-// performance comparisons, or to easily shift code from transactional
-// behavior to straight logic.
-func NewFakeRunner(tc *mgo.Collection) *Runner {
-	return &Runner{tc, tc.Database.C(tc.Name + ".stash"), true}
+	return &Runner{tc, tc.Database.C(tc.Name + ".stash")}
 }
 
 var ErrAborted = fmt.Errorf("transaction aborted")
@@ -248,10 +237,6 @@ var ErrAborted = fmt.Errorf("transaction aborted")
 // Any number of transactions may be run concurrently, with one
 // runner or many.
 func (r *Runner) Run(ops []Operation, id bson.ObjectId, info interface{}) (err error) {
-	if r.fake {
-		return r.fakeRun(ops)
-	}
-
 	if id == "" {
 		id = bson.NewObjectId()
 	}
@@ -281,9 +266,6 @@ func (r *Runner) Run(ops []Operation, id bson.ObjectId, info interface{}) (err e
 // ResumeAll resumes all pending transactions. All ErrAborted errors
 // from individual transactions are ignored.
 func (r *Runner) ResumeAll() (err error) {
-	if r.fake {
-		return nil
-	}
 	iter := r.tc.Find(bson.D{{"state", bson.D{{"$in", []state{tpreparing, tprepared, tapplying}}}}}).Iter()
 	var t transaction
 	for iter.Next(&t) {
@@ -305,9 +287,6 @@ func (r *Runner) ResumeAll() (err error) {
 // if the transaction is not found. Otherwise, it has the same semantics
 // of the Run method after the transaction is inserted.
 func (r *Runner) Resume(id bson.ObjectId) (err error) {
-	if r.fake {
-		return nil
-	}
 	t, err := r.load(id)
 	if err != nil {
 		return err
@@ -341,63 +320,6 @@ const (
 	DocMissing = "missing"
 	DocExists  = "exists"
 )
-
-func (r *Runner) fakeRun(ops []Operation) error {
-	qdoc := make(bson.D, 2)
-
-	// Verify that the requested assertions match.
-	for _, op := range ops {
-		if op.Assert == nil {
-			continue
-		}
-		if op.Insert != nil && op.Assert != DocMissing {
-			return fmt.Errorf("Insert can only Assert txn.DocMissing")
-		}
-
-		c := r.tc.Database.C(op.Collection)
-		qdoc = append(qdoc[:0], bson.DocElem{"_id", op.DocId})
-		if op.Insert == nil && op.Assert != DocExists && op.Assert != DocMissing {
-			qdoc = append(qdoc, bson.DocElem{"$or", []interface{}{op.Assert}})
-		}
-		err := c.Find(qdoc).Select(bson.D{{"_id", 1}}).One(nil)
-		if err != nil && err != mgo.ErrNotFound {
-			return err
-		}
-		if (err == mgo.ErrNotFound) != (op.Assert == DocMissing) {
-			return ErrAborted
-		}
-	}
-
-	// Apply the changes.
-	for _, op := range ops {
-		c := r.tc.Database.C(op.Collection)
-
-		qdoc = append(qdoc[:0], bson.DocElem{"_id", op.DocId})
-
-		var err error
-		switch {
-		case op.Change != nil:
-			err = c.Update(qdoc, op.Change)
-			if err == mgo.ErrNotFound {
-				err = nil
-			}
-		case op.Insert != nil:
-			err = c.Insert(op.Insert)
-			if lerr, ok := err.(*mgo.LastError); ok && lerr.Code == 11000 {
-				err = nil
-			}
-		case op.Remove:
-			err = c.Remove(qdoc)
-			if err == mgo.ErrNotFound {
-				err = nil
-			}
-		}
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 type docKey struct {
 	Collection string
