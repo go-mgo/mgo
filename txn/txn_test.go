@@ -142,7 +142,7 @@ func (s *S) TestQueueStashing(c *C) {
 	}}, {{
 		Collection: "accounts",
 		DocId:      0,
-		Change:     M{"$inc": M{"balance": 100}},
+		Update:     M{"$inc": M{"balance": 100}},
 	}}}
 
 	var last bson.ObjectId

@@ -726,11 +726,11 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 		var outcome string
 		var err error
 		switch {
-		case op.Change != nil:
+		case op.Update != nil:
 			if revno < 0 {
 				err = mgo.ErrNotFound
 			} else {
-				if m, err = objToMap(op.Change); err != nil {
+				if m, err = objToMap(op.Update); err != nil {
 					return err
 				}
 				addToMap(m, "$pullAll", bson.D{{"txn-queue", pullAll}})

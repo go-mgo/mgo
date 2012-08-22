@@ -235,39 +235,39 @@ func simulate(c *C, params params) {
 						Collection: "accounts",
 						DocId:      change.target,
 						Assert:     txn.DocExists,
-						Change:     M{"$inc": M{"balance": change.amount}},
+						Update:     M{"$inc": M{"balance": change.amount}},
 					}}
 				case params.changeHalf:
 					ops = []txn.Operation{{
 						Collection: "accounts",
 						DocId:      change.origin,
 						Assert:     M{"balance": M{"$gte": change.amount}},
-						Change:     M{"$inc": M{"balance": -change.amount/2}},
+						Update:     M{"$inc": M{"balance": -change.amount/2}},
 					}, {
 						Collection: "accounts",
 						DocId:      change.target,
 						Assert:     txn.DocExists,
-						Change:     M{"$inc": M{"balance": change.amount/2}},
+						Update:     M{"$inc": M{"balance": change.amount/2}},
 					}, {
 						Collection: "accounts",
 						DocId:      change.origin,
-						Change:     M{"$inc": M{"balance": -change.amount/2}},
+						Update:     M{"$inc": M{"balance": -change.amount/2}},
 					}, {
 						Collection: "accounts",
 						DocId:      change.target,
-						Change:     M{"$inc": M{"balance": change.amount/2}},
+						Update:     M{"$inc": M{"balance": change.amount/2}},
 					}}
 				default:
 					ops = []txn.Operation{{
 						Collection: "accounts",
 						DocId:      change.origin,
 						Assert:     M{"balance": M{"$gte": change.amount}},
-						Change:     M{"$inc": M{"balance": -change.amount}},
+						Update:     M{"$inc": M{"balance": -change.amount}},
 					}, {
 						Collection: "accounts",
 						DocId:      change.target,
 						Assert:     txn.DocExists,
-						Change:     M{"$inc": M{"balance": change.amount}},
+						Update:     M{"$inc": M{"balance": change.amount}},
 					}}
 				}
 

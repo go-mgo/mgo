@@ -136,10 +136,10 @@ type Operation struct {
 	// and the transaction is entirely aborted if any of them
 	// fails. This is also the only way to prevent a transaction
 	// from being being applied (the transaction continues despite
-	// the outcome of Insert, Remove and Change).
+	// the outcome of Insert, Update, and Remove).
 	Assert interface{}
 
-	// The Insert, Change and Remove fields describe the mutation
+	// The Insert, Update and Remove fields describe the mutation
 	// intended by the operation. At most one of them may be set
 	// per operation. If none are set, Assert must be set and the
 	// operation becomes a read-only test.
@@ -151,7 +151,7 @@ type Operation struct {
 	// exists. Use Assert with txn.DocMissing if the insertion is
 	// required.
 	//
-	// Change holds the change document to be applied at the time
+	// Update holds the update document to be applied at the time
 	// the transaction is applied. The transaction will continue
 	// even if a document with DocId is missing. Use Assert to
 	// test for the document presence or its contents.
@@ -161,12 +161,12 @@ type Operation struct {
 	// exist at the time the transaction is applied. Use Assert
 	// with txn.DocExists to make sure it will be removed.
 	Insert interface{}
-	Change interface{}
+	Update interface{}
 	Remove bool
 }
 
 func (op *Operation) isChange() bool {
-	return op.Change != nil || op.Insert != nil || op.Remove
+	return op.Update != nil || op.Insert != nil || op.Remove
 }
 
 func (op *Operation) docKey() docKey {
@@ -175,8 +175,8 @@ func (op *Operation) docKey() docKey {
 
 func (op *Operation) name() string {
 	switch {
-	case op.Change != nil:
-		return "change"
+	case op.Update != nil:
+		return "update"
 	case op.Insert != nil:
 		return "insert"
 	case op.Remove:
