@@ -1,3 +1,10 @@
+
+// The txn package implements support for multi-document transactions.
+//
+// For details check the following blog post:
+//
+//     http://blog.labix.org/2012/08/22/multi-doc-tran…ns-for-mongodb
+//
 package txn
 
 import (
@@ -271,8 +278,8 @@ func (r *Runner) Run(ops []Operation, id bson.ObjectId, info interface{}) (err e
 	return nil
 }
 
-// ResumeAll resumes all pending transactions. An error is only returned
-// if resuming is somehow interrupted.
+// ResumeAll resumes all pending transactions. All ErrAborted errors
+// from individual transactions are ignored.
 func (r *Runner) ResumeAll() (err error) {
 	if r.fake {
 		return nil
