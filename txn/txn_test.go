@@ -41,8 +41,8 @@ func (s *S) SetUpTest(c *C) {
 }
 
 type Account struct {
-	Id       int `bson:"_id"`
-	Balance  int
+	Id      int `bson:"_id"`
+	Balance int
 }
 
 func (s *S) TestDocExists(c *C) {
@@ -61,7 +61,7 @@ func (s *S) TestDocExists(c *C) {
 	}}
 
 	err = s.runner.Run(exists, "", nil)
-	c.Assert(err, Equals, nil)
+	c.Assert(err, IsNil)
 	err = s.runner.Run(missing, "", nil)
 	c.Assert(err, Equals, txn.ErrAborted)
 
@@ -71,7 +71,7 @@ func (s *S) TestDocExists(c *C) {
 	err = s.runner.Run(exists, "", nil)
 	c.Assert(err, Equals, txn.ErrAborted)
 	err = s.runner.Run(missing, "", nil)
-	c.Assert(err, Equals, nil)
+	c.Assert(err, IsNil)
 }
 
 func (s *S) TestInsert(c *C) {
@@ -85,7 +85,7 @@ func (s *S) TestInsert(c *C) {
 	}}
 
 	err = s.runner.Run(ops, "", nil)
-	c.Assert(err, Equals, nil)
+	c.Assert(err, IsNil)
 
 	var account Account
 	err = s.accounts.FindId(0).One(&account)
@@ -94,7 +94,7 @@ func (s *S) TestInsert(c *C) {
 
 	ops[0].DocId = 1
 	err = s.runner.Run(ops, "", nil)
-	c.Assert(err, Equals, nil)
+	c.Assert(err, IsNil)
 
 	err = s.accounts.FindId(1).One(&account)
 	c.Assert(err, IsNil)
@@ -112,13 +112,13 @@ func (s *S) TestRemove(c *C) {
 	}}
 
 	err = s.runner.Run(ops, "", nil)
-	c.Assert(err, Equals, nil)
+	c.Assert(err, IsNil)
 
 	err = s.accounts.FindId(0).One(nil)
 	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = s.runner.Run(ops, "", nil)
-	c.Assert(err, Equals, nil)
+	c.Assert(err, IsNil)
 }
 
 func (s *S) TestQueueStashing(c *C) {
@@ -160,4 +160,22 @@ func (s *S) TestQueueStashing(c *C) {
 	err = s.accounts.FindId(0).One(&account)
 	c.Assert(err, IsNil)
 	c.Assert(account.Balance, Equals, 300)
+}
+
+func (s *S) TestInfo(c *C) {
+	ops := []txn.Operation{{
+		Collection: "accounts",
+		DocId:      0,
+		Assert:     txn.DocMissing,
+	}}
+
+	id := bson.NewObjectId()
+	err := s.runner.Run(ops, id, M{"n": 42})
+	c.Assert(err, IsNil)
+
+	mgo.SetDebug(true)
+	var t struct{ Info struct{ N int } }
+	err = s.tc.FindId(id).One(&t)
+	c.Assert(err, IsNil)
+	c.Assert(t.Info.N, Equals, 42)
 }

@@ -1,4 +1,3 @@
-
 // The txn package implements support for multi-document transactions.
 //
 // For details check the following blog post:
@@ -246,6 +245,7 @@ func (r *Runner) Run(ops []Operation, id bson.ObjectId, info interface{}) (err e
 		Id:    id,
 		Ops:   ops,
 		State: tpreparing,
+		Info:  info,
 		// Mtime
 		// Info
 	}
