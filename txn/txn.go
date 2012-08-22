@@ -131,7 +131,7 @@ type Operation struct {
 
 	// Assert optionally holds a query document that is used to
 	// test the operation document at the time the transaction is
-	// going to be applied. The assertions for all operatoins in
+	// going to be applied. The assertions for all operations in
 	// a transaction are tested before any changes take place,
 	// and the transaction is entirely aborted if any of them
 	// fails. This is also the only way to prevent a transaction
