@@ -12,8 +12,7 @@ var chaosSetting Chaos
 type Chaos struct {
 	// KillChance is the 0.0 to 1.0 chance that a given checkpoint
 	// within the algorithm will raise an interruption that will
-	// stop the procedure. If KillLocation is set, only the named
-	// location is interrupted with the given chance.
+	// stop the procedure.
 	KillChance float64
 
 	// SlowdownChance is the 0.0 to 1.0 chance that a given checkpoint
