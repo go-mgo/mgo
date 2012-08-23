@@ -12,7 +12,7 @@ import (
 
 var (
 	duration = flag.Duration("duration", 200*time.Millisecond, "duration for each simulation")
-	seed = flag.Int64("seed", 0, "seed for rand")
+	seed     = flag.Int64("seed", 0, "seed for rand")
 )
 
 type params struct {
@@ -214,68 +214,68 @@ func simulate(c *C, params params) {
 					}
 				}
 
-				var ops []txn.Operation
+				var ops []txn.Op
 				switch {
 				case params.reinsertCopy && oldExists:
-					ops = []txn.Operation{{
-						Collection: "accounts",
-						DocId:      change.origin,
-						Assert:     M{"balance": change.amount},
-						Remove:     true,
+					ops = []txn.Op{{
+						C:      "accounts",
+						Id:     change.origin,
+						Assert: M{"balance": change.amount},
+						Remove: true,
 					}, {
-						Collection: "accounts",
-						DocId:      change.target,
-						Assert:     txn.DocMissing,
-						Insert:     M{"balance": change.amount},
+						C:      "accounts",
+						Id:     change.target,
+						Assert: txn.DocMissing,
+						Insert: M{"balance": change.amount},
 					}}
 				case params.reinsertZeroed && oldExists:
-					ops = []txn.Operation{{
-						Collection: "accounts",
-						DocId:      change.target,
-						Assert:     txn.DocMissing,
-						Insert:     M{"balance": 0},
+					ops = []txn.Op{{
+						C:      "accounts",
+						Id:     change.target,
+						Assert: txn.DocMissing,
+						Insert: M{"balance": 0},
 					}, {
-						Collection: "accounts",
-						DocId:      change.origin,
-						Assert:     M{"balance": change.amount},
-						Remove:     true,
+						C:      "accounts",
+						Id:     change.origin,
+						Assert: M{"balance": change.amount},
+						Remove: true,
 					}, {
-						Collection: "accounts",
-						DocId:      change.target,
-						Assert:     txn.DocExists,
-						Update:     M{"$inc": M{"balance": change.amount}},
+						C:      "accounts",
+						Id:     change.target,
+						Assert: txn.DocExists,
+						Update: M{"$inc": M{"balance": change.amount}},
 					}}
 				case params.changeHalf:
-					ops = []txn.Operation{{
-						Collection: "accounts",
-						DocId:      change.origin,
-						Assert:     M{"balance": M{"$gte": change.amount}},
-						Update:     M{"$inc": M{"balance": -change.amount/2}},
+					ops = []txn.Op{{
+						C:      "accounts",
+						Id:     change.origin,
+						Assert: M{"balance": M{"$gte": change.amount}},
+						Update: M{"$inc": M{"balance": -change.amount / 2}},
 					}, {
-						Collection: "accounts",
-						DocId:      change.target,
-						Assert:     txn.DocExists,
-						Update:     M{"$inc": M{"balance": change.amount/2}},
+						C:      "accounts",
+						Id:     change.target,
+						Assert: txn.DocExists,
+						Update: M{"$inc": M{"balance": change.amount / 2}},
 					}, {
-						Collection: "accounts",
-						DocId:      change.origin,
-						Update:     M{"$inc": M{"balance": -change.amount/2}},
+						C:      "accounts",
+						Id:     change.origin,
+						Update: M{"$inc": M{"balance": -change.amount / 2}},
 					}, {
-						Collection: "accounts",
-						DocId:      change.target,
-						Update:     M{"$inc": M{"balance": change.amount/2}},
+						C:      "accounts",
+						Id:     change.target,
+						Update: M{"$inc": M{"balance": change.amount / 2}},
 					}}
 				default:
-					ops = []txn.Operation{{
-						Collection: "accounts",
-						DocId:      change.origin,
-						Assert:     M{"balance": M{"$gte": change.amount}},
-						Update:     M{"$inc": M{"balance": -change.amount}},
+					ops = []txn.Op{{
+						C:      "accounts",
+						Id:     change.origin,
+						Assert: M{"balance": M{"$gte": change.amount}},
+						Update: M{"$inc": M{"balance": -change.amount}},
 					}, {
-						Collection: "accounts",
-						DocId:      change.target,
-						Assert:     txn.DocExists,
-						Update:     M{"$inc": M{"balance": change.amount}},
+						C:      "accounts",
+						Id:     change.target,
+						Assert: txn.DocExists,
+						Update: M{"$inc": M{"balance": change.amount}},
 					}}
 				}
 

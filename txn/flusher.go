@@ -239,8 +239,8 @@ NextDoc:
 			Update:    bson.D{{"$addToSet", bson.D{{"txn-queue", tt}}}},
 			ReturnNew: true,
 		}
-		c := f.tc.Database.C(dkey.Collection)
-		cquery := c.FindId(dkey.DocId).Select(txnFields)
+		c := f.tc.Database.C(dkey.C)
+		cquery := c.FindId(dkey.Id).Select(txnFields)
 
 RetryDoc:
 		change.Upsert = false
@@ -282,7 +282,7 @@ RetryDoc:
 		// prepared, since applying a remove overwrites the stash.
 		docFound := false
 		stashFound := false
-		if err = c.FindId(dkey.DocId).Select(txnFields).One(&info); err == nil {
+		if err = c.FindId(dkey.Id).Select(txnFields).One(&info); err == nil {
 			docFound = true
 		} else if err != mgo.ErrNotFound {
 			return nil, err
@@ -404,8 +404,8 @@ func (f *flusher) rescan(t *transaction, force bool) (revnos []int64, err error)
 		retry := 0
 
 RetryDoc:
-		c := f.tc.Database.C(dkey.Collection)
-		if err := c.FindId(dkey.DocId).Select(txnFields).One(&info); err == mgo.ErrNotFound {
+		c := f.tc.Database.C(dkey.C)
+		if err := c.FindId(dkey.Id).Select(txnFields).One(&info); err == mgo.ErrNotFound {
 			// Document is missing. Look in stash.
 			if err := f.sc.FindId(dkey).One(&info); err == mgo.ErrNotFound {
 				// Stash also doesn't exist. Maybe someone applied it.
@@ -557,7 +557,7 @@ func (f *flusher) assert(t *transaction, revnos []int64, pull map[bson.ObjectId]
 		}
 		// if revnos[i] < 0 { abort }?
 
-		qdoc = append(qdoc[:0], bson.DocElem{"_id", op.DocId})
+		qdoc = append(qdoc[:0], bson.DocElem{"_id", op.Id})
 		if op.Assert != DocMissing {
 			var revnoq interface{}
 			if n := revno[dkey]; n == 0 {
@@ -573,7 +573,7 @@ func (f *flusher) assert(t *transaction, revnos []int64, pull map[bson.ObjectId]
 			}
 		}
 
-		c := f.tc.Database.C(op.Collection)
+		c := f.tc.Database.C(op.C)
 		if err := c.Find(qdoc).Select(bson.D{{"_id", 1}}).One(nil); err == mgo.ErrNotFound {
 			// Assertion failed or someone else started applying.
 			return f.abortOrReload(t, revnos, pull)
@@ -626,8 +626,8 @@ func (f *flusher) abortOrReload(t *transaction, revnos []int64, pull map[bson.Ob
 			if revnos[i] < 0 {
 				err = f.sc.UpdateId(dkey, udoc)
 			} else {
-				c := f.tc.Database.C(dkey.Collection)
-				err = c.UpdateId(dkey.DocId, udoc)
+				c := f.tc.Database.C(dkey.C)
+				err = c.UpdateId(dkey.Id, udoc)
 			}
 			if err != nil && err != mgo.ErrNotFound {
 				return err
@@ -702,7 +702,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 			f.debugf("Applying %s op %d (%s) on %v with txn-revno %d", t, i, opName, dkey, revno)
 		}
 
-		c := f.tc.Database.C(op.Collection)
+		c := f.tc.Database.C(op.C)
 		var revnoq, idq interface{}
 		if revno == 0 || op.Insert != nil && revno == -1 {
 			revnoq = bson.D{{"$exists", false}}
@@ -712,7 +712,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 		if op.Insert != nil {
 			idq = dkey
 		} else {
-			idq = dkey.DocId
+			idq = dkey.Id
 		}
 		qdoc := bson.D{{"_id", idq}, {"txn-revno", revnoq}, {"txn-queue", tt}}
 
@@ -804,7 +804,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 				var info txnInfo
 				if _, err = f.sc.Find(qdoc).Apply(change, &info); err == nil {
 					f.debugf("Stash for document %v has revno %d and queue: %v", dkey, info.Revno, info.Queue)
-					m["_id"] = op.DocId
+					m["_id"] = op.Id
 					m["txn-revno"] = -revno+1
 					m["txn-queue"] = info.Queue
 					// Unlikely yet unfortunate race in here if this gets seriously

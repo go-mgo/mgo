@@ -47,15 +47,15 @@ func (s *S) TestDocExists(c *C) {
 	err := s.accounts.Insert(M{"_id": 0, "balance": 300})
 	c.Assert(err, IsNil)
 
-	exists := []txn.Operation{{
-		Collection: "accounts",
-		DocId:      0,
-		Assert:     txn.DocExists,
+	exists := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Assert: txn.DocExists,
 	}}
-	missing := []txn.Operation{{
-		Collection: "accounts",
-		DocId:      0,
-		Assert:     txn.DocMissing,
+	missing := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Assert: txn.DocMissing,
 	}}
 
 	err = s.runner.Run(exists, "", nil)
@@ -76,10 +76,10 @@ func (s *S) TestInsert(c *C) {
 	err := s.accounts.Insert(M{"_id": 0, "balance": 300})
 	c.Assert(err, IsNil)
 
-	ops := []txn.Operation{{
-		Collection: "accounts",
-		DocId:      0,
-		Insert:     M{"balance": 200},
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Insert: M{"balance": 200},
 	}}
 
 	err = s.runner.Run(ops, "", nil)
@@ -90,7 +90,7 @@ func (s *S) TestInsert(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(account.Balance, Equals, 300)
 
-	ops[0].DocId = 1
+	ops[0].Id = 1
 	err = s.runner.Run(ops, "", nil)
 	c.Assert(err, IsNil)
 
@@ -103,10 +103,10 @@ func (s *S) TestRemove(c *C) {
 	err := s.accounts.Insert(M{"_id": 0, "balance": 300})
 	c.Assert(err, IsNil)
 
-	ops := []txn.Operation{{
-		Collection: "accounts",
-		DocId:      0,
-		Remove:     true,
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Remove: true,
 	}}
 
 	err = s.runner.Run(ops, "", nil)
@@ -125,22 +125,22 @@ func (s *S) TestQueueStashing(c *C) {
 		Breakpoint: "checkpoint",
 	})
 
-	opses := [][]txn.Operation{{{
-		Collection: "accounts",
-		DocId:      0,
-		Insert:     M{"balance": 100},
+	opses := [][]txn.Op{{{
+		C:      "accounts",
+		Id:     0,
+		Insert: M{"balance": 100},
 	}}, {{
-		Collection: "accounts",
-		DocId:      0,
-		Remove:     true,
+		C:      "accounts",
+		Id:     0,
+		Remove: true,
 	}}, {{
-		Collection: "accounts",
-		DocId:      0,
-		Insert:     M{"balance": 200},
+		C:      "accounts",
+		Id:     0,
+		Insert: M{"balance": 200},
 	}}, {{
-		Collection: "accounts",
-		DocId:      0,
-		Update:     M{"$inc": M{"balance": 100}},
+		C:      "accounts",
+		Id:     0,
+		Update: M{"$inc": M{"balance": 100}},
 	}}}
 
 	var last bson.ObjectId
@@ -161,10 +161,10 @@ func (s *S) TestQueueStashing(c *C) {
 }
 
 func (s *S) TestInfo(c *C) {
-	ops := []txn.Operation{{
-		Collection: "accounts",
-		DocId:      0,
-		Assert:     txn.DocMissing,
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Assert: txn.DocMissing,
 	}}
 
 	id := bson.NewObjectId()
@@ -179,36 +179,36 @@ func (s *S) TestInfo(c *C) {
 
 func (s *S) TestErrors(c *C) {
 	doc := bson.M{"foo": 1}
-	tests := []txn.Operation{{
-		Collection: "c",
-		DocId: 0,
+	tests := []txn.Op{{
+		C:  "c",
+		Id: 0,
 	}, {
-		Collection: "c",
-		DocId: 0,
+		C:      "c",
+		Id:     0,
 		Insert: doc,
 		Remove: true,
 	}, {
-		Collection: "c",
-		DocId: 0,
+		C:      "c",
+		Id:     0,
 		Insert: doc,
 		Update: doc,
 	}, {
-		Collection: "c",
-		DocId: 0,
+		C:      "c",
+		Id:     0,
 		Update: doc,
 		Remove: true,
 	}, {
-		Collection: "c",
+		C:      "c",
 		Assert: doc,
 	}, {
-		DocId: 0,
+		Id:     0,
 		Assert: doc,
 	}}
 
 	txn.SetChaos(txn.Chaos{KillChance: 1.0})
 	for _, op := range tests {
 		c.Logf("op: %v", op)
-		err := s.runner.Run([]txn.Operation{op}, "", nil)
+		err := s.runner.Run([]txn.Op{op}, "", nil)
 		c.Assert(err, ErrorMatches, "error in transaction op 0: .*")
 	}
 }

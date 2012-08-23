@@ -64,7 +64,7 @@ type transaction struct {
 	Id     bson.ObjectId `bson:"_id"`
 	State  state         `bson:"s"`
 	Info   interface{}   `bson:"i,omitempty"`
-	Ops    []Operation   `bson:"o"`
+	Ops    []Op          `bson:"o"`
 	Nonce  string        `bson:"n,omitempty"`
 	Revnos []int64       `bson:"r,omitempty"`
 
@@ -137,13 +137,13 @@ type token string
 func (tt token) id() bson.ObjectId { return bson.ObjectIdHex(string(tt[:24])) }
 func (tt token) nonce() string     { return string(tt[25:]) }
 
-// Operation represents a change to a single document that may be
+// Op represents an operation to a single document that may be
 // applied as part of a transaction with other operations.
-type Operation struct {
-	// Collection and DocId together identify the document this
-	// operation refers to. DocId is matched against "_id".
-	Collection string      `bson:"c"`
-	DocId      interface{} `bson:"d"`
+type Op struct {
+	// C and Id identify the collection and document this operation
+	// refers to. Id is matched against the "_id" document field.
+	C  string      `bson:"c"`
+	Id interface{} `bson:"d"`
 
 	// Assert optionally holds a query document that is used to
 	// test the operation document at the time the transaction is
@@ -161,7 +161,7 @@ type Operation struct {
 	// operation becomes a read-only test.
 	// 
 	// Insert holds the document to be inserted at the time the
-	// transaction is applied. The DocId field will be inserted
+	// transaction is applied. The Id field will be inserted
 	// into the document automatically as its _id field. The
 	// transaction will continue even if the document already
 	// exists. Use Assert with txn.DocMissing if the insertion is
@@ -169,10 +169,10 @@ type Operation struct {
 	//
 	// Update holds the update document to be applied at the time
 	// the transaction is applied. The transaction will continue
-	// even if a document with DocId is missing. Use Assert to
+	// even if a document with Id is missing. Use Assert to
 	// test for the document presence or its contents.
 	//
-	// Remove indicates whether to remove the document with DocId.
+	// Remove indicates whether to remove the document with Id.
 	// The transaction continues even if the document doesn't yet
 	// exist at the time the transaction is applied. Use Assert
 	// with txn.DocExists to make sure it will be removed.
@@ -181,15 +181,15 @@ type Operation struct {
 	Remove bool        `bson:"r,omitempty"`
 }
 
-func (op *Operation) isChange() bool {
+func (op *Op) isChange() bool {
 	return op.Update != nil || op.Insert != nil || op.Remove
 }
 
-func (op *Operation) docKey() docKey {
-	return docKey{op.Collection, op.DocId}
+func (op *Op) docKey() docKey {
+	return docKey{op.C, op.Id}
 }
 
-func (op *Operation) name() string {
+func (op *Op) name() string {
 	switch {
 	case op.Update != nil:
 		return "update"
@@ -206,7 +206,7 @@ func (op *Operation) name() string {
 const (
 	// DocExists and DocMissing may be used on an operation's
 	// Assert value to assert that the document with the given
-	// DocId exists or does not exist, respectively.
+	// Id exists or does not exist, respectively.
 	DocExists  = "d+"
 	DocMissing = "d-"
 )
@@ -260,12 +260,12 @@ var ErrAborted = fmt.Errorf("transaction aborted")
 //
 // Any number of transactions may be run concurrently, with one
 // runner or many.
-func (r *Runner) Run(ops []Operation, id bson.ObjectId, info interface{}) (err error) {
+func (r *Runner) Run(ops []Op, id bson.ObjectId, info interface{}) (err error) {
 	const efmt = "error in transaction op %d: %s"
 	for i := range ops {
 		op := &ops[i]
-		if op.Collection == "" || op.DocId == nil {
-			return fmt.Errorf(efmt, i, "Collection or DocId unset")
+		if op.C == "" || op.Id == nil {
+			return fmt.Errorf(efmt, i, "C or Id missing")
 		}
 		changes := 0
 		if op.Insert != nil {
@@ -364,8 +364,8 @@ func (r *Runner) load(id bson.ObjectId) (*transaction, error) {
 }
 
 type docKey struct {
-	Collection string
-	DocId      interface{}
+	C  string
+	Id interface{}
 }
 
 type docKeys []docKey
@@ -374,11 +374,11 @@ func (ks docKeys) Len() int      { return len(ks) }
 func (ks docKeys) Swap(i, j int) { ks[i], ks[j] = ks[j], ks[i] }
 func (ks docKeys) Less(i, j int) bool {
 	a, b := ks[i], ks[j]
-	if a.Collection != b.Collection {
-		return a.Collection < b.Collection
+	if a.C != b.C {
+		return a.C < b.C
 	}
-	av, an := valueNature(a.DocId)
-	bv, bn := valueNature(b.DocId)
+	av, an := valueNature(a.Id)
+	bv, bn := valueNature(b.Id)
 	if an != bn {
 		return an < bn
 	}
