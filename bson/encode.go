@@ -172,8 +172,15 @@ func (e *encoder) addSlice(v reflect.Value) {
 		for _, elem := range d {
 			e.addElem(elem.Name, reflect.ValueOf(elem.Value), false)
 		}
+	} else if v.Type().Elem() == typeDocElem {
+		l := v.Len()
+		for i := 0; i < l; i++ {
+			elem := v.Index(i).Interface().(DocElem)
+			e.addElem(elem.Name, reflect.ValueOf(elem.Value), false)
+		}
 	} else {
-		for i := 0; i != v.Len(); i++ {
+		l := v.Len()
+		for i := 0; i < l; i++ {
 			e.addElem(itoa(i), v.Index(i), false)
 		}
 	}

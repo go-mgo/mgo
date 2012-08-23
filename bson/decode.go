@@ -295,7 +295,6 @@ func (d *decoder) readSliceDoc(t reflect.Type) interface{} {
 	return slice.Interface()
 }
 
-var typeD = reflect.TypeOf(D{})
 var typeSlice = reflect.TypeOf([]interface{}{})
 
 func (d *decoder) readDocD() interface{} {
