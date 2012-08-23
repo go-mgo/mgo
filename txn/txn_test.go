@@ -1,7 +1,6 @@
 package txn_test
 
 import (
-	"flag"
 	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
 	"labix.org/v2/mgo/txn"
@@ -26,11 +25,10 @@ var _ = Suite(&S{})
 
 type M map[string]interface{}
 
-var debug = flag.Bool("debug", false, "turn debugging on")
-
 func (s *S) SetUpTest(c *C) {
-	txn.SetDebug(*debug)
 	txn.SetChaos(txn.Chaos{})
+	txn.SetLogger(c)
+	txn.SetDebug(true)
 	s.MgoSuite.SetUpTest(c)
 
 	s.db = s.session.DB("test")
@@ -177,4 +175,40 @@ func (s *S) TestInfo(c *C) {
 	err = s.tc.FindId(id).One(&t)
 	c.Assert(err, IsNil)
 	c.Assert(t.I.N, Equals, 42)
+}
+
+func (s *S) TestErrors(c *C) {
+	doc := bson.M{"foo": 1}
+	tests := []txn.Operation{{
+		Collection: "c",
+		DocId: 0,
+	}, {
+		Collection: "c",
+		DocId: 0,
+		Insert: doc,
+		Remove: true,
+	}, {
+		Collection: "c",
+		DocId: 0,
+		Insert: doc,
+		Update: doc,
+	}, {
+		Collection: "c",
+		DocId: 0,
+		Update: doc,
+		Remove: true,
+	}, {
+		Collection: "c",
+		Assert: doc,
+	}, {
+		DocId: 0,
+		Assert: doc,
+	}}
+
+	txn.SetChaos(txn.Chaos{KillChance: 1.0})
+	for _, op := range tests {
+		c.Logf("op: %v", op)
+		err := s.runner.Run([]txn.Operation{op}, "", nil)
+		c.Assert(err, ErrorMatches, "error in transaction op 0: .*")
+	}
 }

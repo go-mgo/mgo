@@ -235,6 +235,29 @@ var ErrAborted = fmt.Errorf("transaction aborted")
 // Any number of transactions may be run concurrently, with one
 // runner or many.
 func (r *Runner) Run(ops []Operation, id bson.ObjectId, info interface{}) (err error) {
+	const efmt = "error in transaction op %d: %s"
+	for i := range ops {
+		op := &ops[i]
+		if op.Collection == "" || op.DocId == nil {
+			return fmt.Errorf(efmt, i, "Collection or DocId unset")
+		}
+		changes := 0
+		if op.Insert != nil {
+			changes++
+		}
+		if op.Update != nil {
+			changes++
+		}
+		if op.Remove {
+			changes++
+		}
+		if changes > 1 {
+			return fmt.Errorf(efmt, i, "more than one of Insert/Update/Remove set")
+		}
+		if changes == 0 && op.Assert == nil {
+			return fmt.Errorf(efmt, i, "none of Assert/Insert/Update/Remove set")
+		}
+	}
 	if id == "" {
 		id = bson.NewObjectId()
 	}

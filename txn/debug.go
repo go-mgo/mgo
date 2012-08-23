@@ -4,12 +4,23 @@ import (
 	"bytes"
 	"fmt"
 	"labix.org/v2/mgo/bson"
-	"os"
 	"sort"
 	"sync/atomic"
 )
 
-var debugEnabled bool
+var (
+	debugEnabled bool
+	logger       log_Logger
+)
+
+type log_Logger interface {
+	Output(calldepth int, s string) error
+}
+
+// Specify the *log.Logger where logged messages should be sent to.
+func SetLogger(l log_Logger) {
+	logger = l
+}
 
 // SetDebug enables or disables debugging.
 func SetDebug(debug bool) {
@@ -21,7 +32,7 @@ var ErrChaos = fmt.Errorf("interrupted by chaos")
 var debugId uint32
 
 func debugPrefix() string {
-	d := atomic.AddUint32(&debugId, 1)-1
+	d := atomic.AddUint32(&debugId, 1) - 1
 	s := make([]byte, 0, 10)
 	for i := uint(0); i < 8; i++ {
 		s = append(s, "abcdefghijklmnop"[(d>>(4*i))&0xf])
@@ -34,7 +45,7 @@ func debugPrefix() string {
 }
 
 func debugf(format string, args ...interface{}) {
-	if !debugEnabled {
+	if !debugEnabled || logger == nil {
 		return
 	}
 	for i, arg := range args {
@@ -84,5 +95,5 @@ func debugf(format string, args ...interface{}) {
 			args[i] = buf.String()
 		}
 	}
-	fmt.Fprintf(os.Stderr, format+"\n", args...)
+	logger.Output(2, fmt.Sprintf(format, args...))
 }

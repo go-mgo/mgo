@@ -142,7 +142,9 @@ type balanceChange struct {
 }
 
 func simulate(c *C, params params) {
-	rand.Seed(time.Now().UnixNano())
+	seed := time.Now().UnixNano()
+	rand.Seed(seed)
+	c.Logf("Seed: %v", seed)
 
 	txn.SetChaos(txn.Chaos{
 		KillChance:     params.killChance,
