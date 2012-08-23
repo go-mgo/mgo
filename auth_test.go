@@ -515,3 +515,46 @@ func (s *S) TestAuthURLWithNewSession(c *C) {
 	err = session.DB("mydb").C("mycoll").Insert(M{"n": 1})
 	c.Assert(err, IsNil)
 }
+
+func (s *S) TestAuthURLWithDatabase(c *C) {
+	session, err := mgo.Dial("mongodb://root:rapadura@localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	mydb := session.DB("mydb")
+	err = mydb.AddUser("myruser", "mypass", true)
+	c.Assert(err, IsNil)
+
+	usession, err := mgo.Dial("mongodb://myruser:mypass@localhost:40002/mydb")
+	c.Assert(err, IsNil)
+	defer usession.Close()
+
+	ucoll := usession.DB("mydb").C("mycoll")
+	err = ucoll.FindId(0).One(nil)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+	err = ucoll.Insert(M{"n": 1})
+	c.Assert(err, ErrorMatches, "unauthorized")
+}
+
+func (s *S) TestDefaultDatabase(c *C) {
+	tests := []struct{ url, db string }{
+		{"mongodb://root:rapadura@localhost:40002", "test"},
+		{"mongodb://root:rapadura@localhost:40002/admin", "admin"},
+		{"mongodb://localhost:40001", "test"},
+		{"mongodb://localhost:40001/", "test"},
+		{"mongodb://localhost:40001/mydb", "mydb"},
+	}
+
+	for _, test := range tests {
+		session, err := mgo.Dial(test.url)
+		c.Assert(err, IsNil)
+		defer session.Close()
+
+		c.Logf("test: %#v", test)
+		c.Assert(session.DB("").Name, Equals, test.db)
+
+		scopy := session.Copy()
+		c.Check(scopy.DB("").Name, Equals, test.db)
+		scopy.Close()
+	}
+}

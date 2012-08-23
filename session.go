@@ -63,6 +63,7 @@ type Session struct {
 	queryConfig    query
 	safeOp         *queryOp
 	syncTimeout    time.Duration
+	defaultdb      string
 	urlauth        *authInfo
 	auth           []authInfo
 }
@@ -184,7 +185,7 @@ func Dial(url string) (session *Session, err error) {
 //
 // See SetSyncTimeout for customizing the timeout for the session.
 func DialWithTimeout(url string, timeout time.Duration) (session *Session, err error) {
-	servers, auth, options, err := parseURL(url)
+	servers, auth, db, options, err := parseURL(url)
 	if err != nil {
 		return nil, err
 	}
@@ -207,9 +208,11 @@ func DialWithTimeout(url string, timeout time.Duration) (session *Session, err e
 	}
 	cluster := newCluster(servers, direct)
 	session = newSession(Eventual, cluster, nil, timeout)
+	session.defaultdb = db
 	if auth.user != "" {
 		session.urlauth = &auth
 		session.auth = []authInfo{auth}
+		logf("auth.db: %q", auth.db)
 	}
 	cluster.Release()
 
@@ -229,7 +232,7 @@ func isOptSep(c rune) bool {
 	return c == ';' || c == '&'
 }
 
-func parseURL(url string) (servers []string, auth authInfo, options map[string]string, err error) {
+func parseURL(url string) (servers []string, auth authInfo, db string, options map[string]string, err error) {
 	if strings.HasPrefix(url, "mongodb://") {
 		url = url[10:]
 	}
@@ -258,17 +261,15 @@ func parseURL(url string) (servers []string, auth authInfo, options map[string]s
 	}
 	if c := strings.Index(url, "/"); c != -1 {
 		if c != len(url)-1 {
-			auth.db = url[c+1:]
+			db = url[c+1:]
 		}
 		url = url[:c]
-	}
-	if auth.user == "" {
-		if auth.db != "" {
-			err = errors.New("Database name only makes sense with credentials")
-			return
+		if db != "" {
+			auth.db = db
 		}
-	} else if auth.db == "" {
-		auth.db = "admin"
+	}
+	if db == "" {
+		db = "test"
 	}
 	servers = strings.Split(url, ",")
 	// XXX This is untested. The test suite doesn't use the standard port.
@@ -306,19 +307,10 @@ func copySession(session *Session, keepAuth bool) (s *Session) {
 	} else if session.urlauth != nil {
 		auth = []authInfo{*session.urlauth}
 	}
-	// Copy everything but the mutex.
-	s = &Session{
-		cluster_:       session.cluster_,
-		socket:         session.socket,
-		socketIsMaster: session.socketIsMaster,
-		slaveOk:        session.slaveOk,
-		consistency:    session.consistency,
-		queryConfig:    session.queryConfig,
-		safeOp:         session.safeOp,
-		syncTimeout:    session.syncTimeout,
-		urlauth:        session.urlauth,
-		auth:           auth,
-	}
+	scopy := *session
+	scopy.m = sync.RWMutex{}
+	scopy.auth = auth
+	s = &scopy
 	debugf("New session %p on cluster %p (copy from %p)", s, cluster, session)
 	runtime.SetFinalizer(s, finalizeSession)
 	return s
@@ -337,16 +329,24 @@ func (s *Session) LiveServers() (addrs []string) {
 	return addrs
 }
 
-// DB returns a value representing the named database.
-// Creating this value is a very lightweight operation, and involves
-// no network communication.
+// DB returns a value representing the named database. If name
+// is empty, the database name provided in the dialed URL is
+// used instead. If that is also empty, "test" is used as a
+// fallback in a way equivalent to the mongo shell.
+//
+// Creating this value is a very lightweight operation, and
+// involves no network communication.
 func (s *Session) DB(name string) *Database {
+	if name == "" {
+		name = s.defaultdb
+	}
 	return &Database{s, name}
 }
 
 // C returns a value representing the named collection.
-// Creating this object is a very lightweight operation, and involves
-// no network communication.
+//
+// Creating this value is a very lightweight operation, and
+// involves no network communication.
 func (db *Database) C(name string) *Collection {
 	return &Collection{db, name, db.Name + "." + name}
 }
