@@ -30,6 +30,24 @@ const (
 	tapplied   state = 6 // All changes applied 
 )
 
+func (s state) String() string {
+	switch s {
+	case tpreparing:
+		return "preparing"
+	case tprepared:
+		return "prepared"
+	case taborting:
+		return "aborting"
+	case tapplying:
+		return "applying"
+	case taborted:
+		return "aborted"
+	case tapplied:
+		return "applied"
+	}
+	panic(fmt.Errorf("unknown state: %d", s))
+}
+
 var rand *mrand.Rand
 var randmu sync.Mutex
 
@@ -185,6 +203,14 @@ func (op *Operation) name() string {
 	return "none"
 }
 
+const (
+	// DocExists and DocMissing may be used on an operation's
+	// Assert value to assert that the document with the given
+	// DocId exists or does not exist, respectively.
+	DocExists  = "d+"
+	DocMissing = "d-"
+)
+
 // A Runner applies operations as part of a transaction onto any number
 // of collections within a database. See the Run method for details.
 type Runner struct {
@@ -286,7 +312,8 @@ func (r *Runner) Run(ops []Operation, id bson.ObjectId, info interface{}) (err e
 // ResumeAll resumes all pending transactions. All ErrAborted errors
 // from individual transactions are ignored.
 func (r *Runner) ResumeAll() (err error) {
-	iter := r.tc.Find(bson.D{{"state", bson.D{{"$in", []state{tpreparing, tprepared, tapplying}}}}}).Iter()
+	debugf("Resuming all unfinished transactions")
+	iter := r.tc.Find(bson.D{{"s", bson.D{{"$in", []state{tpreparing, tprepared, tapplying}}}}}).Iter()
 	var t transaction
 	for iter.Next(&t) {
 		if t.State == tapplied || t.State == taborted {
@@ -335,11 +362,6 @@ func (r *Runner) load(id bson.ObjectId) (*transaction, error) {
 	}
 	return &t, nil
 }
-
-const (
-	DocMissing = "missing"
-	DocExists  = "exists"
-)
 
 type docKey struct {
 	Collection string

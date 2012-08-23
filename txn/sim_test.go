@@ -10,7 +10,10 @@ import (
 	"time"
 )
 
-var duration = flag.Duration("duration", 200*time.Millisecond, "duration for each simulation")
+var (
+	duration = flag.Duration("duration", 200*time.Millisecond, "duration for each simulation")
+	seed = flag.Int64("seed", 0, "seed for rand")
+)
 
 type params struct {
 	killChance     float64
@@ -142,7 +145,10 @@ type balanceChange struct {
 }
 
 func simulate(c *C, params params) {
-	seed := time.Now().UnixNano()
+	seed := *seed
+	if seed == 0 {
+		seed = time.Now().UnixNano()
+	}
 	rand.Seed(seed)
 	c.Logf("Seed: %v", seed)
 
