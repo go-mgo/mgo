@@ -59,12 +59,17 @@ func wrapInDoc(data string) string {
 func makeZeroDoc(value interface{}) (zero interface{}) {
 	v := reflect.ValueOf(value)
 	t := v.Type()
-	if t.Kind() == reflect.Map {
+	switch t.Kind() {
+	case reflect.Map:
 		mv := reflect.MakeMap(t)
 		zero = mv.Interface()
-	} else {
+	case reflect.Ptr:
 		pv := reflect.New(v.Type().Elem())
 		zero = pv.Interface()
+	case reflect.Slice:
+		zero = reflect.New(t).Interface()
+	default:
+		panic("unsupported doc type")
 	}
 	return zero
 }
@@ -424,8 +429,6 @@ type ignoreField struct {
 	Ignore string `bson:"-"`
 	After  string
 }
-
-type MyD []bson.DocElem
 
 var marshalItems = []testItemType{
 	// Ordered document dump.  Will unmarshal as a dictionary by default.
@@ -921,6 +924,8 @@ type inlineDupName struct {
 
 type MyBytes []byte
 type MyBool bool
+type MyD []bson.DocElem
+type MyM map[string]interface{}
 
 var truevar = true
 var falsevar = false
@@ -1100,6 +1105,14 @@ var twoWayCrossItems = []crossTypeItem{
 	// zero time + 1 second + 1 millisecond; overflows int64 as nanoseconds
 	{&struct{ V time.Time }{time.Unix(-62135596799, 1e6).Local()},
 		map[string]interface{}{"v": time.Unix(-62135596799, 1e6).Local()}},
+
+	// bson.D <=> []DocElem
+	{&bson.D{{"a", bson.D{{"b", 1}, {"c", 2}}}}, &bson.D{{"a", bson.D{{"b", 1}, {"c", 2}}}}},
+	{&bson.D{{"a", bson.D{{"b", 1}, {"c", 2}}}}, &MyD{{"a", MyD{{"b", 1}, {"c", 2}}}}},
+
+	// bson.M <=> map
+	{bson.M{"a": bson.M{"b": 1, "c": 2}}, MyM{"a": MyM{"b": 1, "c": 2}}},
+	{bson.M{"a": bson.M{"b": 1, "c": 2}}, map[string]interface{}{"a": map[string]interface{}{"b": 1, "c": 2}}},
 }
 
 // Same thing, but only one way (obj1 => obj2).

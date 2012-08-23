@@ -37,8 +37,15 @@ import (
 )
 
 type decoder struct {
-	in []byte
-	i  int
+	in      []byte
+	i       int
+	docType reflect.Type
+}
+
+var typeM = reflect.TypeOf(M{})
+
+func newDecoder(in []byte) *decoder {
+	return &decoder{in, 0, typeM}
 }
 
 // --------------------------------------------------------------------------
@@ -136,22 +143,34 @@ func (d *decoder) readDocTo(out reflect.Value) {
 	var fieldsMap map[string]fieldInfo
 	start := d.i
 
-	switch outk {
-	case reflect.Interface:
+	origout := out
+	if outk == reflect.Interface {
 		if !out.IsNil() {
 			panic("Found non-nil interface. Please contact the developers.")
 		}
-		mv := reflect.ValueOf(make(M))
-		out.Set(mv)
-		out = mv
+		if d.docType.Kind() == reflect.Map {
+			mv := reflect.MakeMap(d.docType)
+			out.Set(mv)
+			out = mv
+		} else {
+			dv := reflect.New(d.docType).Elem()
+			out.Set(dv)
+			out = dv
+		}
 		outt = out.Type()
 		outk = outt.Kind()
-		fallthrough
+	}
+
+	docType := d.docType
+	switch outk {
 	case reflect.Map:
 		if outt.Key().Kind() != reflect.String {
 			panic("BSON map must have string keys. Got: " + outt.String())
 		}
 		elemType = outt.Elem()
+		if elemType == typeIface {
+			d.docType = outt
+		}
 		if out.IsNil() {
 			out.Set(reflect.MakeMap(out.Type()))
 		} else if out.Len() > 0 {
@@ -169,6 +188,12 @@ func (d *decoder) readDocTo(out reflect.Value) {
 			fieldsMap = sinfo.FieldsMap
 			out.Set(sinfo.Zero)
 		}
+	case reflect.Slice:
+		if outt.Elem() == typeDocElem {
+			origout.Set(d.readDocElems(outt))
+			return
+		}
+		fallthrough
 	default:
 		panic("Unsupported document type for unmarshalling: " + out.Type().String())
 	}
@@ -204,6 +229,7 @@ func (d *decoder) readDocTo(out reflect.Value) {
 					d.dropElem(kind)
 				}
 			}
+		case reflect.Slice:
 		}
 
 		if d.i >= end {
@@ -214,12 +240,10 @@ func (d *decoder) readDocTo(out reflect.Value) {
 	if d.i != end {
 		corrupted()
 	}
+	d.docType = docType
 
-	switch outk {
-	case reflect.Struct:
-		if outt == typeRaw {
-			out.Set(reflect.ValueOf(Raw{0x03, d.in[start:d.i]}))
-		}
+	if outt == typeRaw {
+		out.Set(reflect.ValueOf(Raw{0x03, d.in[start:d.i]}))
 	}
 }
 
@@ -296,9 +320,12 @@ func (d *decoder) readSliceDoc(t reflect.Type) interface{} {
 }
 
 var typeSlice = reflect.TypeOf([]interface{}{})
+var typeIface = typeSlice.Elem()
 
-func (d *decoder) readDocD() interface{} {
-	slice := make(D, 0, 8)
+func (d *decoder) readDocElems(typ reflect.Type) reflect.Value {
+	docType := d.docType
+	d.docType = typ
+	slice := make([]DocElem, 0, 8)
 	d.readDocWith(func(kind byte, name string) {
 		e := DocElem{Name: name}
 		v := reflect.ValueOf(&e.Value)
@@ -306,7 +333,10 @@ func (d *decoder) readDocD() interface{} {
 			slice = append(slice, e)
 		}
 	})
-	return slice
+	slicev := reflect.New(typ).Elem()
+	slicev.Set(reflect.ValueOf(slice))
+	d.docType = docType
+	return slicev
 }
 
 func (d *decoder) readDocWith(f func(kind byte, name string)) {
@@ -354,7 +384,7 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 			d.readDocTo(out)
 		default:
 			if _, ok := out.Interface().(D); ok {
-				out.Set(reflect.ValueOf(d.readDocD()))
+				out.Set(d.readDocElems(out.Type()))
 			} else {
 				d.readDocTo(blackHole)
 			}

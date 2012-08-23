@@ -435,7 +435,7 @@ func Unmarshal(in []byte, out interface{}) (err error) {
 	v := reflect.ValueOf(out)
 	switch v.Kind() {
 	case reflect.Map, reflect.Ptr:
-		d := &decoder{in: in}
+		d := newDecoder(in)
 		d.readDocTo(v)
 	case reflect.Struct:
 		return errors.New("Unmarshal can't deal with struct values. Use a pointer.")
@@ -458,7 +458,7 @@ func (raw Raw) Unmarshal(out interface{}) (err error) {
 		v = v.Elem()
 		fallthrough
 	case reflect.Map:
-		d := &decoder{in: raw.Data}
+		d := newDecoder(raw.Data)
 		good := d.readElemTo(v, raw.Kind)
 		if !good {
 			return &TypeError{v.Type(), raw.Kind}

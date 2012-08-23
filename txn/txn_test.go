@@ -212,3 +212,25 @@ func (s *S) TestErrors(c *C) {
 		c.Assert(err, ErrorMatches, "error in transaction op 0: .*")
 	}
 }
+
+func (s *S) TestAssertNestedOr(c *C) {
+	// Assert uses $or internally. Ensure nesting works.
+	err := s.accounts.Insert(M{"_id": 0, "balance": 300})
+	c.Assert(err, IsNil)
+
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Assert: bson.D{{"$or", []bson.D{{{"balance", 100}}, {{"balance", 300}}}}},
+		Update: bson.D{{"$inc", bson.D{{"balance", 100}}}},
+	}}
+
+	mgo.SetDebug(true)
+	err = s.runner.Run(ops, "", nil)
+	c.Assert(err, IsNil)
+
+	var account Account
+	err = s.accounts.FindId(0).One(&account)
+	c.Assert(err, IsNil)
+	c.Assert(account.Balance, Equals, 400)
+}
