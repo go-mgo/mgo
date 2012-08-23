@@ -173,7 +173,6 @@ func (s *S) TestInfo(c *C) {
 	err := s.runner.Run(ops, id, M{"n": 42})
 	c.Assert(err, IsNil)
 
-	mgo.SetDebug(true)
 	var t struct{ Info struct{ N int } }
 	err = s.tc.FindId(id).One(&t)
 	c.Assert(err, IsNil)

@@ -49,7 +49,6 @@ type transaction struct {
 	Ops    []Operation
 	Nonce  string  `bson:",omitempty"`
 	Revnos []int64 `bson:",omitempty"`
-	//MTime  time.Time
 
 	docKeysCached docKeys
 }
@@ -246,8 +245,6 @@ func (r *Runner) Run(ops []Operation, id bson.ObjectId, info interface{}) (err e
 		Ops:   ops,
 		State: tpreparing,
 		Info:  info,
-		// Mtime
-		// Info
 	}
 	if err = r.tc.Insert(&t); err != nil {
 		return err
