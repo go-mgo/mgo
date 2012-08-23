@@ -321,8 +321,8 @@ RetryDoc:
 
 	// Save the prepared nonce onto t.
 	nonce := tt.nonce()
-	qdoc := bson.D{{"_id", t.Id}, {"state", tpreparing}}
-	udoc := bson.D{{"$set", bson.D{{"state", tprepared}, {"nonce", nonce}}}}
+	qdoc := bson.D{{"_id", t.Id}, {"s", tpreparing}}
+	udoc := bson.D{{"$set", bson.D{{"s", tprepared}, {"n", nonce}}}}
 	chaos("")
 	err = f.tc.Update(qdoc, udoc)
 	if err == nil {
@@ -509,7 +509,7 @@ NextDoc:
 func (f *flusher) reload(t *transaction) error {
 	var newt transaction
 	query := f.tc.FindId(t.Id)
-	query.Select(bson.D{{"state", 1}, {"nonce", 1}, {"revnos", 1}})
+	query.Select(bson.D{{"s", 1}, {"n", 1}, {"r", 1}})
 	if err := query.One(&newt); err != nil {
 		return fmt.Errorf("failed to reload transaction: %v", err)
 	}
@@ -588,8 +588,8 @@ func (f *flusher) assert(t *transaction, revnos []int64, pull map[bson.ObjectId]
 func (f *flusher) abortOrReload(t *transaction, revnos []int64, pull map[bson.ObjectId]*transaction) (err error) {
 	f.debugf("Aborting or reloading %s (was %q)", t, t.State)
 	if t.State == tprepared {
-		qdoc := bson.D{{"_id", t.Id}, {"state", tprepared}}
-		udoc := bson.D{{"$set", bson.D{{"state", taborting}}}}
+		qdoc := bson.D{{"_id", t.Id}, {"s", tprepared}}
+		udoc := bson.D{{"$set", bson.D{{"s", taborting}}}}
 		chaos("")
 		if err = f.tc.Update(qdoc, udoc); err == nil {
 			t.State = taborting
@@ -634,7 +634,7 @@ func (f *flusher) abortOrReload(t *transaction, revnos []int64, pull map[bson.Ob
 			}
 		}
 	}
-	udoc := bson.D{{"$set", bson.D{{"state", taborted}}}}
+	udoc := bson.D{{"$set", bson.D{{"s", taborted}}}}
 	chaos("")
 	if err := f.tc.UpdateId(t.Id, udoc); err != nil && err != mgo.ErrNotFound {
 		return err
@@ -656,8 +656,8 @@ func (f *flusher) checkpoint(t *transaction, revnos []int64) error {
 	}
 
 	// Save in t the txn-revno values the transaction must run on.
-	qdoc := bson.D{{"_id", t.Id}, {"state", tprepared}}
-	udoc := bson.D{{"$set", bson.D{{"state", tapplying}, {"revnos", revnos}}}}
+	qdoc := bson.D{{"_id", t.Id}, {"s", tprepared}}
+	udoc := bson.D{{"$set", bson.D{{"s", tapplying}, {"r", revnos}}}}
 	chaos("checkpoint")
 	err := f.tc.Update(qdoc, udoc)
 	if err == nil {
@@ -745,7 +745,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 				nonce := newNonce()
 				stash := txnInfo{}
 				change := mgo.Change{
-					Update: bson.D{{"$push", bson.D{{"nonce", nonce}}}},
+					Update: bson.D{{"$push", bson.D{{"n", nonce}}}},
 					Upsert: true,
 					ReturnNew: true,
 				}
@@ -768,12 +768,12 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 						if revno == 0 {
 							// Missing revno in stash means -1.
 							set = bson.D{{"txn-queue", info.Queue}}
-							unset = bson.D{{"nonce", 1}, {"txn-revno", 1}}
+							unset = bson.D{{"n", 1}, {"txn-revno", 1}}
 						} else {
 							set = bson.D{{"txn-queue", info.Queue}, {"txn-revno", -revno-1}}
-							unset = bson.D{{"nonce", 1}}
+							unset = bson.D{{"n", 1}}
 						}
-						qdoc := bson.D{{"_id", dkey}, {"nonce", nonce}}
+						qdoc := bson.D{{"_id", dkey}, {"n", nonce}}
 						udoc := bson.D{{"$set", set}, {"$unset", unset}}
 						if err = f.sc.Update(qdoc, udoc); err == nil {
 							updated = true
@@ -854,7 +854,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 	// it has been applied and mark it at such.
 	chaos("")
 	f.debugf("Marking %s as applied", t)
-	f.tc.Update(bson.D{{"_id", t.Id}, {"state", tapplying}}, bson.D{{"$set", bson.D{{"state", tapplied}}}})
+	f.tc.Update(bson.D{{"_id", t.Id}, {"s", tapplying}}, bson.D{{"$set", bson.D{{"s", tapplied}}}})
 	return nil
 }
 

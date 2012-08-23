@@ -19,15 +19,15 @@ import (
 	mrand "math/rand"
 )
 
-type state string
+type state int
 
 const (
-	tpreparing state = "preparing" // One or more documents not prepared
-	tprepared  state = "prepared"  // Prepared but not yet ready to run
-	tapplying  state = "applying"  // Changes are in progress
-	taborting  state = "aborting"  // Assertions failed, cleaning up
-	tapplied   state = "applied"   // All changes applied 
-	taborted   state = "aborted"   // Pre-conditions failed, nothing done
+	tpreparing state = 1 // One or more documents not prepared
+	tprepared  state = 2 // Prepared but not yet ready to run
+	taborting  state = 3 // Assertions failed, cleaning up
+	tapplying  state = 4 // Changes are in progress
+	taborted   state = 5 // Pre-conditions failed, nothing done
+	tapplied   state = 6 // All changes applied 
 )
 
 var rand *mrand.Rand
@@ -44,11 +44,11 @@ func init() {
 
 type transaction struct {
 	Id     bson.ObjectId `bson:"_id"`
-	State  state
-	Info   interface{} `bson:",omitempty"`
-	Ops    []Operation
-	Nonce  string  `bson:",omitempty"`
-	Revnos []int64 `bson:",omitempty"`
+	State  state         `bson:"s"`
+	Info   interface{}   `bson:"i,omitempty"`
+	Ops    []Operation   `bson:"o"`
+	Nonce  string        `bson:"n,omitempty"`
+	Revnos []int64       `bson:"r,omitempty"`
 
 	docKeysCached docKeys
 }
@@ -124,8 +124,8 @@ func (tt token) nonce() string     { return string(tt[25:]) }
 type Operation struct {
 	// Collection and DocId together identify the document this
 	// operation refers to. DocId is matched against "_id".
-	Collection string
-	DocId      interface{}
+	Collection string      `bson:"c"`
+	DocId      interface{} `bson:"d"`
 
 	// Assert optionally holds a query document that is used to
 	// test the operation document at the time the transaction is
@@ -135,7 +135,7 @@ type Operation struct {
 	// fails. This is also the only way to prevent a transaction
 	// from being being applied (the transaction continues despite
 	// the outcome of Insert, Update, and Remove).
-	Assert interface{}
+	Assert interface{} `bson:"a,omitempty"`
 
 	// The Insert, Update and Remove fields describe the mutation
 	// intended by the operation. At most one of them may be set
@@ -158,9 +158,9 @@ type Operation struct {
 	// The transaction continues even if the document doesn't yet
 	// exist at the time the transaction is applied. Use Assert
 	// with txn.DocExists to make sure it will be removed.
-	Insert interface{}
-	Update interface{}
-	Remove bool
+	Insert interface{} `bson:"i,omitempty"`
+	Update interface{} `bson:"u,omitempty"`
+	Remove bool        `bson:"r,omitempty"`
 }
 
 func (op *Operation) isChange() bool {
@@ -213,7 +213,7 @@ var ErrAborted = fmt.Errorf("transaction aborted")
 // down ahead of time to later verify the success of the change and
 // resume it, when the procedure is interrupted for any reason. If
 // empty, a random id will be generated.
-// The info parameter, if not nil, is included under the "info"
+// The info parameter, if not nil, is included under the "i"
 // field of the transaction document.
 //
 // Operations across documents are not atomically applied, but are

@@ -173,8 +173,8 @@ func (s *S) TestInfo(c *C) {
 	err := s.runner.Run(ops, id, M{"n": 42})
 	c.Assert(err, IsNil)
 
-	var t struct{ Info struct{ N int } }
+	var t struct{ I struct{ N int } }
 	err = s.tc.FindId(id).One(&t)
 	c.Assert(err, IsNil)
-	c.Assert(t.Info.N, Equals, 42)
+	c.Assert(t.I.N, Equals, 42)
 }
