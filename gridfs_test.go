@@ -177,7 +177,7 @@ func (s *S) TestGridFSFileDetails(c *C) {
 		"md5":         "1e50210a0202497fb79bc38b6ade6c34",
 		"filename":    "myfile2.txt",
 		"contentType": "text/plain",
-		"metadata":    bson.M{"any": "thing"},
+		"metadata":    M{"any": "thing"},
 	}
 	c.Assert(result, DeepEquals, expected)
 }

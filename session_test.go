@@ -889,7 +889,7 @@ func (s *S) TestQueryHint(c *C) {
 	err = coll.Find(nil).Hint("a").Explain(m)
 	c.Assert(err, IsNil)
 	c.Assert(m["indexBounds"], NotNil)
-	c.Assert(m["indexBounds"].(bson.M)["a"], NotNil)
+	c.Assert(m["indexBounds"].(M)["a"], NotNil)
 }
 
 func (s *S) TestFindOneNotFound(c *C) {
@@ -2097,7 +2097,7 @@ func (s *S) TestEnsureIndex(c *C) {
 	delete(result1, "v")
 	expected1 := M{
 		"name":       "a_1",
-		"key":        bson.M{"a": 1},
+		"key":        M{"a": 1},
 		"ns":         "mydb.mycoll",
 		"background": true,
 	}
@@ -2106,7 +2106,7 @@ func (s *S) TestEnsureIndex(c *C) {
 	delete(result2, "v")
 	expected2 := M{
 		"name":     "a_1_b_-1",
-		"key":      bson.M{"a": 1, "b": -1},
+		"key":      M{"a": 1, "b": -1},
 		"ns":       "mydb.mycoll",
 		"unique":   true,
 		"dropDups": true,
@@ -2116,7 +2116,7 @@ func (s *S) TestEnsureIndex(c *C) {
 	delete(result3, "v")
 	expected3 := M{
 		"name": "loc_",
-		"key":  bson.M{"loc": "2d"},
+		"key":  M{"loc": "2d"},
 		"ns":   "mydb.mycoll",
 		"min":  -500,
 		"max":  500,
@@ -2196,7 +2196,7 @@ func (s *S) TestEnsureIndexKey(c *C) {
 	delete(result1, "v")
 	expected1 := M{
 		"name": "a_1",
-		"key":  bson.M{"a": 1},
+		"key":  M{"a": 1},
 		"ns":   "mydb.mycoll",
 	}
 	c.Assert(result1, DeepEquals, expected1)
@@ -2204,7 +2204,7 @@ func (s *S) TestEnsureIndexKey(c *C) {
 	delete(result2, "v")
 	expected2 := M{
 		"name": "a_1_b_-1",
-		"key":  bson.M{"a": 1, "b": -1},
+		"key":  M{"a": 1, "b": -1},
 		"ns":   "mydb.mycoll",
 	}
 	c.Assert(result2, DeepEquals, expected2)
