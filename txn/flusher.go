@@ -722,7 +722,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 		}
 		pullAll := tokensToPull(dqueue, pull, dontPull)
 
-		var m map[string]interface{}
+		var d bson.D
 		var outcome string
 		var err error
 		switch {
@@ -730,13 +730,17 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 			if revno < 0 {
 				err = mgo.ErrNotFound
 			} else {
-				if m, err = objToMap(op.Update); err != nil {
+				if d, err = objToDoc(op.Update); err != nil {
 					return err
 				}
-				addToMap(m, "$pullAll", bson.D{{"txn-queue", pullAll}})
-				addToMap(m, "$inc", bson.D{{"txn-revno", 1}})
+				if d, err = addToDoc(d, "$pullAll", bson.D{{"txn-queue", pullAll}}); err != nil {
+					return err
+				}
+				if d, err = addToDoc(d, "$inc", bson.D{{"txn-revno", 1}}); err != nil {
+					return err
+				}
 				chaos("")
-				err = c.Update(qdoc, m)
+				err = c.Update(qdoc, d)
 			}
 		case op.Remove:
 			if revno < 0 {
@@ -793,7 +797,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 			if revno >= 0 {
 				err = mgo.ErrNotFound
 			} else {
-				if m, err = objToMap(op.Insert); err != nil {
+				if d, err = objToDoc(op.Insert); err != nil {
 					return err
 				}
 				change := mgo.Change{
@@ -804,16 +808,14 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 				var info txnInfo
 				if _, err = f.sc.Find(qdoc).Apply(change, &info); err == nil {
 					f.debugf("Stash for document %v has revno %d and queue: %v", dkey, info.Revno, info.Queue)
-					m["_id"] = op.Id
-					m["txn-revno"] = -revno+1
-					m["txn-queue"] = info.Queue
+					d = setInDoc(d, bson.D{{"_id", op.Id}, {"txn-revno", -revno+1}, {"txn-queue", info.Queue}})
 					// Unlikely yet unfortunate race in here if this gets seriously
 					// delayed. If someone inserts+removes meanwhile, this will
 					// reinsert, and there's no way to avoid that while keeping the
 					// collection clean or compromising sharding. applyOps can solve
 					// the former, but it can't shard (SERVER-1439).
 					chaos("insert")
-					err = c.Insert(m)
+					err = c.Insert(d)
 					if lerr, ok := err.(*mgo.LastError); err == nil || ok && lerr.Code == 11000 {
 						if err == nil {
 							f.debugf("New document %v inserted with revno %d and queue: %v", dkey, info.Revno, info.Queue)
@@ -881,31 +883,48 @@ func tokensToPull(dqueue []token, pull map[bson.ObjectId]*transaction, dontPull 
 	return result
 }
 
-func objToMap(obj interface{}) (m bson.M, err error) {
+func objToDoc(obj interface{}) (d bson.D, err error) {
 	data, err := bson.Marshal(obj)
 	if err != nil {
 		return nil, err
 	}
-	err = bson.Unmarshal(data, &m)
+	err = bson.Unmarshal(data, &d)
 	if err != nil {
 		return nil, err
 	}
-	return m, err
+	return d, err
 }
 
-func addToMap(m map[string]interface{}, key string, add bson.D) error {
-	if old, ok := m[key]; ok {
-		if oldm, ok := old.(bson.M); ok {
-			for _, elem := range add {
-				oldm[elem.Name] = elem.Value
-			}
-		} else {
-			return fmt.Errorf("invalid %q value in change document: %#v", key, old)
+func addToDoc(doc bson.D, key string, add bson.D) (bson.D, error) {
+	for i := range doc {
+		elem := &doc[i]
+		if elem.Name != key {
+			continue
 		}
-	} else {
-		m[key] = add
+		if old, ok := elem.Value.(bson.D); ok {
+			elem.Value = append(old, add...)
+			return doc, nil
+		} else {
+			return nil, fmt.Errorf("invalid %q value in change document: %#v", key, elem.Value)
+		}
 	}
-	return nil
+	return append(doc, bson.DocElem{key, add}), nil
+}
+
+func setInDoc(doc bson.D, set bson.D) bson.D {
+	dlen := len(doc)
+NextS:
+	for s := range set {
+		sname := set[s].Name
+		for d := 0; d < dlen; d++ {
+			if doc[d].Name == sname {
+				doc[d].Value = set[s].Value
+				continue NextS
+			}
+		}
+		doc = append(doc, set[s])
+	}
+	return doc
 }
 
 func hasToken(tokens []token, tt token) bool {

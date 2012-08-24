@@ -237,10 +237,11 @@ func (s *S) TestAssertNestedOr(c *C) {
 func (s *S) TestVerifyFieldOrdering(c *C) {
 	// Used to have a map in certain operations, which means
 	// the ordering of fields would be messed up.
+	fields := bson.D{{"a", 1}, {"b", 2}, {"c", 3}}
 	ops := []txn.Op{{
 		C:      "accounts",
 		Id:     0,
-		Insert: bson.D{{"a", 1}, {"b", 2}, {"c", 3}},
+		Insert: fields,
 	}}
 
 	err := s.runner.Run(ops, "", nil)
@@ -257,6 +258,5 @@ func (s *S) TestVerifyFieldOrdering(c *C) {
 			filtered = append(filtered, e)
 		}
 	}
-
-	c.Assert(filtered, DeepEquals, nil)
+	c.Assert(filtered, DeepEquals, fields)
 }
