@@ -225,7 +225,6 @@ func (s *S) TestAssertNestedOr(c *C) {
 		Update: bson.D{{"$inc", bson.D{{"balance", 100}}}},
 	}}
 
-	mgo.SetDebug(true)
 	err = s.runner.Run(ops, "", nil)
 	c.Assert(err, IsNil)
 
@@ -233,4 +232,31 @@ func (s *S) TestAssertNestedOr(c *C) {
 	err = s.accounts.FindId(0).One(&account)
 	c.Assert(err, IsNil)
 	c.Assert(account.Balance, Equals, 400)
+}
+
+func (s *S) TestVerifyFieldOrdering(c *C) {
+	// Used to have a map in certain operations, which means
+	// the ordering of fields would be messed up.
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Insert: bson.D{{"a", 1}, {"b", 2}, {"c", 3}},
+	}}
+
+	err := s.runner.Run(ops, "", nil)
+	c.Assert(err, IsNil)
+
+	var d bson.D
+	err = s.accounts.FindId(0).One(&d)
+	c.Assert(err, IsNil)
+
+	var filtered bson.D
+	for _, e := range d {
+		switch e.Name {
+		case "a", "b", "c":
+			filtered = append(filtered, e)
+		}
+	}
+
+	c.Assert(filtered, DeepEquals, nil)
 }

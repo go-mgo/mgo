@@ -881,7 +881,7 @@ func tokensToPull(dqueue []token, pull map[bson.ObjectId]*transaction, dontPull 
 	return result
 }
 
-func objToMap(obj interface{}) (m map[string]interface{}, err error) {
+func objToMap(obj interface{}) (m bson.M, err error) {
 	data, err := bson.Marshal(obj)
 	if err != nil {
 		return nil, err
