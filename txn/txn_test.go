@@ -122,7 +122,7 @@ func (s *S) TestRemove(c *C) {
 func (s *S) TestQueueStashing(c *C) {
 	txn.SetChaos(txn.Chaos{
 		KillChance: 1,
-		Breakpoint: "checkpoint",
+		Breakpoint: "set-applying",
 	})
 
 	opses := [][]txn.Op{{{
@@ -259,4 +259,80 @@ func (s *S) TestVerifyFieldOrdering(c *C) {
 		}
 	}
 	c.Assert(filtered, DeepEquals, fields)
+}
+
+func (s *S) TestChangeLog(c *C) {
+	chglog := s.db.C("chglog")
+	s.runner.ChangeLog(chglog)
+
+	ops := []txn.Op{{
+		C:	"debts",
+		Id:	0,
+		Assert: txn.DocMissing,
+	}, {
+		C:      "accounts",
+		Id:     0,
+		Insert: M{"balance": 300},
+	}, {
+		C:      "accounts",
+		Id:     1,
+		Insert: M{"balance": 300},
+	}, {
+		C:	"people",
+		Id:	"joe",
+		Insert: M{"accounts": []int64{0, 1}},
+	}}
+	id := bson.NewObjectId()
+	err := s.runner.Run(ops, id, nil)
+	c.Assert(err, IsNil)
+
+	type IdList []interface{}
+	type Log struct { Docs IdList "d"; Revnos []int64 "r" }
+	var m map[string]*Log
+	err = chglog.FindId(id).One(&m)
+	c.Assert(err, IsNil)
+
+	c.Assert(m["accounts"], DeepEquals, &Log{IdList{0, 1}, []int64{2, 2}})
+	c.Assert(m["people"], DeepEquals, &Log{IdList{"joe"}, []int64{2}})
+	c.Assert(m["debts"], IsNil)
+
+	ops = []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Update: M{"$inc": M{"balance": 100}},
+	}, {
+		C:      "accounts",
+		Id:     1,
+		Update: M{"$inc": M{"balance": 100}},
+	}}
+	id = bson.NewObjectId()
+	err = s.runner.Run(ops, id, nil)
+	c.Assert(err, IsNil)
+
+	m = nil
+	err = chglog.FindId(id).One(&m)
+	c.Assert(err, IsNil)
+
+	c.Assert(m["accounts"], DeepEquals, &Log{IdList{0, 1}, []int64{3, 3}})
+	c.Assert(m["people"], IsNil)
+
+	ops = []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Remove: true,
+	}, {
+		C:      "people",
+		Id:     "joe",
+		Remove: true,
+	}}
+	id = bson.NewObjectId()
+	err = s.runner.Run(ops, id, nil)
+	c.Assert(err, IsNil)
+
+	m = nil
+	err = chglog.FindId(id).One(&m)
+	c.Assert(err, IsNil)
+
+	c.Assert(m["accounts"], DeepEquals, &Log{IdList{0}, []int64{-4}})
+	c.Assert(m["people"], DeepEquals, &Log{IdList{"joe"}, []int64{-3}})
 }

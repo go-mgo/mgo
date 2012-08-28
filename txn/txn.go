@@ -214,8 +214,9 @@ const (
 // A Runner applies operations as part of a transaction onto any number
 // of collections within a database. See the Run method for details.
 type Runner struct {
-	tc *mgo.Collection
-	sc *mgo.Collection
+	tc *mgo.Collection // txns
+	sc *mgo.Collection // stash
+	lc *mgo.Collection // log
 }
 
 // NewRunner returns a new transaction runner that uses tc to hold its
@@ -229,7 +230,7 @@ type Runner struct {
 // will be used for implementing the transactional behavior of insert
 // and remove operations.
 func NewRunner(tc *mgo.Collection) *Runner {
-	return &Runner{tc, tc.Database.C(tc.Name + ".stash")}
+	return &Runner{tc, tc.Database.C(tc.Name + ".stash"), nil}
 }
 
 var ErrAborted = fmt.Errorf("transaction aborted")
@@ -350,6 +351,23 @@ func (r *Runner) Resume(id bson.ObjectId) (err error) {
 		panic(fmt.Errorf("invalid state for %s after flush: %q", t, t.State))
 	}
 	return nil
+}
+
+// ChangeLog enables logging of changes to the given collection
+// every time a transaction that modifies content is done being
+// applied.
+//
+// Saved documents are in the format:
+//
+//     {"_id": <txn id>, <collection>: {"d": [<doc id>, ...], "r": [<doc revno>, ...]}}
+//
+// The document revision is the value of the txn-revno field after
+// the change has been applied. Negative values indicate the document
+// was not present in the collection. Revisions will not change when
+// updates or removes are applied to missing documents or inserts are
+// attempted when the document isn't present.
+func (r *Runner) ChangeLog(logc *mgo.Collection) {
+	r.lc = logc
 }
 
 func (r *Runner) load(id bson.ObjectId) (*transaction, error) {

@@ -323,7 +323,7 @@ RetryDoc:
 	nonce := tt.nonce()
 	qdoc := bson.D{{"_id", t.Id}, {"s", tpreparing}}
 	udoc := bson.D{{"$set", bson.D{{"s", tprepared}, {"n", nonce}}}}
-	chaos("")
+	chaos("set-prepared")
 	err = f.tc.Update(qdoc, udoc)
 	if err == nil {
 		t.State = tprepared
@@ -590,7 +590,7 @@ func (f *flusher) abortOrReload(t *transaction, revnos []int64, pull map[bson.Ob
 	if t.State == tprepared {
 		qdoc := bson.D{{"_id", t.Id}, {"s", tprepared}}
 		udoc := bson.D{{"$set", bson.D{{"s", taborting}}}}
-		chaos("")
+		chaos("set-aborting")
 		if err = f.tc.Update(qdoc, udoc); err == nil {
 			t.State = taborting
 		} else if err == mgo.ErrNotFound {
@@ -635,7 +635,7 @@ func (f *flusher) abortOrReload(t *transaction, revnos []int64, pull map[bson.Ob
 		}
 	}
 	udoc := bson.D{{"$set", bson.D{{"s", taborted}}}}
-	chaos("")
+	chaos("set-aborted")
 	if err := f.tc.UpdateId(t.Id, udoc); err != nil && err != mgo.ErrNotFound {
 		return err
 	}
@@ -658,7 +658,7 @@ func (f *flusher) checkpoint(t *transaction, revnos []int64) error {
 	// Save in t the txn-revno values the transaction must run on.
 	qdoc := bson.D{{"_id", t.Id}, {"s", tprepared}}
 	udoc := bson.D{{"$set", bson.D{{"s", tapplying}, {"r", revnos}}}}
-	chaos("checkpoint")
+	chaos("set-applying")
 	err := f.tc.Update(qdoc, udoc)
 	if err == nil {
 		t.State = tapplying
@@ -680,18 +680,24 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 		pull = map[bson.ObjectId]*transaction{t.Id: t}
 	}
 
-	// Compute the last change for each doc. That's when
-	// t's id may be pulled out of txn-queue.
-	lastChange := make(map[docKey]int)
-	for i, op := range t.Ops {
+	// Compute the operation in which t's id may be pulled
+	// out of txn-queue. That's on its last change, or the
+	// first assertion.
+	pullOp := make(map[docKey]int)
+	for i := range t.Ops {
+		op := &t.Ops[i]
 		dkey := op.docKey()
-		if _, ok := lastChange[dkey]; !ok || op.isChange() {
-			lastChange[dkey] = i
+		if _, ok := pullOp[dkey]; !ok || op.isChange() {
+			pullOp[dkey] = i
 		}
 	}
 
+	logRevnos := append([]int64(nil), t.Revnos...)
+	logDoc := bson.D{{"_id", t.Id}}
+
 	tt := tokenFor(t)
-	for i, op := range t.Ops {
+	for i := range t.Ops {
+		op := &t.Ops[i]
 		dkey := op.docKey()
 		dqueue := f.queue[dkey]
 		revno := t.Revnos[i]
@@ -717,7 +723,8 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 		qdoc := bson.D{{"_id", idq}, {"txn-revno", revnoq}, {"txn-queue", tt}}
 
 		dontPull := tt
-		if lastChange[dkey] == i {
+		isPullOp := pullOp[dkey] == i
+		if isPullOp {
 			dontPull = ""
 		}
 		pullAll := tokensToPull(dqueue, pull, dontPull)
@@ -730,13 +737,15 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 			if revno < 0 {
 				err = mgo.ErrNotFound
 			} else {
+				newRevno := revno+1
+				logRevnos[i] = newRevno
 				if d, err = objToDoc(op.Update); err != nil {
 					return err
 				}
 				if d, err = addToDoc(d, "$pullAll", bson.D{{"txn-queue", pullAll}}); err != nil {
 					return err
 				}
-				if d, err = addToDoc(d, "$inc", bson.D{{"txn-revno", 1}}); err != nil {
+				if d, err = addToDoc(d, "$set", bson.D{{"txn-revno", newRevno}}); err != nil {
 					return err
 				}
 				chaos("")
@@ -746,6 +755,8 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 			if revno < 0 {
 				err = mgo.ErrNotFound
 			} else {
+				newRevno := -revno-1
+				logRevnos[i] = newRevno
 				nonce := newNonce()
 				stash := txnInfo{}
 				change := mgo.Change{
@@ -774,7 +785,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 							set = bson.D{{"txn-queue", info.Queue}}
 							unset = bson.D{{"n", 1}, {"txn-revno", 1}}
 						} else {
-							set = bson.D{{"txn-queue", info.Queue}, {"txn-revno", -revno-1}}
+							set = bson.D{{"txn-queue", info.Queue}, {"txn-revno", newRevno}}
 							unset = bson.D{{"n", 1}}
 						}
 						qdoc := bson.D{{"_id", dkey}, {"n", nonce}}
@@ -786,7 +797,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 						}
 					}
 					if updated {
-						f.debugf("Updated stash for document %v with revno %d and queue: %v", dkey, -revno-1, info.Queue)
+						f.debugf("Updated stash for document %v with revno %d and queue: %v", dkey, newRevno, info.Queue)
 					} else {
 						f.debugf("Stash for document %v was up-to-date", dkey)
 					}
@@ -797,6 +808,8 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 			if revno >= 0 {
 				err = mgo.ErrNotFound
 			} else {
+				newRevno := -revno+1
+				logRevnos[i] = newRevno
 				if d, err = objToDoc(op.Insert); err != nil {
 					return err
 				}
@@ -808,7 +821,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 				var info txnInfo
 				if _, err = f.sc.Find(qdoc).Apply(change, &info); err == nil {
 					f.debugf("Stash for document %v has revno %d and queue: %v", dkey, info.Revno, info.Queue)
-					d = setInDoc(d, bson.D{{"_id", op.Id}, {"txn-revno", -revno+1}, {"txn-queue", info.Queue}})
+					d = setInDoc(d, bson.D{{"_id", op.Id}, {"txn-revno", newRevno}, {"txn-queue", info.Queue}})
 					// Unlikely yet unfortunate race in here if this gets seriously
 					// delayed. If someone inserts+removes meanwhile, this will
 					// reinsert, and there's no way to avoid that while keeping the
@@ -827,11 +840,13 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 							f.debugf("Stash for document %v removed", dkey)
 						}
 					}
-					if lastChange[dkey] == i && len(pullAll) > 0 {
+					if pullOp[dkey] == i && len(pullAll) > 0 {
 						_ = f.sc.UpdateId(dkey, bson.D{{"$pullAll", bson.D{{"txn-queue", pullAll}}}})
 					}
 				}
 			}
+		case op.Assert != nil:
+			// TODO pullAll if pullOp[dkey] == i
 		}
 		if err == nil {
 			outcome = "DONE"
@@ -847,15 +862,44 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 		if err != nil {
 			return err
 		}
+
+		if f.lc != nil && op.isChange() {
+			// Add change to the log document.
+			var dr bson.D
+			for li := range logDoc {
+				elem := &logDoc[li]
+				if elem.Name == op.C {
+					dr = elem.Value.(bson.D)
+					break
+				}
+			}
+			if dr == nil {
+				logDoc = append(logDoc, bson.DocElem{op.C, bson.D{{"d", []interface{}{}}, {"r", []int64{}}}})
+				dr = logDoc[len(logDoc)-1].Value.(bson.D)
+			}
+			dr[0].Value = append(dr[0].Value.([]interface{}), op.Id)
+			dr[1].Value = append(dr[1].Value.([]int64), logRevnos[i])
+		}
 	}
 	t.State = tapplied
+
+	if f.lc != nil {
+		// Insert log document into the changelog collection.
+		f.debugf("Inserting %s into change log", t)
+		err := f.lc.Insert(logDoc)
+		if err != nil {
+			if lerr, ok := err.(*mgo.LastError); !ok || lerr.Code != 11000 {
+				return err
+			}
+		}
+	}
 
 	// It's been applied, so errors are ignored here. It's fine for someone
 	// else to win the race and mark it as applied, and it's also fine for
 	// it to remain pending until a later point when someone will perceive
 	// it has been applied and mark it at such.
-	chaos("")
 	f.debugf("Marking %s as applied", t)
+	chaos("set-applied")
 	f.tc.Update(bson.D{{"_id", t.Id}, {"s", tapplying}}, bson.D{{"$set", bson.D{{"s", tapplied}}}})
 	return nil
 }
