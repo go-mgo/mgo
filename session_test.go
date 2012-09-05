@@ -28,6 +28,7 @@ package mgo_test
 
 import (
 	"errors"
+	"flag"
 	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
 	. "launchpad.net/gocheck"
@@ -2303,6 +2304,7 @@ func (s *S) TestEnsureIndexGetIndexes(c *C) {
 	c.Assert(err, IsNil)
 
 	indexes, err := coll.Indexes()
+	c.Assert(err, IsNil)
 
 	c.Assert(indexes[0].Name, Equals, "_id_")
 	c.Assert(indexes[1].Name, Equals, "a_1")
@@ -2311,6 +2313,56 @@ func (s *S) TestEnsureIndexGetIndexes(c *C) {
 	c.Assert(indexes[2].Key, DeepEquals, []string{"-b"})
 	c.Assert(indexes[3].Name, Equals, "c_")
 	c.Assert(indexes[3].Key, DeepEquals, []string{"@c"})
+}
+
+var testTTL = flag.Bool("test-ttl", false, "test TTL collections (may take 1 minute)")
+
+func (s *S) TestEnsureIndexExpireAfter(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	session.SetSafe(nil)
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"n": 1, "t": time.Now().Add(-120 * time.Second)})
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{"n": 2, "t": time.Now()})
+	c.Assert(err, IsNil)
+
+	// Should fail since there are duplicated entries.
+	index := mgo.Index{
+		Key:         []string{"t"},
+		ExpireAfter: 1 * time.Minute,
+	}
+
+	err = coll.EnsureIndex(index)
+	c.Assert(err, IsNil)
+
+	indexes, err := coll.Indexes()
+	c.Assert(err, IsNil)
+	c.Assert(indexes[1].Name, Equals, "t_1")
+	c.Assert(indexes[1].ExpireAfter, Equals, 1 * time.Minute)
+
+	if *testTTL {
+		worked := false
+		stop := time.Now().Add(70 * time.Second)
+		for time.Now().Before(stop) {
+			n, err := coll.Count()
+			c.Assert(err, IsNil)
+			if n == 1 {
+				worked = true
+				break
+			}
+			c.Assert(n, Equals, 2)
+			c.Logf("Still has 2 entries...")
+			time.Sleep(1 * time.Second)
+		}
+		if !worked {
+			c.Fatalf("TTL index didn't work")
+		}
+	}
 }
 
 func (s *S) TestDistinct(c *C) {
@@ -2646,6 +2698,10 @@ func (s *S) TestFsync(c *C) {
 }
 
 func (s *S) TestPipeIter(c *C) {
+	if !s.versionAtLeast(2, 1) {
+		c.Skip("Pipe only works on 2.1+")
+	}
+
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -2670,6 +2726,10 @@ func (s *S) TestPipeIter(c *C) {
 }
 
 func (s *S) TestPipeAll(c *C) {
+	if !s.versionAtLeast(2, 1) {
+		c.Skip("Pipe only works on 2.1+")
+	}
+
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -2690,6 +2750,10 @@ func (s *S) TestPipeAll(c *C) {
 }
 
 func (s *S) TestPipeOne(c *C) {
+	if !s.versionAtLeast(2, 1) {
+		c.Skip("Pipe only works on 2.1+")
+	}
+
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()

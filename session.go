@@ -502,6 +502,7 @@ type indexSpec struct {
 	Background     bool ",omitempty"
 	Sparse         bool ",omitempty"
 	Bits, Min, Max int  ",omitempty"
+	ExpireAfter    int  "expireAfterSeconds,omitempty"
 }
 
 type Index struct {
@@ -510,6 +511,8 @@ type Index struct {
 	DropDups   bool     // Drop documents with the same index key as a previously indexed one
 	Background bool     // Build index in background and return immediately
 	Sparse     bool     // Only index documents containing the Key fields
+
+	ExpireAfter time.Duration // Periodically delete docs with indexed time.Time older than that.
 
 	Name string // Index name, computed by EnsureIndex
 
@@ -602,6 +605,12 @@ func (c *Collection) EnsureIndexKey(key ...string) error {
 // included in the index.  When using a sparse index for sorting, only indexed
 // documents will be returned.
 //
+// If ExpireAfter is non-zero, the server will periodically scan the collection
+// and remove documents containing an indexed time.Time field with a value
+// older than ExpireAfter. See the documentation for details:
+//
+//     http://docs.mongodb.org/manual/tutorial/expire-data
+//
 // Spatial indexes are also supported through that API.  Here is an example:
 //
 //     index := Index{
@@ -642,16 +651,17 @@ func (c *Collection) EnsureIndex(index Index) error {
 	}
 
 	spec := indexSpec{
-		Name:       name,
-		NS:         c.FullName,
-		Key:        realKey,
-		Unique:     index.Unique,
-		DropDups:   index.DropDups,
-		Background: index.Background,
-		Sparse:     index.Sparse,
-		Bits:       index.Bits,
-		Min:        index.Min,
-		Max:        index.Max,
+		Name:        name,
+		NS:          c.FullName,
+		Key:         realKey,
+		Unique:      index.Unique,
+		DropDups:    index.DropDups,
+		Background:  index.Background,
+		Sparse:      index.Sparse,
+		Bits:        index.Bits,
+		Min:         index.Min,
+		Max:         index.Max,
+		ExpireAfter: int(index.ExpireAfter / time.Second),
 	}
 
 	session = session.Clone()
@@ -733,12 +743,13 @@ func (c *Collection) Indexes() (indexes []Index, err error) {
 			break
 		}
 		index := Index{
-			Name:       spec.Name,
-			Key:        simpleIndexKey(spec.Key),
-			Unique:     spec.Unique,
-			DropDups:   spec.DropDups,
-			Background: spec.Background,
-			Sparse:     spec.Sparse,
+			Name:        spec.Name,
+			Key:         simpleIndexKey(spec.Key),
+			Unique:      spec.Unique,
+			DropDups:    spec.DropDups,
+			Background:  spec.Background,
+			Sparse:      spec.Sparse,
+			ExpireAfter: time.Duration(spec.ExpireAfter) * time.Second,
 		}
 		indexes = append(indexes, index)
 	}
@@ -1270,7 +1281,7 @@ func (p *Pipe) Iter() *Iter {
 		timeout: -1,
 	}
 	iter.gotReply.L = &iter.m
-	var result struct { Result []bson.Raw }
+	var result struct{ Result []bson.Raw }
 	c := p.collection
 	iter.err = c.Database.Run(bson.D{{"aggregate", c.Name}, {"pipeline", p.pipeline}}, &result)
 	if iter.err != nil {
