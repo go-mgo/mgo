@@ -2644,3 +2644,68 @@ func (s *S) TestFsync(c *C) {
 	err = session.Fsync(true)
 	c.Assert(err, IsNil)
 }
+
+func (s *S) TestPipeIter(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{40, 41, 42, 43, 44, 45, 46}
+	for _, n := range ns {
+		coll.Insert(M{"n": n})
+	}
+
+	iter := coll.Pipe([]M{{"$match": M{"n": M{"$gte": 42}}}}).Iter()
+	result := struct{ N int }{}
+	for i := 2; i < 7; i++ {
+		ok := iter.Next(&result)
+		c.Assert(ok, Equals, true)
+		c.Assert(result.N, Equals, ns[i])
+	}
+
+	c.Assert(iter.Next(&result), Equals, false)
+	c.Assert(iter.Err(), IsNil)
+}
+
+func (s *S) TestPipeAll(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{40, 41, 42, 43, 44, 45, 46}
+	for _, n := range ns {
+		coll.Insert(M{"n": n})
+	}
+
+	var result []struct{ N int }
+	err = coll.Pipe([]M{{"$match": M{"n": M{"$gte": 42}}}}).All(&result)
+	c.Assert(err, IsNil)
+	for i := 2; i < 7; i++ {
+		c.Assert(result[i-2].N, Equals, ns[i])
+	}
+}
+
+func (s *S) TestPipeOne(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	coll.Insert(M{"a": 1, "b": 2})
+
+	result := struct{ A, B int }{}
+
+	pipe := coll.Pipe([]M{{"$project": M{"a": 1, "b": M{"$add": []interface{}{"$b", 1}}}}})
+	err = pipe.One(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result.A, Equals, 1)
+	c.Assert(result.B, Equals, 3)
+
+	pipe = coll.Pipe([]M{{"$match": M{"a": 2}}})
+	err = pipe.One(&result)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+}
