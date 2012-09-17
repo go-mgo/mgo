@@ -58,11 +58,12 @@ type Getter interface {
 // value via the SetBSON method during unmarshaling, and the object
 // itself will not be changed as usual.
 //
-// If setting the value works, the method should return nil. If it returns
-// a bson.TypeError value, the BSON value will be omitted from a map or
-// slice being decoded and the unmarshalling will continue. If it returns
-// any other non-nil error, the unmarshalling procedure will stop and error
-// out with the provided value.
+// If setting the value works, the method should return nil or alternatively
+// bson.SetZero to set the respective field to its zero value (nil for
+// pointer types). If SetBSON returns a value of type bson.TypeError, the
+// BSON value will be omitted from a map or slice being decoded and the
+// unmarshalling will continue. If it returns any other non-nil error, the
+// unmarshalling procedure will stop and error out with the provided value.
 //
 // This interface is generally useful in pointer receivers, since the method
 // will want to change the receiver. A type field that implements the Setter
@@ -83,6 +84,11 @@ type Getter interface {
 type Setter interface {
 	SetBSON(raw Raw) error
 }
+
+// SetZero may be returned from a SetBSON method to have the value set to
+// its respective zero value. When used in pointer values, this will set the
+// field to nil rather than to the pre-allocated value.
+var SetZero = errors.New("set to zero")
 
 // M is a convenient alias for a map[string]interface{} map, useful for
 // dealing with BSON in a native way.  For instance:
@@ -413,10 +419,10 @@ func Marshal(in interface{}) (out []byte, err error) {
 }
 
 // Unmarshal deserializes data from in into the out value.  The out value
-// must be a map or a pointer to a struct (or a pointer to a struct pointer).
+// must be a map, a pointer to a struct, or a pointer to a bson.D value.
 // The lowercased field name is used as the key for each exported field,
 // but this behavior may be changed using the respective field tag.
-// Uninitialized pointer values are properly initialized only when necessary.
+// Pointer values are initialized when necessary.
 //
 // The target field or element types of out may not necessarily match
 // the BSON values of the provided data.  The following conversions are

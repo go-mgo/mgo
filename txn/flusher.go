@@ -195,8 +195,8 @@ const (
 )
 
 type txnInfo struct {
-	Queue []token `bson:"txn-queue"`
-	Revno int64   `bson:"txn-revno,omitempty"`
+	Queue  []token       `bson:"txn-queue"`
+	Revno  int64         `bson:"txn-revno,omitempty"`
 	Insert bson.ObjectId `bson:"txn-insert,omitempty"`
 	Remove bson.ObjectId `bson:"txn-remove,omitempty"`
 }
@@ -204,9 +204,8 @@ type txnInfo struct {
 type stashState string
 
 const (
-	stashNew stashState = ""
+	stashNew       stashState = ""
 	stashInserting stashState = "inserting"
-
 )
 
 var txnFields = bson.D{{"txn-queue", 1}, {"txn-revno", 1}, {"txn-remove", 1}, {"txn-insert", 1}}
@@ -242,7 +241,7 @@ NextDoc:
 		c := f.tc.Database.C(dkey.C)
 		cquery := c.FindId(dkey.Id).Select(txnFields)
 
-RetryDoc:
+	RetryDoc:
 		change.Upsert = false
 		chaos("")
 		if _, err := cquery.Apply(change, &info); err == nil {
@@ -403,7 +402,7 @@ func (f *flusher) rescan(t *transaction, force bool) (revnos []int64, err error)
 	for _, dkey := range dkeys {
 		retry := 0
 
-RetryDoc:
+	RetryDoc:
 		c := f.tc.Database.C(dkey.C)
 		if err := c.FindId(dkey.Id).Select(txnFields).One(&info); err == mgo.ErrNotFound {
 			// Document is missing. Look in stash.
@@ -737,7 +736,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 			if revno < 0 {
 				err = mgo.ErrNotFound
 			} else {
-				newRevno := revno+1
+				newRevno := revno + 1
 				logRevnos[i] = newRevno
 				if d, err = objToDoc(op.Update); err != nil {
 					return err
@@ -755,20 +754,20 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 			if revno < 0 {
 				err = mgo.ErrNotFound
 			} else {
-				newRevno := -revno-1
+				newRevno := -revno - 1
 				logRevnos[i] = newRevno
 				nonce := newNonce()
 				stash := txnInfo{}
 				change := mgo.Change{
-					Update: bson.D{{"$push", bson.D{{"n", nonce}}}},
-					Upsert: true,
+					Update:    bson.D{{"$push", bson.D{{"n", nonce}}}},
+					Upsert:    true,
 					ReturnNew: true,
 				}
 				if _, err = f.sc.FindId(dkey).Apply(change, &stash); err != nil {
 					return err
 				}
 				change = mgo.Change{
-					Update: bson.D{{"$set", bson.D{{"txn-remove", t.Id}}}},
+					Update:    bson.D{{"$set", bson.D{{"txn-remove", t.Id}}}},
 					ReturnNew: true,
 				}
 				var info txnInfo
@@ -808,13 +807,13 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 			if revno >= 0 {
 				err = mgo.ErrNotFound
 			} else {
-				newRevno := -revno+1
+				newRevno := -revno + 1
 				logRevnos[i] = newRevno
 				if d, err = objToDoc(op.Insert); err != nil {
 					return err
 				}
 				change := mgo.Change{
-					Update: bson.D{{"$set", bson.D{{"txn-insert", t.Id}}}},
+					Update:    bson.D{{"$set", bson.D{{"txn-insert", t.Id}}}},
 					ReturnNew: true,
 				}
 				chaos("")

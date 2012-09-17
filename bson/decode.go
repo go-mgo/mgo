@@ -472,9 +472,14 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 
 	if setter := getSetter(outt, out); setter != nil {
 		err := setter.SetBSON(Raw{kind, d.in[start:d.i]})
+		if err == SetZero {
+			out.Set(reflect.Zero(outt))
+			return true
+		}
 		if err == nil {
 			return true
-		} else if _, ok := err.(*TypeError); !ok {
+		}
+		if _, ok := err.(*TypeError); !ok {
 			panic(err)
 		}
 		return false

@@ -760,9 +760,7 @@ func (s *S) TestUnmarshalSetterOmits(c *C) {
 func (s *S) TestUnmarshalSetterErrors(c *C) {
 	boom := errors.New("BOOM")
 	setterResult["2"] = boom
-	defer func() {
-		delete(setterResult, "2")
-	}()
+	defer delete(setterResult, "2")
 
 	m := map[string]*setterType{}
 	data := wrapInDoc("\x02abc\x00\x02\x00\x00\x001\x00" +
@@ -781,6 +779,23 @@ func (s *S) TestDMap(c *C) {
 	d := bson.D{{"a", 1}, {"b", 2}}
 	c.Assert(d.Map(), DeepEquals, bson.M{"a": 1, "b": 2})
 }
+
+func (s *S) TestUnmarshalSetterSetZero(c *C) {
+	setterResult["foo"] = bson.SetZero
+	defer delete(setterResult, "field")
+
+	data, err := bson.Marshal(bson.M{"field": "foo"})
+	c.Assert(err, IsNil)
+
+	m := map[string]*setterType{}
+	err = bson.Unmarshal([]byte(data), m)
+	c.Assert(err, IsNil)
+
+	value, ok := m["field"]
+	c.Assert(ok, Equals, true)
+	c.Assert(value, IsNil)
+}
+
 
 // --------------------------------------------------------------------------
 // Getter test cases.
