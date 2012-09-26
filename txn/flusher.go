@@ -828,7 +828,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 					// the former, but it can't shard (SERVER-1439).
 					chaos("insert")
 					err = c.Insert(d)
-					if lerr, ok := err.(*mgo.LastError); err == nil || ok && lerr.Code == 11000 {
+					if err == nil || mgo.IsDup(err) {
 						if err == nil {
 							f.debugf("New document %v inserted with revno %d and queue: %v", dkey, info.Revno, info.Queue)
 						} else {
@@ -849,7 +849,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 		}
 		if err == nil {
 			outcome = "DONE"
-		} else if lerr, ok := err.(*mgo.LastError); ok && lerr.Code == 11000 || err == mgo.ErrNotFound {
+		} else if err == mgo.ErrNotFound || mgo.IsDup(err) {
 			outcome = "MISS"
 			err = nil
 		} else {
@@ -886,10 +886,8 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 		// Insert log document into the changelog collection.
 		f.debugf("Inserting %s into change log", t)
 		err := f.lc.Insert(logDoc)
-		if err != nil {
-			if lerr, ok := err.(*mgo.LastError); !ok || lerr.Code != 11000 {
-				return err
-			}
+		if err != nil && !mgo.IsDup(err) {
+			return err
 		}
 	}
 

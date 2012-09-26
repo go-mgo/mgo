@@ -26,6 +26,7 @@ type params struct {
 	changeHalf     bool
 	reinsertCopy   bool
 	reinsertZeroed bool
+	changelog      bool
 
 	changes int
 }
@@ -137,6 +138,18 @@ func (s *S) TestSimReinsertZeroed4Workers(c *C) {
 	})
 }
 
+func (s *S) TestSimChangeLog(c *C) {
+	simulate(c, params{
+		workers:        4,
+		accounts:       10,
+		killChance:     0.01,
+		slowdownChance: 0.3,
+		slowdown:       100 * time.Millisecond,
+		changelog:      true,
+	})
+}
+
+
 type balanceChange struct {
 	id     bson.ObjectId
 	origin int
@@ -167,6 +180,17 @@ func simulate(c *C, params params) {
 	tc := db.C("tc")
 
 	runner := txn.NewRunner(tc)
+
+	tclog := db.C("tc.log")
+	if params.changelog {
+		info := mgo.CollectionInfo{
+			Capped: true,
+			MaxBytes: 1000000,
+		}
+		err := tclog.Create(&info)
+		c.Assert(err, IsNil)
+		runner.ChangeLog(tclog)
+	}
 
 	accounts := db.C("accounts")
 	for i := 0; i < params.accounts; i++ {
@@ -310,7 +334,7 @@ func simulate(c *C, params params) {
 	c.Check(err, IsNil)
 	c.Check(n, Equals, params.accounts, Commentf("Number of accounts has changed."))
 
-	n, err = accounts.Find(M{"balance": M{"$ge": 0}}).Count()
+	n, err = accounts.Find(M{"balance": M{"$lt": 0}}).Count()
 	c.Check(err, IsNil)
 	c.Check(n, Equals, 0, Commentf("There are %d accounts with negative balance.", n))
 
@@ -347,4 +371,19 @@ func simulate(c *C, params params) {
 	}
 	c.Check(iter.Err(), IsNil)
 	c.Logf("Total transactions: %d (%d applied, %d aborted)", len(changeLog), applied, aborted)
+
+	if params.changelog {
+		n, err := tclog.Count()
+		c.Assert(err, IsNil)
+		// Check if the capped collection is full.
+		dummy := make([]byte, 1024)
+		tclog.Insert(M{"_id": bson.NewObjectId(), "dummy": dummy})
+		m, err := tclog.Count()
+		c.Assert(err, IsNil)
+		if m == n+1 {
+			// Wasn't full, so it must have seen it all.
+			c.Assert(err, IsNil)
+			c.Assert(n, Equals, applied)
+		}
+	}
 }
