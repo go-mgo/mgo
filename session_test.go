@@ -689,6 +689,72 @@ func (s *S) TestCreateCollectionForceIndex(c *C) {
 	c.Assert(indexes, HasLen, 1)
 }
 
+func (s *S) TestIsDupFalse(c *C) {
+	c.Assert(mgo.IsDup(nil), Equals, false)
+	c.Assert(mgo.IsDup(&mgo.LastError{Code: 1}), Equals, false)
+	c.Assert(mgo.IsDup(&mgo.QueryError{Code: 11000}), Equals, false)
+}
+
+func (s *S) TestIsDupPrimary(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"_id": 1})
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{"_id": 1})
+	c.Assert(err, ErrorMatches, ".*duplicate key error.*")
+	c.Assert(mgo.IsDup(err), Equals, true)
+}
+
+func (s *S) TestIsDupUnique(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	index := mgo.Index{
+		Key:      []string{"a", "b"},
+		Unique:   true,
+	}
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.EnsureIndex(index)
+	c.Assert(err, IsNil)
+
+	err = coll.Insert(M{"a": 1, "b": 1})
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{"a": 1, "b": 1})
+	c.Assert(err, ErrorMatches, ".*duplicate key error.*")
+	c.Assert(mgo.IsDup(err), Equals, true)
+}
+
+func (s *S) TestIsDupCapped(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	info := &mgo.CollectionInfo{
+		ForceIdIndex: true,
+		Capped:       true,
+		MaxBytes:     1024,
+	}
+	err = coll.Create(info)
+	c.Assert(err, IsNil)
+
+	err = coll.Insert(M{"_id": 1})
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{"_id": 1})
+	// Quite unfortunate that the error is different for capped collections.
+	c.Assert(err, ErrorMatches, "duplicate key.*capped collection")
+	// The issue is reduced by using IsDup.
+	c.Assert(mgo.IsDup(err), Equals, true)
+}
+
 func (s *S) TestFindAndModify(c *C) {
 	session, err := mgo.Dial("localhost:40011")
 	c.Assert(err, IsNil)
@@ -2130,6 +2196,7 @@ func (s *S) TestEnsureIndex(c *C) {
 	c.Assert(err, IsNil)
 	err = coll.Insert(M{"a": 1, "b": 1})
 	c.Assert(err, ErrorMatches, ".*duplicate key error.*")
+	c.Assert(mgo.IsDup(err), Equals, true)
 }
 
 func (s *S) TestEnsureIndexWithBadInfo(c *C) {
@@ -2738,7 +2805,8 @@ func (s *S) TestPipeAll(c *C) {
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
-		coll.Insert(M{"n": n})
+		err := coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
 	}
 
 	var result []struct{ N int }

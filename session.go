@@ -1344,6 +1344,15 @@ func (err *QueryError) Error() string {
 	return err.Message
 }
 
+// IsDup returns whether err informs of a duplicate key error because
+// a primary key index or a secondary unique index already has an entry
+// with the given value.
+func IsDup(err error) bool {
+	// Besides being handy, helps with https://jira.mongodb.org/browse/SERVER-7164
+	e, ok := err.(*LastError)
+	return ok && (e.Code == 11000 || e.Code == 12582)
+}
+
 // Insert inserts one or more documents in the respective collection.  In
 // case the session is in safe mode (see the SetSafe method) and an error
 // happens while inserting the provided documents, the returned error will
