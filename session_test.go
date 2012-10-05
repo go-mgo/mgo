@@ -927,8 +927,8 @@ func (s *S) TestQueryExplain(c *C) {
 	}
 
 	m := M{}
-	query := coll.Find(nil).Batch(1).Limit(2)
-	err = query.Batch(2).Explain(m)
+	query := coll.Find(nil).Limit(2)
+	err = query.Explain(m)
 	c.Assert(err, IsNil)
 	c.Assert(m["cursor"], Equals, "BasicCursor")
 	c.Assert(m["nscanned"], Equals, 2)
@@ -2840,4 +2840,27 @@ func (s *S) TestPipeOne(c *C) {
 	pipe = coll.Pipe([]M{{"$match": M{"a": 2}}})
 	err = pipe.One(&result)
 	c.Assert(err, Equals, mgo.ErrNotFound)
+}
+
+func (s *S) TestBatch1(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	for i := 0; i < 3; i++ {
+		err := coll.Insert(M{"n": i})
+		c.Assert(err, IsNil)
+	}
+
+	var ns []struct{ N int }
+	err = coll.Find(nil).Batch(1).All(&ns)
+	c.Assert(err, IsNil)
+	c.Assert(len(ns), Equals, 3)
+
+	session.SetBatch(1)
+	err = coll.Find(nil).All(&ns)
+	c.Assert(err, IsNil)
+	c.Assert(len(ns), Equals, 3)
 }

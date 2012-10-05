@@ -951,6 +951,10 @@ func (s *Session) SetSyncTimeout(d time.Duration) {
 // writing, MongoDB will use an initial size of min(100 docs, 4MB) on the
 // first batch, and 4MB on remaining ones.
 func (s *Session) SetBatch(n int) {
+	if n == 1 {
+		// Server interprets 1 as -1 and closes the cursor (!?)
+		n = 2
+	}
 	s.m.Lock()
 	s.queryConfig.op.limit = int32(n)
 	s.m.Unlock()
@@ -1591,6 +1595,10 @@ func (c *Collection) Create(info *CollectionInfo) error {
 // writing, MongoDB will use an initial size of min(100 docs, 4MB) on the
 // first batch, and 4MB on remaining ones.
 func (q *Query) Batch(n int) *Query {
+	if n == 1 {
+		// Server interprets 1 as -1 and closes the cursor (!?)
+		n = 2
+	}
 	q.m.Lock()
 	q.op.limit = int32(n)
 	q.m.Unlock()
