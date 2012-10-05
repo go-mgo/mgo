@@ -226,7 +226,7 @@ func (s *S) TestSetModeMonotonic(c *C) {
 	stats := mgo.GetStats()
 	c.Assert(stats.MasterConns, Equals, 1)
 	c.Assert(stats.SlaveConns, Equals, 2)
-	c.Assert(stats.SocketsInUse, Equals, 1)
+	c.Assert(stats.SocketsInUse, Equals, 2)
 
 	session.SetMode(mgo.Monotonic, true)
 
@@ -305,6 +305,51 @@ func (s *S) TestSetModeStrongAfterMonotonic(c *C) {
 	err = session.Run("ismaster", &result)
 	c.Assert(err, IsNil)
 	c.Assert(result["ismaster"], Equals, true)
+}
+
+func (s *S) TestSetModeMonotonicWriteOnIteration(c *C) {
+	// Must necessarily connect to a slave, otherwise the
+	// master connection will be available first.
+	session, err := mgo.Dial("localhost:40012")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	session.SetMode(mgo.Monotonic, false)
+
+	c.Assert(session.Mode(), Equals, mgo.Monotonic)
+
+	coll1 := session.DB("mydb").C("mycoll1")
+	coll2 := session.DB("mydb").C("mycoll2")
+
+	ns := []int{40, 41, 42, 43, 44, 45, 46}
+	for _, n := range ns {
+		err := coll1.Insert(M{"n": n})
+		c.Assert(err, IsNil)
+	}
+
+	// Release master so we can grab a slave again.
+	session.Refresh()
+
+	// Wait until synchronization is done.
+	for {
+		n, err := coll1.Count()
+		c.Assert(err, IsNil)
+		if n == len(ns) {
+			break
+		}
+	}
+
+	iter := coll1.Find(nil).Batch(2).Iter()
+	i := 0
+	m := M{}
+	for iter.Next(&m) {
+		i++
+		if i > 3 {
+			err := coll2.Insert(M{"n": 47 + i})
+			c.Assert(err, IsNil)
+		}
+	}
+	c.Assert(i, Equals, len(ns))
 }
 
 func (s *S) TestSetModeEventual(c *C) {

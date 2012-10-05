@@ -136,7 +136,8 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 		}
 
 		// Monotonic will let us talk to a slave and still hold the socket.
-		session := newSession(Monotonic, cluster, socket, 10 * time.Second)
+		session := newSession(Monotonic, cluster, 10 * time.Second)
+		session.setSocket(socket)
 
 		// session holds the socket now.
 		socket.Release()
