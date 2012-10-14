@@ -28,10 +28,12 @@ package bson
 
 import (
 	"crypto/md5"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"runtime"
@@ -171,14 +173,18 @@ var machineId []byte
 // a runtime error.
 func initMachineId() {
 	var sum [3]byte
-	hostname, err := os.Hostname()
-	if err != nil {
-		panic("Failed to get hostname: " + err.Error())
+	machineId = sum[:]
+	hostname, err1 := os.Hostname()
+	if err1 != nil {
+		_, err2 := io.ReadFull(rand.Reader, machineId)
+		if err2 != nil {
+			panic(fmt.Errorf("cannot get hostname: %v; %v", err1, err2))
+		}
+		return
 	}
 	hw := md5.New()
 	hw.Write([]byte(hostname))
-	copy(sum[:3], hw.Sum(nil))
-	machineId = sum[:]
+	copy(machineId, hw.Sum(nil))
 }
 
 // NewObjectId returns a new unique ObjectId.
