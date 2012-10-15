@@ -33,6 +33,7 @@ import (
 	"labix.org/v2/mgo/bson"
 	. "launchpad.net/gocheck"
 	"math"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -1130,6 +1131,38 @@ func (s *S) TestFindIterLimit(c *C) {
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
+func (s *S) TestTooManyItemsLimitBug(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
+
+	mgo.SetDebug(false)
+	coll := session.DB("mydb").C("mycoll")
+	words := strings.Split("foo bar baz", " ")
+	for i := 0; i < 5; i++ {
+		words = append(words, words...)
+	}
+	doc := bson.D{{"words", words}}
+	inserts := 10000
+	limit := 5000
+	iters := 0
+	c.Assert(inserts > limit, Equals, true)
+	for i := 0; i < inserts; i++ {
+		err := coll.Insert(&doc)
+		c.Assert(err, IsNil)
+	}
+	iter := coll.Find(nil).Limit(limit).Iter()
+	for iter.Next(&doc) {
+		if iters%100 == 0 {
+			c.Logf("Seen %d docments", iters)
+		}
+		iters++
+	}
+	c.Assert(iter.Err(), IsNil)
+	c.Assert(iters, Equals, limit)
+}
+
 func (s *S) TestFindIterLimitWithMore(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
@@ -1858,7 +1891,7 @@ func (s *S) TestPrefetching(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
-	//mgo.SetDebug(false)
+	mgo.SetDebug(false)
 	docs := make([]interface{}, 800)
 	for i := 0; i != 600; i++ {
 		docs[i] = bson.D{{"n", i}}

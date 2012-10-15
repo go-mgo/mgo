@@ -2202,10 +2202,15 @@ func (iter *Iter) Next(result interface{}) bool {
 
 	// Exhaust available data before reporting any errors.
 	if docData, ok := iter.docData.Pop().([]byte); ok {
-		iter.limit--
-		if iter.limit == 0 {
-			// XXX Must kill the cursor here.
-			iter.err = ErrNotFound
+		if iter.limit > 0 {
+			iter.limit--
+			if iter.limit == 0 {
+				// XXX Must kill the cursor here.
+				if iter.docData.Len() > 0 {
+					panic(fmt.Errorf("data remains after limit exhausted: %d", iter.docData.Len()))
+				}
+				iter.err = ErrNotFound
+			}
 		}
 		if iter.op.cursorId != 0 && iter.err == nil {
 			if iter.docsBeforeMore == 0 {
@@ -2224,7 +2229,11 @@ func (iter *Iter) Next(result interface{}) bool {
 		// XXX Only have to check first document for a query error?
 		err = checkQueryError(iter.op.collection, docData)
 		if err != nil {
-			iter.err = err
+			iter.m.Lock()
+			if iter.err == nil {
+				iter.err = err
+			}
+			iter.m.Unlock()
 			return false
 		}
 		return true
@@ -2343,11 +2352,11 @@ func (iter *Iter) getMore() {
 	}
 
 	debugf("Iter %p requesting more documents", iter)
-	if iter.limit > 0 && iter.op.limit > iter.limit {
-		iter.op.limit = iter.limit
-	}
-	if iter.op.limit == 1 {
-		iter.op.limit = -1
+	if iter.limit > 0 {
+		limit := iter.limit - int32(iter.docsToReceive) - int32(iter.docData.Len())
+		if limit < iter.op.limit {
+			iter.op.limit = limit
+		}
 	}
 	if err := iter.socket.Query(&iter.op); err != nil {
 		iter.err = err
@@ -2880,7 +2889,12 @@ func (iter *Iter) replyFunc() replyFunc {
 			rdocs := int(op.replyDocs)
 			if docNum == 0 {
 				iter.docsToReceive += rdocs - 1
-				iter.docsBeforeMore = iter.docData.Len() + rdocs - int(iter.prefetch*float64(rdocs))
+				docsToProcess := iter.docData.Len() + rdocs
+				if iter.limit == 0 || int32(docsToProcess) < iter.limit {
+					iter.docsBeforeMore = docsToProcess - int(iter.prefetch*float64(rdocs))
+				} else {
+					iter.docsBeforeMore = -1
+				}
 				iter.op.cursorId = op.cursorId
 			}
 			// XXX Handle errors and flags.
