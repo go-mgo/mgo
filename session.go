@@ -54,18 +54,18 @@ const (
 // need to be updated too.
 
 type Session struct {
-	m              sync.RWMutex
-	cluster_       *mongoCluster
-	slaveSocket    *mongoSocket
-	masterSocket   *mongoSocket
-	slaveOk        bool
-	consistency    mode
-	queryConfig    query
-	safeOp         *queryOp
-	syncTimeout    time.Duration
-	defaultdb      string
-	urlauth        *authInfo
-	auth           []authInfo
+	m            sync.RWMutex
+	cluster_     *mongoCluster
+	slaveSocket  *mongoSocket
+	masterSocket *mongoSocket
+	slaveOk      bool
+	consistency  mode
+	queryConfig  query
+	safeOp       *queryOp
+	syncTimeout  time.Duration
+	defaultdb    string
+	dialAuth     *authInfo
+	auth         []authInfo
 }
 
 type Database struct {
@@ -171,12 +171,12 @@ const defaultPrefetch = 0.25
 //
 //     http://www.mongodb.org/display/DOCS/Connections
 //
-func Dial(url string) (session *Session, err error) {
-	session, err = DialWithTimeout(url, 10*time.Second)
+func Dial(url string) (*Session, error) {
+	session, err := DialWithTimeout(url, 10*time.Second)
 	if err == nil {
 		session.SetSyncTimeout(time.Minute)
 	}
-	return
+	return session, err
 }
 
 // DialWithTimeout works like Dial, but uses timeout as the amount of time to
@@ -185,13 +185,13 @@ func Dial(url string) (session *Session, err error) {
 // forever waiting for a connection to be made.
 //
 // See SetSyncTimeout for customizing the timeout for the session.
-func DialWithTimeout(url string, timeout time.Duration) (session *Session, err error) {
-	servers, auth, db, options, err := parseURL(url)
+func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
+	uinfo, err := parseURL(url)
 	if err != nil {
 		return nil, err
 	}
 	direct := false
-	for k, v := range options {
+	for k, v := range uinfo.options {
 		switch k {
 		case "connect":
 			if v == "direct" {
@@ -203,17 +203,64 @@ func DialWithTimeout(url string, timeout time.Duration) (session *Session, err e
 			}
 			fallthrough
 		default:
-			err = errors.New("Unsupported connection URL option: " + k + "=" + v)
-			return
+			return nil, errors.New("Unsupported connection URL option: " + k + "=" + v)
 		}
 	}
-	cluster := newCluster(servers, direct)
-	session = newSession(Eventual, cluster, timeout)
-	session.defaultdb = db
-	if auth.user != "" {
-		session.urlauth = &auth
-		session.auth = []authInfo{auth}
-		logf("auth.db: %q", auth.db)
+	info := DialInfo{
+		Addrs:    uinfo.addrs,
+		Direct:   direct,
+		Timeout:  timeout,
+		Username: uinfo.user,
+		Password: uinfo.pass,
+		Database: uinfo.db,
+	}
+	return DialWithInfo(&info)
+}
+
+// DialInfo holds options for establishing a session with a MongoDB cluster.
+// To use a URL, see the Dial function.
+type DialInfo struct {
+	// Addrs holds the addresses for the seed servers.
+	Addrs []string
+
+	// Direct informs whether to establish connections only with the
+	// specified seed servers, or to obtain information for the whole
+	// cluster and establish connections with further servers too.
+	Direct bool
+
+	// Timeout is the amount of time to wait for a server to respond when
+	// first connecting and on follow up operations in the session. If
+	// timeout is zero, the call may block forever waiting for a connection
+	// to be established.
+	Timeout time.Duration
+
+	// Database is the database name used during the initial authentication.
+	// If set, the value is also returned as the default result from the
+	// Session.DB method, in place of "test".
+	Database string
+
+	// Username and Password inform the credentials for the initial
+	// authentication done against Database, if that is set,
+	// or the "admin" database otherwise. See the Session.Login method too.
+	Username string
+	Password string
+}
+
+// DialWithInfo establishes a new session to the cluster identified by info.
+func DialWithInfo(info *DialInfo) (*Session, error) {
+	cluster := newCluster(info.Addrs, info.Direct)
+	session := newSession(Eventual, cluster, info.Timeout)
+	session.defaultdb = info.Database
+	if session.defaultdb == "" {
+		session.defaultdb = "test"
+	}
+	if info.Username != "" {
+		db := info.Database
+		if db == "" {
+			db = "admin"
+		}
+		session.dialAuth = &authInfo{db, info.Username, info.Password}
+		session.auth = []authInfo{*session.dialAuth}
 	}
 	cluster.Release()
 
@@ -233,54 +280,51 @@ func isOptSep(c rune) bool {
 	return c == ';' || c == '&'
 }
 
-func parseURL(url string) (servers []string, auth authInfo, db string, options map[string]string, err error) {
+type urlInfo struct {
+	addrs   []string
+	user    string
+	pass    string
+	db      string
+	options map[string]string
+}
+
+func parseURL(url string) (*urlInfo, error) {
 	if strings.HasPrefix(url, "mongodb://") {
 		url = url[10:]
 	}
-	options = make(map[string]string)
+	info := &urlInfo{options: make(map[string]string)}
 	if c := strings.Index(url, "?"); c != -1 {
 		for _, pair := range strings.FieldsFunc(url[c+1:], isOptSep) {
 			l := strings.SplitN(pair, "=", 2)
 			if len(l) != 2 || l[0] == "" || l[1] == "" {
-				err = errors.New("Connection option must be key=value: " + pair)
-				return
+				return nil, errors.New("Connection option must be key=value: " + pair)
 			}
-			options[l[0]] = l[1]
+			info.options[l[0]] = l[1]
 		}
 		url = url[:c]
 	}
 	if c := strings.Index(url, "@"); c != -1 {
 		pair := strings.SplitN(url[:c], ":", 2)
 		if len(pair) != 2 || pair[0] == "" {
-			err = errors.New("Credentials must be provided as user:pass@host")
-			return
+			return nil, errors.New("Credentials must be provided as user:pass@host")
 		}
-		auth.user = pair[0]
-		auth.pass = pair[1]
+		info.user = pair[0]
+		info.pass = pair[1]
 		url = url[c+1:]
-		auth.db = "admin"
 	}
 	if c := strings.Index(url, "/"); c != -1 {
-		if c != len(url)-1 {
-			db = url[c+1:]
-		}
+		info.db = url[c+1:]
 		url = url[:c]
-		if db != "" {
-			auth.db = db
-		}
 	}
-	if db == "" {
-		db = "test"
-	}
-	servers = strings.Split(url, ",")
+	info.addrs = strings.Split(url, ",")
 	// XXX This is untested. The test suite doesn't use the standard port.
-	for i, server := range servers {
-		p := strings.LastIndexAny(server, "]:")
-		if p == -1 || server[p] != ':' {
-			servers[i] = server + ":27017"
+	for i, addr := range info.addrs {
+		p := strings.LastIndexAny(addr, "]:")
+		if p == -1 || addr[p] != ':' {
+			info.addrs[i] = addr + ":27017"
 		}
 	}
-	return
+	return info, nil
 }
 
 func newSession(consistency mode, cluster *mongoCluster, syncTimeout time.Duration) (session *Session) {
@@ -307,8 +351,8 @@ func copySession(session *Session, keepAuth bool) (s *Session) {
 	if keepAuth {
 		auth = make([]authInfo, len(session.auth))
 		copy(auth, session.auth)
-	} else if session.urlauth != nil {
-		auth = []authInfo{*session.urlauth}
+	} else if session.dialAuth != nil {
+		auth = []authInfo{*session.dialAuth}
 	}
 	scopy := *session
 	scopy.m = sync.RWMutex{}
