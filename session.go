@@ -2349,7 +2349,7 @@ func (iter *Iter) getMore() {
 	if socket.Server() != iter.server {
 		// Socket server changed during iteration. This may happen
 		// with Eventual session, if a Refresh is done, or if a
-		// monotoic session gets a write and shifts from secondary
+		// monotonic session gets a write and shifts from secondary
 		// to primary. Our cursor is in a specific server, though.
 		socket.Release()
 		socket, err = iter.server.AcquireSocket(0)

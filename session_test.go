@@ -2875,7 +2875,7 @@ func (s *S) TestPipeOne(c *C) {
 	c.Assert(err, Equals, mgo.ErrNotFound)
 }
 
-func (s *S) TestBatch1(c *C) {
+func (s *S) TestBatch1Bug(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -2896,4 +2896,27 @@ func (s *S) TestBatch1(c *C) {
 	err = coll.Find(nil).All(&ns)
 	c.Assert(err, IsNil)
 	c.Assert(len(ns), Equals, 3)
+}
+
+func (s *S) TestInterfaceIterBug(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	for i := 0; i < 3; i++ {
+		err := coll.Insert(M{"n": i})
+		c.Assert(err, IsNil)
+	}
+
+	var result interface{}
+
+	i := 0
+	iter := coll.Find(nil).Sort("n").Iter()
+	for iter.Next(&result) {
+		c.Assert(result.(bson.M)["n"], Equals, i)
+		i++
+	}
+	c.Assert(iter.Err(), IsNil)
 }

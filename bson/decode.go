@@ -145,9 +145,6 @@ func (d *decoder) readDocTo(out reflect.Value) {
 
 	origout := out
 	if outk == reflect.Interface {
-		if !out.IsNil() {
-			panic("Found non-nil interface. Please contact the developers.")
-		}
 		if d.docType.Kind() == reflect.Map {
 			mv := reflect.MakeMap(d.docType)
 			out.Set(mv)

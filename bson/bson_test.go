@@ -230,6 +230,18 @@ func (s *S) TestUnmarshalZeroesMap(c *C) {
 	c.Assert(m, DeepEquals, bson.M{"b": 2})
 }
 
+func (s *S) TestUnmarshalNonNilInterface(c *C) {
+	data, err := bson.Marshal(bson.M{"b": 2})
+	c.Assert(err, IsNil)
+	m := bson.M{"a": 1}
+	var i interface{}
+	i = m
+	err = bson.Unmarshal(data, &i)
+	c.Assert(err, IsNil)
+	c.Assert(i, DeepEquals, bson.M{"b": 2})
+	c.Assert(m, DeepEquals, bson.M{"a": 1})
+}
+
 // --------------------------------------------------------------------------
 // Some one way marshaling operations which would unmarshal differently.
 
