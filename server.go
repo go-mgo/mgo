@@ -46,9 +46,12 @@ type mongoServer struct {
 	closed        bool
 	master        bool
 	sync          chan bool
+	dial          dialer
 }
 
-func newServer(addr string, sync chan bool) (server *mongoServer, err error) {
+type dialer func(addr net.Addr) (net.Conn, error)
+
+func newServer(addr string, sync chan bool, dial dialer) (server *mongoServer, err error) {
 	tcpaddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		log("Failed to resolve ", addr, ": ", err.Error())
@@ -64,6 +67,7 @@ func newServer(addr string, sync chan bool) (server *mongoServer, err error) {
 		ResolvedAddr: resolvedAddr,
 		tcpaddr:      tcpaddr,
 		sync:         sync,
+		dial:         dial,
 	}
 	return
 }
@@ -115,10 +119,17 @@ func (server *mongoServer) Connect() (*mongoSocket, error) {
 	addr := server.Addr
 	tcpaddr := server.tcpaddr
 	master := server.master
+	dial := server.dial
 	server.RUnlock()
 
 	log("Establishing new connection to ", addr, "...")
-	conn, err := net.DialTCP("tcp", nil, tcpaddr)
+	var conn net.Conn
+	var err error
+	if dial == nil {
+		conn, err = net.DialTCP("tcp", nil, tcpaddr)
+	} else {
+		conn, err = dial(tcpaddr)
+	}
 	if err != nil {
 		log("Connection to ", addr, " failed: ", err.Error())
 		return nil, err

@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"labix.org/v2/mgo/bson"
 	"math"
+	"net"
 	"reflect"
 	"runtime"
 	"sort"
@@ -244,11 +245,16 @@ type DialInfo struct {
 	// or the "admin" database otherwise. See the Session.Login method too.
 	Username string
 	Password string
+
+	// Dial optionally specifies the dial function for creating connections.
+	// At the moment addr will have type *net.TCPAddr, but other types may
+	// be provided in the future, so check and fail if necessary.
+	Dial func(addr net.Addr) (net.Conn, error)
 }
 
 // DialWithInfo establishes a new session to the cluster identified by info.
 func DialWithInfo(info *DialInfo) (*Session, error) {
-	cluster := newCluster(info.Addrs, info.Direct)
+	cluster := newCluster(info.Addrs, info.Direct, info.Dial)
 	session := newSession(Eventual, cluster, info.Timeout)
 	session.defaultdb = info.Database
 	if session.defaultdb == "" {

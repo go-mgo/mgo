@@ -27,10 +27,12 @@
 package mgo_test
 
 import (
+	"fmt"
 	"io"
 	. "launchpad.net/gocheck"
 	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
+	"net"
 	"strings"
 	"time"
 )
@@ -1042,4 +1044,39 @@ func (s *S) TestSetModeEventualIterBug(c *C) {
 	}
 	c.Assert(iter.Err(), Equals, nil)
 	c.Assert(i, Equals, N)
+}
+
+func (s *S) TestCustomDial(c *C) {
+	dials := make(chan bool, 16)
+	dial := func(addr net.Addr) (net.Conn, error) {
+		tcpaddr, ok := addr.(*net.TCPAddr)
+		if !ok {
+			return nil, fmt.Errorf("unexpected address type: %T", addr)
+		}
+		dials <- true
+		return net.DialTCP("tcp", nil, tcpaddr)
+	}
+	info := mgo.DialInfo{
+		Addrs: []string{"localhost:40012"},
+		Dial: dial,
+	}
+
+	// Use hostname here rather than IP, to make things trickier.
+	session, err := mgo.DialWithInfo(&info)
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	const N = 3
+	for i := 0; i < N; i++ {
+		select {
+		case <-dials:
+		case <-time.After(5 * time.Second):
+			c.Fatalf("expected %d dials, got %d", N, i)
+		}
+	}
+	select {
+	case <-dials:
+		c.Fatalf("got more dials than expected")
+	case <-time.After(100 * time.Millisecond):
+	}
 }

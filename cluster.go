@@ -51,10 +51,16 @@ type mongoCluster struct {
 	direct       bool
 	cachedIndex  map[string]bool
 	sync         chan bool
+	dial         dialer
 }
 
-func newCluster(userSeeds []string, direct bool) *mongoCluster {
-	cluster := &mongoCluster{userSeeds: userSeeds, references: 1, direct: direct}
+func newCluster(userSeeds []string, direct bool, dial dialer) *mongoCluster {
+	cluster := &mongoCluster{
+		userSeeds: userSeeds,
+		references: 1,
+		direct: direct,
+		dial: dial,
+	}
 	cluster.serverSynced.L = cluster.RWMutex.RLocker()
 	cluster.sync = make(chan bool, 1)
 	go cluster.syncServersLoop()
@@ -329,7 +335,7 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 		go func() {
 			defer wg.Done()
 
-			server, err := newServer(addr, cluster.sync)
+			server, err := newServer(addr, cluster.sync, cluster.dial)
 			if err != nil {
 				log("SYNC Failed to start sync of ", addr, ": ", err.Error())
 				return

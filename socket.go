@@ -38,7 +38,7 @@ type replyFunc func(err error, reply *replyOp, docNum int, docData []byte)
 type mongoSocket struct {
 	sync.Mutex
 	server        *mongoServer // nil when cached
-	conn          *net.TCPConn
+	conn          net.Conn
 	addr          string // For debugging only.
 	nextRequestId uint32
 	replyFuncs    map[uint32]replyFunc
@@ -97,7 +97,7 @@ type requestInfo struct {
 	replyFunc replyFunc
 }
 
-func newSocket(server *mongoServer, conn *net.TCPConn) *mongoSocket {
+func newSocket(server *mongoServer, conn net.Conn) *mongoSocket {
 	socket := &mongoSocket{conn: conn, addr: server.Addr}
 	socket.gotNonce.L = &socket.Mutex
 	socket.replyFuncs = make(map[uint32]replyFunc)
@@ -371,7 +371,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 	return err
 }
 
-func fill(r *net.TCPConn, b []byte) error {
+func fill(r net.Conn, b []byte) error {
 	l := len(b)
 	n, err := r.Read(b)
 	for n != l && err == nil {
