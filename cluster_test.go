@@ -1000,3 +1000,46 @@ func (s *S) TestSocketLimit(c *C) {
 	c.Assert(delay > 3e9, Equals, true)
 	c.Assert(delay < 6e9, Equals, true)
 }
+
+func (s *S) TestSetModeEventualIterBug(c *C) {
+	session1, err := mgo.Dial("localhost:40011")
+	c.Assert(err, IsNil)
+	defer session1.Close()
+
+	session1.SetMode(mgo.Eventual, false)
+
+	coll1 := session1.DB("mydb").C("mycoll")
+
+	const N = 100
+	for i := 0; i < N; i++ {
+		err = coll1.Insert(M{"_id": i})
+		c.Assert(err, IsNil)
+	}
+
+	c.Logf("Waiting until secondary syncs")
+	for {
+		n, err := coll1.Count()
+		c.Assert(err, IsNil)
+		if n == N {
+			c.Logf("Found all")
+			break
+		}
+	}
+
+	session2, err := mgo.Dial("localhost:40011")
+	c.Assert(err, IsNil)
+	defer session2.Close()
+
+	session2.SetMode(mgo.Eventual, false)
+
+	coll2 := session2.DB("mydb").C("mycoll")
+
+	i := 0
+	iter := coll2.Find(nil).Batch(10).Iter()
+	var result struct{}
+	for iter.Next(&result) {
+		i++
+	}
+	c.Assert(iter.Err(), Equals, nil)
+	c.Assert(i, Equals, N)
+}

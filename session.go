@@ -103,7 +103,7 @@ type Iter struct {
 	m              sync.Mutex
 	gotReply       sync.Cond
 	session        *Session
-	socket         *mongoSocket
+	server         *mongoServer
 	docData        queue
 	err            error
 	op             getMoreOp
@@ -2039,6 +2039,7 @@ func (q *Query) Iter() *Iter {
 		iter.err = err
 	} else {
 		iter.err = socket.Query(&op)
+		iter.server = socket.Server()
 		socket.Release()
 	}
 	return iter
@@ -2112,6 +2113,7 @@ func (q *Query) Tail(timeout time.Duration) *Iter {
 		iter.err = err
 	} else {
 		iter.err = socket.Query(&op)
+		iter.server = socket.Server()
 		socket.Release()
 	}
 	return iter
@@ -2339,17 +2341,24 @@ func (iter *Iter) For(result interface{}, f func() error) (err error) {
 }
 
 func (iter *Iter) getMore() {
-	if iter.socket == nil {
-		socket, err := iter.session.acquireSocket(true)
+	socket, err := iter.session.acquireSocket(true)
+	if err != nil {
+		iter.err = err
+		return
+	}
+	if socket.Server() != iter.server {
+		// Socket server changed during iteration. This may happen
+		// with Eventual session, if a Refresh is done, or if a
+		// monotoic session gets a write and shifts from secondary
+		// to primary. Our cursor is in a specific server, though.
+		socket.Release()
+		socket, err = iter.server.AcquireSocket(0)
 		if err != nil {
 			iter.err = err
 			return
 		}
-		// Release socket immediately and track in iter.
-		// The session must not be refreshed during iteration.
-		socket.Release()
-		iter.socket = socket
 	}
+	defer socket.Release()
 
 	debugf("Iter %p requesting more documents", iter)
 	if iter.limit > 0 {
@@ -2358,7 +2367,7 @@ func (iter *Iter) getMore() {
 			iter.op.limit = limit
 		}
 	}
-	if err := iter.socket.Query(&iter.op); err != nil {
+	if err := socket.Query(&iter.op); err != nil {
 		iter.err = err
 	}
 	iter.docsToReceive++

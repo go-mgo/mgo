@@ -112,6 +112,15 @@ func newSocket(server *mongoServer, conn *net.TCPConn) *mongoSocket {
 	return socket
 }
 
+// Server returns the server that the socket is associated with.
+// It returns nil while the socket is cached in its respective server.
+func (socket *mongoSocket) Server() *mongoServer {
+	socket.Lock()
+	server := socket.server
+	socket.Unlock()
+	return server
+}
+
 // InitialAcquire obtains the first reference to the socket, either
 // right after the connection is made or once a recycled socket is
 // being put back in use.
