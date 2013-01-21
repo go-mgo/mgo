@@ -254,7 +254,16 @@ type DialInfo struct {
 
 // DialWithInfo establishes a new session to the cluster identified by info.
 func DialWithInfo(info *DialInfo) (*Session, error) {
-	cluster := newCluster(info.Addrs, info.Direct, info.Dial)
+	addrs := make([]string, len(info.Addrs))
+	for i, addr := range info.Addrs {
+		p := strings.LastIndexAny(addr, "]:")
+		if p == -1 || addr[p] != ':' {
+			// XXX This is untested. The test suite doesn't use the standard port.
+			addr += ":27017"
+		}
+		addrs[i] = addr
+	}
+	cluster := newCluster(addrs, info.Direct, info.Dial)
 	session := newSession(Eventual, cluster, info.Timeout)
 	session.defaultdb = info.Database
 	if session.defaultdb == "" {
@@ -323,13 +332,6 @@ func parseURL(url string) (*urlInfo, error) {
 		url = url[:c]
 	}
 	info.addrs = strings.Split(url, ",")
-	// XXX This is untested. The test suite doesn't use the standard port.
-	for i, addr := range info.addrs {
-		p := strings.LastIndexAny(addr, "]:")
-		if p == -1 || addr[p] != ':' {
-			info.addrs[i] = addr + ":27017"
-		}
-	}
 	return info, nil
 }
 
