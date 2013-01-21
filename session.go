@@ -2140,7 +2140,7 @@ func (q *Query) Iter() *Iter {
 //         if iter.Timeout() {
 //             continue
 //         }
-//         query := collection.Find(bson.M{"_id", bson.M{"$gt", lastId}})
+//         query := collection.Find(bson.M{"_id": bson.M{"$gt": lastId}})
 //         iter = query.Sort("$natural").Tail(5 * time.Second)
 //    }
 //
