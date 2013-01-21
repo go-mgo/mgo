@@ -500,6 +500,15 @@ func (db *Database) Login(user, pass string) (err error) {
 	return nil
 }
 
+func (s *Session) socketLogin(socket *mongoSocket) error {
+	for _, a := range s.auth {
+		if err := socket.Login(a.db, a.user, a.pass); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Logout removes any established authentication credentials for the database.
 func (db *Database) Logout() {
 	session := db.Session
@@ -2262,6 +2271,17 @@ func (iter *Iter) Next(result interface{}) bool {
 					panic(fmt.Errorf("data remains after limit exhausted: %d", iter.docData.Len()))
 				}
 				iter.err = ErrNotFound
+				if iter.op.cursorId != 0 {
+					socket, err := iter.acquireSocket()
+					if err == nil {
+						err = socket.Query(&killCursorsOp{[]int64{iter.op.cursorId}})
+						socket.Release()
+					}
+					if err != nil {
+						iter.err = err
+						return false
+					}
+				}
 			}
 		}
 		if iter.op.cursorId != 0 && iter.err == nil {
@@ -2390,11 +2410,10 @@ func (iter *Iter) For(result interface{}, f func() error) (err error) {
 	return iter.Err()
 }
 
-func (iter *Iter) getMore() {
+func (iter *Iter) acquireSocket() (*mongoSocket, error) {
 	socket, err := iter.session.acquireSocket(true)
 	if err != nil {
-		iter.err = err
-		return
+		return nil, err
 	}
 	if socket.Server() != iter.server {
 		// Socket server changed during iteration. This may happen
@@ -2404,9 +2423,22 @@ func (iter *Iter) getMore() {
 		socket.Release()
 		socket, err = iter.server.AcquireSocket(0)
 		if err != nil {
-			iter.err = err
-			return
+			return nil, err
 		}
+		err := iter.session.socketLogin(socket)
+		if err != nil {
+			socket.Release()
+			return nil, err
+		}
+	}
+	return socket, nil
+}
+
+func (iter *Iter) getMore() {
+	socket, err := iter.acquireSocket()
+	if err != nil {
+		iter.err = err
+		return
 	}
 	defer socket.Release()
 
@@ -2877,12 +2909,9 @@ func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 	}
 
 	// Authenticate the new socket.
-	for _, a := range s.auth {
-		err = sock.Login(a.db, a.user, a.pass)
-		if err != nil {
-			sock.Release()
-			return nil, err
-		}
+	if err = s.socketLogin(sock); err != nil {
+		sock.Release()
+		return nil, err
 	}
 
 	// Keep track of the new socket, if necessary.

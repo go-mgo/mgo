@@ -1125,7 +1125,7 @@ func (s *S) TestFindIterLimit(c *C) {
 	session.Refresh() // Release socket.
 
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 1)     // 1*QUERY_OP
+	c.Assert(stats.SentOps, Equals, 2)     // 1*QUERY_OP + 1*KILL_CURSORS_OP
 	c.Assert(stats.ReceivedOps, Equals, 1) // and its REPLY_OP
 	c.Assert(stats.ReceivedDocs, Equals, 3)
 	c.Assert(stats.SocketsInUse, Equals, 0)
@@ -1161,6 +1161,20 @@ func (s *S) TestTooManyItemsLimitBug(c *C) {
 	}
 	c.Assert(iter.Err(), IsNil)
 	c.Assert(iters, Equals, limit)
+}
+
+func serverCursorsOpen(session *mgo.Session) int {
+	var result struct {
+		Cursors struct {
+			TotalOpen int `bson:"totalOpen"`
+			TimedOut int  `bson:"timedOut"`
+		}
+	}
+	err := session.Run("serverStatus", &result)
+	if err != nil {
+		panic(err)
+	}
+	return result.Cursors.TotalOpen
 }
 
 func (s *S) TestFindIterLimitWithMore(c *C) {
@@ -1201,6 +1215,8 @@ func (s *S) TestFindIterLimitWithMore(c *C) {
 		c.Fatalf("Bad result size with negative limit: %d", nresults)
 	}
 
+	cursorsOpen := serverCursorsOpen(session)
+
 	// Try again, with a positive limit. Should reach the end now,
 	// using multiple chunks.
 	nresults = 0
@@ -1209,6 +1225,9 @@ func (s *S) TestFindIterLimitWithMore(c *C) {
 		nresults++
 	}
 	c.Assert(nresults, Equals, total)
+
+	// Ensure the cursor used is properly killed.
+	c.Assert(serverCursorsOpen(session), Equals, cursorsOpen)
 
 	// Edge case, -MinInt == -MinInt.
 	nresults = 0
@@ -1260,7 +1279,7 @@ func (s *S) TestFindIterLimitWithBatch(c *C) {
 	session.Refresh() // Release socket.
 
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 2)     // 1*QUERY_OP + 1*GET_MORE_OP
+	c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 1*GET_MORE_OP + 1*KILL_CURSORS_OP
 	c.Assert(stats.ReceivedOps, Equals, 2) // and its REPLY_OPs
 	c.Assert(stats.ReceivedDocs, Equals, 3)
 	c.Assert(stats.SocketsInUse, Equals, 0)

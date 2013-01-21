@@ -92,6 +92,10 @@ type deleteOp struct {
 	flags      uint32
 }
 
+type killCursorsOp struct {
+	cursorIds []int64
+}
+
 type requestInfo struct {
 	bufferPos int
 	replyFunc replyFunc
@@ -317,6 +321,14 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 			buf, err = addBSON(buf, op.selector)
 			if err != nil {
 				return err
+			}
+
+		case *killCursorsOp:
+			buf = addHeader(buf, 2007)
+			buf = addInt32(buf, 0) // Reserved
+			buf = addInt32(buf, int32(len(op.cursorIds)))
+			for _, cursorId := range op.cursorIds {
+				buf = addInt64(buf, cursorId)
 			}
 
 		default:
