@@ -596,11 +596,22 @@ type Index struct {
 func parseIndexKey(key []string) (name string, realKey bson.D, err error) {
 	var order interface{}
 	for _, field := range key {
+		raw := field
 		if name != "" {
 			name += "_"
 		}
+		var kind string
 		if field != "" {
+			if field[0] == '$' {
+				if c := strings.Index(field, ":"); c > 1 && c < len(field)-1 {
+					kind = field[1:c]
+					field = field[c+1:]
+				}
+			}
 			switch field[0] {
+			case '$':
+				// Logic above failed. Reset and error.
+				field = ""
 			case '@':
 				order = "2d"
 				field = field[1:]
@@ -613,12 +624,17 @@ func parseIndexKey(key []string) (name string, realKey bson.D, err error) {
 				field = field[1:]
 				fallthrough
 			default:
-				order = 1
-				name += field + "_1"
+				if kind == "" {
+					order = 1
+					name += field + "_1"
+				} else {
+					order = kind
+					name += field + "_" // Seems wrong. What about the kind?
+				}
 			}
 		}
-		if field == "" {
-			return "", nil, errors.New("Invalid index key: empty field name")
+		if field == "" || kind != "" && order != kind {
+			return "", nil, fmt.Errorf(`Invalid index key: want "[$<kind>:][-]<field name>", got %q`, raw)
 		}
 		realKey = append(realKey, bson.DocElem{field, order})
 	}
@@ -685,16 +701,15 @@ func (c *Collection) EnsureIndexKey(key ...string) error {
 //
 //     http://docs.mongodb.org/manual/tutorial/expire-data
 //
-// Spatial indexes are also supported through that API.  Here is an example:
+// Other kinds of indexes are also supported through that API. Here is an example:
 //
 //     index := Index{
-//         Key: []string{"@loc"},
+//         Key: []string{"$2d:loc"},
 //         Bits: 26,
 //     }
 //     err := collection.EnsureIndex(index)
 //
-// The "@" prefix in the field name will request the creation of a "2d" index
-// for the given field.
+// The example above requests the creation of a "2d" index for the "loc" field.
 //
 // The 2D index bounds may be changed using the Min and Max attributes of the
 // Index value.  The default bound setting of (-180, 180) is suitable for
@@ -843,9 +858,8 @@ func simpleIndexKey(realKey bson.D) (key []string) {
 			key = append(key, "-"+field)
 			continue
 		}
-		s, _ := realKey[i].Value.(string)
-		if s == "2d" {
-			key = append(key, "@"+field)
+		if s, ok := realKey[i].Value.(string); ok {
+			key = append(key, "$"+s+":"+field)
 			continue
 		}
 		panic("Got unknown index key type for field " + field)

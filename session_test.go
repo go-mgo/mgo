@@ -2181,8 +2181,16 @@ func (s *S) TestEnsureIndex(c *C) {
 		DropDups: true,
 	}
 
+	// Obsolete:
 	index3 := mgo.Index{
-		Key:  []string{"@loc"},
+		Key:  []string{"@loc_old"},
+		Min:  -500,
+		Max:  500,
+		Bits: 32,
+	}
+
+	index4 := mgo.Index{
+		Key:  []string{"$2d:loc"},
 		Min:  -500,
 		Max:  500,
 		Bits: 32,
@@ -2190,14 +2198,10 @@ func (s *S) TestEnsureIndex(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
-	err = coll.EnsureIndex(index1)
-	c.Assert(err, IsNil)
-
-	err = coll.EnsureIndex(index2)
-	c.Assert(err, IsNil)
-
-	err = coll.EnsureIndex(index3)
-	c.Assert(err, IsNil)
+	for _, index := range []mgo.Index{index1, index2, index3, index4} {
+		err = coll.EnsureIndex(index)
+		c.Assert(err, IsNil)
+	}
 
 	sysidx := session.DB("mydb").C("system.indexes")
 
@@ -2210,7 +2214,11 @@ func (s *S) TestEnsureIndex(c *C) {
 	c.Assert(err, IsNil)
 
 	result3 := M{}
-	err = sysidx.Find(M{"name": "loc_"}).One(result3)
+	err = sysidx.Find(M{"name": "loc_old_"}).One(result3)
+	c.Assert(err, IsNil)
+
+	result4 := M{}
+	err = sysidx.Find(M{"name": "loc_"}).One(result4)
 	c.Assert(err, IsNil)
 
 	delete(result1, "v")
@@ -2234,6 +2242,17 @@ func (s *S) TestEnsureIndex(c *C) {
 
 	delete(result3, "v")
 	expected3 := M{
+		"name": "loc_old_",
+		"key":  M{"loc_old": "2d"},
+		"ns":   "mydb.mycoll",
+		"min":  -500,
+		"max":  500,
+		"bits": 32,
+	}
+	c.Assert(result3, DeepEquals, expected3)
+
+	delete(result4, "v")
+	expected4 := M{
 		"name": "loc_",
 		"key":  M{"loc": "2d"},
 		"ns":   "mydb.mycoll",
@@ -2241,7 +2260,7 @@ func (s *S) TestEnsureIndex(c *C) {
 		"max":  500,
 		"bits": 32,
 	}
-	c.Assert(result3, DeepEquals, expected3)
+	c.Assert(result4, DeepEquals, expected4)
 
 	// Ensure the index actually works for real.
 	err = coll.Insert(M{"a": 1, "b": 1})
@@ -2419,7 +2438,11 @@ func (s *S) TestEnsureIndexGetIndexes(c *C) {
 	err = coll.EnsureIndexKey("a")
 	c.Assert(err, IsNil)
 
+	// Obsolete.
 	err = coll.EnsureIndexKey("@c")
+	c.Assert(err, IsNil)
+
+	err = coll.EnsureIndexKey("$2d:d")
 	c.Assert(err, IsNil)
 
 	indexes, err := coll.Indexes()
@@ -2431,7 +2454,9 @@ func (s *S) TestEnsureIndexGetIndexes(c *C) {
 	c.Assert(indexes[2].Name, Equals, "b_-1")
 	c.Assert(indexes[2].Key, DeepEquals, []string{"-b"})
 	c.Assert(indexes[3].Name, Equals, "c_")
-	c.Assert(indexes[3].Key, DeepEquals, []string{"@c"})
+	c.Assert(indexes[3].Key, DeepEquals, []string{"$2d:c"})
+	c.Assert(indexes[4].Name, Equals, "d_")
+	c.Assert(indexes[4].Key, DeepEquals, []string{"$2d:d"})
 }
 
 var testTTL = flag.Bool("test-ttl", false, "test TTL collections (may take 1 minute)")
