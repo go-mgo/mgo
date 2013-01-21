@@ -1190,6 +1190,18 @@ func (s *S) TestObjectIdHex(c *C) {
 	c.Assert(id.Hex(), Equals, "4d88e15b60f486e428412dc9")
 }
 
+func (s *S) TestIsObjectIdHex(c *C) {
+	test := []struct{ id string; valid bool }{
+		{"4d88e15b60f486e428412dc9", true},
+		{"4d88e15b60f486e428412dc", false},
+		{"4d88e15b60f486e428412dc9e", false},
+		{"4d88e15b60f486e428412dcx", false},
+	}
+	for _, t := range test {
+		c.Assert(bson.IsObjectIdHex(t.id), Equals, t.valid)
+	}
+}
+
 // --------------------------------------------------------------------------
 // ObjectId parts extraction tests.
 

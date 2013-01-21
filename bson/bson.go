@@ -151,13 +151,23 @@ type ObjectId string
 
 // ObjectIdHex returns an ObjectId from the provided hex representation.
 // Calling this function with an invalid hex representation will
-// cause a runtime panic.
+// cause a runtime panic. See the IsObjectIdHex function.
 func ObjectIdHex(s string) ObjectId {
 	d, err := hex.DecodeString(s)
 	if err != nil || len(d) != 12 {
 		panic(fmt.Sprintf("Invalid input to ObjectIdHex: %q", s))
 	}
 	return ObjectId(d)
+}
+
+// IsObjectIdHex returns whether s is a valid hex representation of
+// an ObjectId. See the ObjectIdHex function.
+func IsObjectIdHex(s string) bool {
+	if len(s) != 24 {
+		return false
+	}
+	_, err := hex.DecodeString(s)
+	return err == nil
 }
 
 // objectIdCounter is atomically incremented when generating a new ObjectId
