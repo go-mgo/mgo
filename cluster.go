@@ -167,6 +167,8 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 		stats.conn(+1, true)
 	} else if result.Secondary {
 		debugf("SYNC %s is a slave.", addr)
+	} else if cluster.direct {
+		logf("SYNC %s in unknown state. Pretending it's a slave due to direct connection.", addr)
 	} else {
 		logf("SYNC %s is neither a master nor a slave.", addr)
 		// Made an incorrect assumption above, so fix stats.
