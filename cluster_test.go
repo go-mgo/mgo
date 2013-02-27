@@ -800,6 +800,32 @@ func (s *S) TestDirect(c *C) {
 	c.Assert(strings.HasSuffix(result.Host, ":40012"), Equals, true)
 }
 
+func (s *S) TestDirectToUnknownStateMember(c *C) {
+	session, err := mgo.Dial("localhost:40031?connect=direct")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	session.SetMode(mgo.Monotonic, true)
+
+	result := &struct{ Host string }{}
+	err = session.Run("serverStatus", result)
+	c.Assert(err, IsNil)
+	c.Assert(strings.HasSuffix(result.Host, ":40031"), Equals, true)
+
+	// We've got no master, so it'll timeout.
+	session.SetSyncTimeout(5e8 * time.Nanosecond)
+
+	coll := session.DB("mydb").C("mycoll")
+	err = coll.Insert(M{"test": 1})
+	c.Assert(err, ErrorMatches, "no reachable servers")
+
+	// Slave is still reachable.
+	result.Host = ""
+	err = session.Run("serverStatus", result)
+	c.Assert(err, IsNil)
+	c.Assert(strings.HasSuffix(result.Host, ":40031"), Equals, true)
+}
+
 type OpCounters struct {
 	Insert  int
 	Query   int
