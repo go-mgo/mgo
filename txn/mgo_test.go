@@ -2,7 +2,7 @@ package txn_test
 
 import (
 	"bytes"
-	"labix.org/v2/mgo"
+	"labix.org/v3/mgo"
 	. "launchpad.net/gocheck"
 	"os/exec"
 	"time"

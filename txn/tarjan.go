@@ -1,7 +1,7 @@
 package txn
 
 import (
-	"labix.org/v2/mgo/bson"
+	"labix.org/v3/mgo/bson"
 	"sort"
 )
 
