@@ -27,7 +27,6 @@
 package mgo_test
 
 import (
-	"errors"
 	"flag"
 	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
@@ -947,11 +946,11 @@ func (s *S) TestQueryExplain(c *C) {
 
 	n := 0
 	var result M
-	err = query.For(&result, func() error {
+	iter := query.Iter()
+	for iter.Next(&result) {
 		n++
-		return nil
-	})
-	c.Assert(err, IsNil)
+	}
+	c.Assert(iter.Close(), IsNil)
 	c.Assert(n, Equals, 2)
 }
 
@@ -1034,8 +1033,7 @@ func (s *S) TestFindIterAll(c *C) {
 
 	mgo.ResetStats()
 
-	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2)
-	iter := query.Iter()
+	iter := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2).Iter()
 	result := struct{ N int }{}
 	for i := 2; i < 7; i++ {
 		ok := iter.Next(&result)
@@ -1049,7 +1047,7 @@ func (s *S) TestFindIterAll(c *C) {
 
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, false)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 
 	session.Refresh() // Release socket.
 
@@ -1098,7 +1096,7 @@ func (s *S) TestFindIterWithoutResults(c *C) {
 	result := struct{ N int }{}
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, false)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 	c.Assert(result.N, Equals, 0)
 }
 
@@ -1130,7 +1128,7 @@ func (s *S) TestFindIterLimit(c *C) {
 
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, false)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 
 	session.Refresh() // Release socket.
 
@@ -1169,7 +1167,7 @@ func (s *S) TestTooManyItemsLimitBug(c *C) {
 		}
 		iters++
 	}
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 	c.Assert(iters, Equals, limit)
 }
 
@@ -1284,7 +1282,7 @@ func (s *S) TestFindIterLimitWithBatch(c *C) {
 
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, false)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 
 	session.Refresh() // Release socket.
 
@@ -1335,7 +1333,7 @@ func (s *S) TestFindIterSortWithBatch(c *C) {
 
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, false)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 
 	session.Refresh() // Release socket.
 
@@ -1384,7 +1382,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	for i := 2; i != n; i++ {
 		ok := iter.Next(&result)
 		c.Assert(ok, Equals, true)
-		c.Assert(iter.Err(), IsNil)
+		c.Assert(iter.Close(), IsNil)
 		c.Assert(iter.Timeout(), Equals, false)
 		c.Assert(result.N, Equals, ns[i])
 		if i == 3 { // The batch boundary.
@@ -1410,7 +1408,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	c.Log("Will wait for Next with N=47...")
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, true)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 47)
 	c.Log("Got Next with N=47!")
@@ -1430,7 +1428,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	started := time.Now()
 	ok = iter.Next(&result)
 	c.Assert(ok, Equals, false)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 	c.Assert(iter.Timeout(), Equals, true)
 	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
 
@@ -1439,7 +1437,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	coll.Insert(M{"n": 48})
 	ok = iter.Next(&result)
 	c.Assert(ok, Equals, true)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 48)
 }
@@ -1478,7 +1476,7 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	for i := 2; i != n; i++ {
 		ok := iter.Next(&result)
 		c.Assert(ok, Equals, true)
-		c.Assert(iter.Err(), IsNil)
+		c.Assert(iter.Close(), IsNil)
 		c.Assert(iter.Timeout(), Equals, false)
 		c.Assert(result.N, Equals, ns[i])
 		if i == 3 { // The batch boundary.
@@ -1503,7 +1501,7 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	c.Log("Will wait for Next with N=47...")
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, true)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 47)
 	c.Log("Got Next with N=47!")
@@ -1523,7 +1521,7 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	started := time.Now()
 	ok = iter.Next(&result)
 	c.Assert(ok, Equals, false)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 	c.Assert(iter.Timeout(), Equals, true)
 	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
 
@@ -1532,7 +1530,7 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	coll.Insert(M{"n": 48})
 	ok = iter.Next(&result)
 	c.Assert(ok, Equals, true)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 48)
 }
@@ -1595,7 +1593,7 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	c.Log("Will wait for Next with N=47...")
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, true)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 47)
 	c.Log("Got Next with N=47!")
@@ -1631,124 +1629,14 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	select {
 	case ok := <-gotNext:
 		c.Assert(ok, Equals, false)
-		c.Assert(iter.Err(), ErrorMatches, "Closed explicitly")
+		c.Assert(iter.Close(), ErrorMatches, "Closed explicitly")
 		c.Assert(iter.Timeout(), Equals, false)
 	case <-time.After(1e9):
 		c.Fatal("Closing the session did not unblock Next")
 	}
 }
 
-func (s *S) TestFindForOnIter(c *C) {
-	session, err := mgo.Dial("localhost:40001")
-	c.Assert(err, IsNil)
-	defer session.Close()
-
-	coll := session.DB("mydb").C("mycoll")
-
-	ns := []int{40, 41, 42, 43, 44, 45, 46}
-	for _, n := range ns {
-		coll.Insert(M{"n": n})
-	}
-
-	session.Refresh() // Release socket.
-
-	mgo.ResetStats()
-
-	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2)
-	iter := query.Iter()
-
-	i := 2
-	var result *struct{ N int }
-	err = iter.For(&result, func() error {
-		c.Assert(i < 7, Equals, true)
-		c.Assert(result.N, Equals, ns[i])
-		if i == 1 {
-			stats := mgo.GetStats()
-			c.Assert(stats.ReceivedDocs, Equals, 2)
-		}
-		i++
-		return nil
-	})
-	c.Assert(err, IsNil)
-
-	session.Refresh() // Release socket.
-
-	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 2*GET_MORE_OP
-	c.Assert(stats.ReceivedOps, Equals, 3) // and their REPLY_OPs.
-	c.Assert(stats.ReceivedDocs, Equals, 5)
-	c.Assert(stats.SocketsInUse, Equals, 0)
-}
-
-func (s *S) TestFindFor(c *C) {
-	session, err := mgo.Dial("localhost:40001")
-	c.Assert(err, IsNil)
-	defer session.Close()
-
-	coll := session.DB("mydb").C("mycoll")
-
-	ns := []int{40, 41, 42, 43, 44, 45, 46}
-	for _, n := range ns {
-		coll.Insert(M{"n": n})
-	}
-
-	session.Refresh() // Release socket.
-
-	mgo.ResetStats()
-
-	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2)
-
-	i := 2
-	var result *struct{ N int }
-	err = query.For(&result, func() error {
-		c.Assert(i < 7, Equals, true)
-		c.Assert(result.N, Equals, ns[i])
-		if i == 1 {
-			stats := mgo.GetStats()
-			c.Assert(stats.ReceivedDocs, Equals, 2)
-		}
-		i++
-		return nil
-	})
-	c.Assert(err, IsNil)
-
-	session.Refresh() // Release socket.
-
-	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 2*GET_MORE_OP
-	c.Assert(stats.ReceivedOps, Equals, 3) // and their REPLY_OPs.
-	c.Assert(stats.ReceivedDocs, Equals, 5)
-	c.Assert(stats.SocketsInUse, Equals, 0)
-}
-
-func (s *S) TestFindForStopOnError(c *C) {
-	session, err := mgo.Dial("localhost:40001")
-	c.Assert(err, IsNil)
-	defer session.Close()
-
-	coll := session.DB("mydb").C("mycoll")
-
-	ns := []int{40, 41, 42, 43, 44, 45, 46}
-	for _, n := range ns {
-		coll.Insert(M{"n": n})
-	}
-
-	query := coll.Find(M{"n": M{"$gte": 42}})
-	i := 2
-	var result *struct{ N int }
-	err = query.For(&result, func() error {
-		c.Assert(i < 4, Equals, true)
-		c.Assert(result.N, Equals, ns[i])
-		if i == 3 {
-			return errors.New("stop!")
-		}
-		i++
-		return nil
-	})
-	c.Assert(err, ErrorMatches, "stop!")
-}
-
-func (s *S) TestFindForResetsResult(c *C) {
+func (s *S) TestIterNextResetsResult(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -1764,7 +1652,8 @@ func (s *S) TestFindForResetsResult(c *C) {
 
 	i := 0
 	var sresult *struct{ N1, N2, N3 int }
-	err = query.For(&sresult, func() error {
+	iter := query.Iter()
+	for iter.Next(&sresult) {
 		switch i {
 		case 0:
 			c.Assert(sresult.N1, Equals, 1)
@@ -1777,13 +1666,13 @@ func (s *S) TestFindForResetsResult(c *C) {
 			c.Assert(sresult.N1+sresult.N2, Equals, 0)
 		}
 		i++
-		return nil
-	})
-	c.Assert(err, IsNil)
+	}
+	c.Assert(iter.Close(), IsNil)
 
 	i = 0
 	var mresult M
-	err = query.For(&mresult, func() error {
+	iter = query.Iter()
+	for iter.Next(&mresult) {
 		delete(mresult, "_id")
 		switch i {
 		case 0:
@@ -1794,13 +1683,13 @@ func (s *S) TestFindForResetsResult(c *C) {
 			c.Assert(mresult, DeepEquals, M{"n3": 3})
 		}
 		i++
-		return nil
-	})
-	c.Assert(err, IsNil)
+	}
+	c.Assert(iter.Close(), IsNil)
 
 	i = 0
 	var iresult interface{}
-	err = query.For(&iresult, func() error {
+	iter = query.Iter()
+	for iter.Next(&iresult) {
 		mresult, ok := iresult.(bson.M)
 		c.Assert(ok, Equals, true, Commentf("%#v", iresult))
 		delete(mresult, "_id")
@@ -1813,9 +1702,8 @@ func (s *S) TestFindForResetsResult(c *C) {
 			c.Assert(mresult, DeepEquals, bson.M{"n3": 3})
 		}
 		i++
-		return nil
-	})
-	c.Assert(err, IsNil)
+	}
+	c.Assert(iter.Close(), IsNil)
 }
 
 func (s *S) TestFindIterSnapshot(c *C) {
@@ -1859,7 +1747,7 @@ func (s *S) TestFindIterSnapshot(c *C) {
 		}
 		seen[result.Id] = true
 	}
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 }
 
 func (s *S) TestSort(c *C) {
@@ -1964,7 +1852,7 @@ func (s *S) TestPrefetching(c *C) {
 			var result struct{ N int }
 			for i := 0; i < beforeMore; i++ {
 				ok := iter.Next(&result)
-				c.Assert(ok, Equals, true, Commentf("iter.Err: %v", iter.Err()))
+				c.Assert(ok, Equals, true, Commentf("iter.Err: %v", iter.Close()))
 			}
 			beforeMore = 99
 			c.Logf("Done iterating.")
@@ -1977,7 +1865,7 @@ func (s *S) TestPrefetching(c *C) {
 
 			c.Logf("Iterating over one more document on batch %d", batchi)
 			ok := iter.Next(&result)
-			c.Assert(ok, Equals, true, Commentf("iter.Err: %v", iter.Err()))
+			c.Assert(ok, Equals, true, Commentf("iter.Err: %v", iter.Close()))
 			c.Logf("Done iterating.")
 
 			session.Run("ping", nil) // Roundtrip to settle down.
@@ -2166,7 +2054,7 @@ func (s *S) TestQueryErrorNext(c *C) {
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, false)
 
-	err = iter.Err()
+	err = iter.Close()
 	c.Assert(err, ErrorMatches, "Unsupported projection option: b")
 	c.Assert(err.(*mgo.QueryError).Message, Matches, "Unsupported projection option: b")
 	c.Assert(err.(*mgo.QueryError).Code, Equals, 13097)
@@ -2643,13 +2531,13 @@ func (s *S) TestMapReduceToCollection(c *C) {
 		Value int
 	}
 	mr := session.DB("mydb").C("mr")
-	err = mr.Find(nil).For(&item, func() error {
+	iter := mr.Find(nil).Iter()
+	for iter.Next(&item) {
 		c.Logf("Item: %#v", &item)
 		c.Assert(item.Value, Equals, expected[item.Id])
 		expected[item.Id] = -1
-		return nil
-	})
-	c.Assert(err, IsNil)
+	}
+	c.Assert(iter.Close(), IsNil)
 }
 
 func (s *S) TestMapReduceToOtherDb(c *C) {
@@ -2685,13 +2573,13 @@ func (s *S) TestMapReduceToOtherDb(c *C) {
 		Value int
 	}
 	mr := session.DB("otherdb").C("mr")
-	err = mr.Find(nil).For(&item, func() error {
+	iter := mr.Find(nil).Iter()
+	for iter.Next(&item) {
 		c.Logf("Item: %#v", &item)
 		c.Assert(item.Value, Equals, expected[item.Id])
 		expected[item.Id] = -1
-		return nil
-	})
-	c.Assert(err, IsNil)
+	}
+	c.Assert(iter.Close(), IsNil)
 }
 
 func (s *S) TestMapReduceScope(c *C) {
@@ -2878,7 +2766,7 @@ func (s *S) TestPipeIter(c *C) {
 	}
 
 	c.Assert(iter.Next(&result), Equals, false)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 }
 
 func (s *S) TestPipeAll(c *C) {
@@ -2974,5 +2862,5 @@ func (s *S) TestInterfaceIterBug(c *C) {
 		c.Assert(result.(bson.M)["n"], Equals, i)
 		i++
 	}
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 }

@@ -249,7 +249,7 @@ func (s *S) TestGridFSCreateWithChunking(c *C) {
 			}
 			break
 		}
-		c.Assert(iter.Err(), IsNil)
+		c.Assert(iter.Close(), IsNil)
 
 		result["_id"] = "<id>"
 
@@ -589,7 +589,7 @@ func (s *S) TestGridFSOpenNext(c *C) {
 
 	ok = gfs.OpenNext(iter, &f)
 	c.Assert(ok, Equals, false)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 	c.Assert(f, IsNil)
 
 	// Do it again with a more restrictive query to make sure
@@ -602,6 +602,6 @@ func (s *S) TestGridFSOpenNext(c *C) {
 
 	ok = gfs.OpenNext(iter, &f)
 	c.Assert(ok, Equals, false)
-	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Close(), IsNil)
 	c.Assert(f, IsNil)
 }

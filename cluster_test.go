@@ -83,7 +83,7 @@ func (s *S) TestNewSession(c *C) {
 	m := M{}
 	ok := iter.Next(m)
 	c.Assert(ok, Equals, true)
-	err = iter.Err()
+	err = iter.Close()
 	c.Assert(err, IsNil)
 
 	// If Batch(-1) is in effect, a single document must have been received.
@@ -148,7 +148,7 @@ func (s *S) TestCloneSession(c *C) {
 	m := M{}
 	ok := iter.Next(m)
 	c.Assert(ok, Equals, true)
-	err = iter.Err()
+	err = iter.Close()
 	c.Assert(err, IsNil)
 
 	// If Batch(-1) is in effect, a single document must have been received.
@@ -1068,7 +1068,7 @@ func (s *S) TestSetModeEventualIterBug(c *C) {
 	for iter.Next(&result) {
 		i++
 	}
-	c.Assert(iter.Err(), Equals, nil)
+	c.Assert(iter.Close(), Equals, nil)
 	c.Assert(i, Equals, N)
 }
 

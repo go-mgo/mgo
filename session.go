@@ -1,18 +1,18 @@
 // mgo - MongoDB driver for Go
-// 
+//
 // Copyright (c) 2010-2012 - Gustavo Niemeyer <gustavo@niemeyer.net>
-// 
+//
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met: 
-// 
+// modification, are permitted provided that the following conditions are met:
+//
 // 1. Redistributions of source code must retain the above copyright notice, this
-//    list of conditions and the following disclaimer. 
+//    list of conditions and the following disclaimer.
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
-//    and/or other materials provided with the distribution. 
-// 
+//    and/or other materials provided with the distribution.
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 // ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 // WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -842,7 +842,7 @@ func (c *Collection) Indexes() (indexes []Index, err error) {
 		}
 		indexes = append(indexes, index)
 	}
-	err = iter.Err()
+	err = iter.Close()
 	return
 }
 
@@ -1398,7 +1398,7 @@ func (p *Pipe) One(result interface{}) error {
 	if iter.Next(result) {
 		return nil
 	}
-	if err := iter.Err(); err != nil {
+	if err := iter.Close(); err != nil {
 		return err
 	}
 	return ErrNotFound
@@ -1825,7 +1825,7 @@ func (q *Query) Sort(fields ...string) *Query {
 //
 //     http://www.mongodb.org/display/DOCS/Optimization
 //     http://www.mongodb.org/display/DOCS/Query+Optimizer
-//     
+//
 func (q *Query) Explain(result interface{}) error {
 	q.m.Lock()
 	clone := &Query{session: q.session, query: q.query}
@@ -1839,7 +1839,7 @@ func (q *Query) Explain(result interface{}) error {
 	if iter.Next(result) {
 		return nil
 	}
-	return iter.Err()
+	return iter.Close()
 }
 
 // Hint will include an explicit "hint" in the query to force the server
@@ -1993,7 +1993,7 @@ func (q *Query) One(result interface{}) (err error) {
 // optionally a database name.
 //
 // See the FindRef methods on Session and on Database.
-// 
+//
 // Relevant documentation:
 //
 //     http://www.mongodb.org/display/DOCS/Database+References
@@ -2013,7 +2013,7 @@ type DBRef struct {
 // See also the DBRef type and the FindRef method on Session.
 //
 // Relevant documentation:
-// 
+//
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
 func (db *Database) FindRef(ref *DBRef) *Query {
@@ -2033,7 +2033,7 @@ func (db *Database) FindRef(ref *DBRef) *Query {
 // See also the DBRef type and the FindRef method on Database.
 //
 // Relevant documentation:
-// 
+//
 //     http://www.mongodb.org/display/DOCS/Database+References
 //
 func (s *Session) FindRef(ref *DBRef) *Query {
@@ -2047,14 +2047,14 @@ func (s *Session) FindRef(ref *DBRef) *Query {
 // CollectionNames returns the collection names present in database.
 func (db *Database) CollectionNames() (names []string, err error) {
 	c := len(db.Name) + 1
+	iter := db.C("system.namespaces").Find(nil).Iter()
 	var result *struct{ Name string }
-	err = db.C("system.namespaces").Find(nil).For(&result, func() error {
+	for iter.Next(&result) {
 		if strings.Index(result.Name, "$") < 0 || strings.Index(result.Name, ".oplog.$") >= 0 {
 			names = append(names, result.Name[c:])
 		}
-		return nil
-	})
-	if err != nil {
+	}
+	if err := iter.Close(); err != nil {
 		return nil, err
 	}
 	sort.Strings(names)
@@ -2151,7 +2151,7 @@ func (q *Query) Iter() *Iter {
 //             fmt.Println(result.Id)
 //             lastId = result.Id
 //         }
-//         if iter.Err() != nil {
+//         if iter.Close() != nil {
 //             panic(err)
 //         }
 //         if iter.Timeout() {
@@ -2210,13 +2210,15 @@ func (s *Session) slaveOkFlag() (flag uint32) {
 	return
 }
 
-// Err returns nil if no errors happened during iteration, or the actual
-// error otherwise.
+// Close releases resources used by the iterator and returns nil if no errors
+// happened during iteration, or the actual error otherwise. It is idempotent,
+// which means it can be called repeatedly, and will return the same result
+// every time.
 //
 // In case a resulting document included a field named $err or errmsg, which are
 // standard ways for MongoDB to report an improper query, the returned value has
-// a *QueryError type, and includes the Err message and the Code.
-func (iter *Iter) Err() error {
+// a *QueryError type.
+func (iter *Iter) Close() error {
 	iter.m.Lock()
 	err := iter.err
 	iter.m.Unlock()
@@ -2253,8 +2255,8 @@ func (iter *Iter) Timeout() bool {
 //    for iter.Next(&result) {
 //        fmt.Printf("Result: %v\n", result.Id)
 //    }
-//    if iter.Err() != nil {
-//        panic(iter.Err())
+//    if iter.Close() != nil {
+//        panic(iter.Close())
 //    }
 //
 func (iter *Iter) Next(result interface{}) bool {
@@ -2340,7 +2342,8 @@ func (iter *Iter) Next(result interface{}) bool {
 	panic("unreachable")
 }
 
-// All retrieves all documents from the result set into the provided slice.
+// All retrieves all documents from the result set into the provided slice
+// and closes the iterator.
 //
 // The result argument must necessarily be the address for a slice. The slice
 // may be nil or previously allocated.
@@ -2349,14 +2352,14 @@ func (iter *Iter) Next(result interface{}) bool {
 // potentially large, since it may consume all memory until the system
 // crashes. Consider building the query with a Limit clause to ensure the
 // result size is bounded.
-// 
+//
 // For instance:
 //
 //    var result []struct{ Value int }
 //    iter := collection.Find(nil).Limit(100).Iter()
 //    err := iter.All(&result)
 //    if err != nil {
-//        panic(iter.Err())
+//        panic(err)
 //    }
 //
 func (iter *Iter) All(result interface{}) error {
@@ -2384,47 +2387,12 @@ func (iter *Iter) All(result interface{}) error {
 		i++
 	}
 	resultv.Elem().Set(slicev.Slice(0, i))
-	return iter.Err()
+	return iter.Close()
 }
 
 // All works like Iter.All.
 func (q *Query) All(result interface{}) error {
 	return q.Iter().All(result)
-}
-
-// The For method is obsolete and will be removed in a future release.
-// See Iter as an elegant replacement.
-func (q *Query) For(result interface{}, f func() error) error {
-	return q.Iter().For(result, f)
-}
-
-// The For method is obsolete and will be removed in a future release.
-// See Iter as an elegant replacement.
-func (iter *Iter) For(result interface{}, f func() error) (err error) {
-	valid := false
-	v := reflect.ValueOf(result)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-		switch v.Kind() {
-		case reflect.Map, reflect.Ptr, reflect.Interface, reflect.Slice:
-			valid = v.IsNil()
-		}
-	}
-	if !valid {
-		panic("For needs a pointer to nil reference value.  See the documentation.")
-	}
-	zero := reflect.Zero(v.Type())
-	for {
-		v.Set(zero)
-		if !iter.Next(result) {
-			break
-		}
-		err = f()
-		if err != nil {
-			return err
-		}
-	}
-	return iter.Err()
 }
 
 func (iter *Iter) acquireSocket() (*mongoSocket, error) {
@@ -2557,11 +2525,11 @@ func (q *Query) Distinct(key string, result interface{}) error {
 }
 
 type mapReduceCmd struct {
-	Collection string "mapreduce"
-	Map        string ",omitempty"
-	Reduce     string ",omitempty"
-	Finalize   string ",omitempty"
-	Limit      int32  ",omitempty"
+	Collection string      "mapreduce"
+	Map        interface{} ",omitempty"
+	Reduce     interface{} ",omitempty"
+	Finalize   interface{} ",omitempty"
+	Limit      int32       ",omitempty"
 	Out        interface{}
 	Query      interface{} ",omitempty"
 	Sort       interface{} ",omitempty"
@@ -2580,9 +2548,9 @@ type mapReduceResult struct {
 }
 
 type MapReduce struct {
-	Map      string      // Map Javascript function code (required)
-	Reduce   string      // Reduce Javascript function code (required)
-	Finalize string      // Finalize Javascript function code (optional)
+	Map      interface{} // Map Javascript function code (required)
+	Reduce   interface{} // Reduce Javascript function code (required)
+	Finalize interface{}      // Finalize Javascript function code (optional)
 	Out      interface{} // Output collection name or document. If nil, results are inlined into the result parameter.
 	Scope    interface{} // Optional global scope for Javascript functions
 	Verbose  bool
@@ -2656,7 +2624,7 @@ type MapReduceTime struct {
 //     for _, item := range result {
 //         fmt.Println(item.Value)
 //     }
-//     
+//
 // This function is compatible with MongoDB 1.7.4+.
 //
 // Relevant documentation:

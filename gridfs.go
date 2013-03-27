@@ -251,7 +251,7 @@ func (gfs *GridFS) Open(name string) (file *GridFile, err error) {
 // OpenNext opens the next file from iter, sets *file to it, and returns
 // true on the success case. If no more documents are available on iter or
 // an error occurred, *file is set to nil and the result is false. Errors
-// will be available on iter.Err().
+// will be available on iter.Close().
 //
 // The iter parameter must be an iterator on the GridFS files collection.
 // Using the GridFS.Find method is an easy way to obtain such an iterator,
@@ -271,8 +271,8 @@ func (gfs *GridFS) Open(name string) (file *GridFile, err error) {
 //     for gfs.OpenNext(iter, &f) {
 //         fmt.Printf("Filename: %s\n", f.Name())
 //     }
-//     if iter.Err() != nil {
-//         panic(iter.Err())
+//     if iter.Close() != nil {
+//         panic(iter.Close())
 //     }
 //
 func (gfs *GridFS) OpenNext(iter *Iter, file **GridFile) bool {
@@ -335,7 +335,7 @@ func (gfs *GridFS) Remove(name string) (err error) {
 		}
 	}
 	if err == nil {
-		err = iter.Err()
+		err = iter.Close()
 	}
 	return err
 }

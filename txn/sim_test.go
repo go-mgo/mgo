@@ -344,7 +344,7 @@ func simulate(c *C, params params) {
 	for iter.Next(&account) {
 		globalBalance += account.Balance
 	}
-	c.Check(iter.Err(), IsNil)
+	c.Check(iter.Close(), IsNil)
 	c.Check(globalBalance, Equals, params.accounts*300, Commentf("Total amount of money should be constant."))
 
 	// Compute and verify the exact final state of all accounts.
@@ -369,7 +369,7 @@ func simulate(c *C, params params) {
 	for iter.Next(&account) {
 		c.Assert(account.Balance, Equals, balance[account.Id])
 	}
-	c.Check(iter.Err(), IsNil)
+	c.Check(iter.Close(), IsNil)
 	c.Logf("Total transactions: %d (%d applied, %d aborted)", len(changeLog), applied, aborted)
 
 	if params.changelog {
