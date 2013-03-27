@@ -1,17 +1,24 @@
 
-var ports = [40001, 40002, 40011, 40012, 40013, 40021, 40022, 40023, 40101, 40201, 40202]
+var ports = [40001, 40002, 40011, 40012, 40013, 40021, 40022, 40023, 40041, 40101, 40102, 40103, 40201, 40202, 40203]
+var auth = [40002, 40103, 40203]
 
-for (var i = 0; i != ports.length; i++) {
-    var server = "localhost:" + ports[i]
-    var mongo = new Mongo("localhost:" + ports[i])
+for (var i in ports) {
+    var port = ports[i]
+    var server = "localhost:" + port
+    var mongo = new Mongo("localhost:" + port)
     var admin = mongo.getDB("admin")
-    if (ports[i] == 40002) {
-        admin.auth("root", "rapadura")
+    
+    for (var j in auth) {
+        if (auth[j] == port) {
+            admin.auth("root", "rapadura")
+            break
+        }
     }
     var result = admin.runCommand({"listDatabases": 1})
     // Why is the command returning undefined!?
     while (typeof result.databases == "undefined") {
-        print("dropall.js: listing databases got:", result)
+        throw "result.databases is undefined"
+        print("dropall.js: listing databases of :" + port + " got:", result)
         result = admin.runCommand({"listDatabases": 1})
     }
     var dbs = result.databases

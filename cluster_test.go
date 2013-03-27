@@ -801,7 +801,7 @@ func (s *S) TestDirect(c *C) {
 }
 
 func (s *S) TestDirectToUnknownStateMember(c *C) {
-	session, err := mgo.Dial("localhost:40031?connect=direct")
+	session, err := mgo.Dial("localhost:40041?connect=direct")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -810,7 +810,7 @@ func (s *S) TestDirectToUnknownStateMember(c *C) {
 	result := &struct{ Host string }{}
 	err = session.Run("serverStatus", result)
 	c.Assert(err, IsNil)
-	c.Assert(strings.HasSuffix(result.Host, ":40031"), Equals, true)
+	c.Assert(strings.HasSuffix(result.Host, ":40041"), Equals, true)
 
 	// We've got no master, so it'll timeout.
 	session.SetSyncTimeout(5e8 * time.Nanosecond)
@@ -823,7 +823,7 @@ func (s *S) TestDirectToUnknownStateMember(c *C) {
 	result.Host = ""
 	err = session.Run("serverStatus", result)
 	c.Assert(err, IsNil)
-	c.Assert(strings.HasSuffix(result.Host, ":40031"), Equals, true)
+	c.Assert(strings.HasSuffix(result.Host, ":40041"), Equals, true)
 }
 
 type OpCounters struct {

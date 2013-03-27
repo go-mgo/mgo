@@ -33,48 +33,54 @@ import (
 )
 
 func (s *S) TestAuthLogin(c *C) {
-	session, err := mgo.Dial("localhost:40002")
-	c.Assert(err, IsNil)
-	defer session.Close()
+	// Test both with a normal database and with an authenticated shard.
+	for _, addr := range []string{"localhost:40002", "localhost:40203"} {
+		session, err := mgo.Dial(addr)
+		c.Assert(err, IsNil)
+		defer session.Close()
 
-	coll := session.DB("mydb").C("mycoll")
-	err = coll.Insert(M{"n": 1})
-	c.Assert(err, ErrorMatches, "unauthorized|need to login|not authorized .*")
+		coll := session.DB("mydb").C("mycoll")
+		err = coll.Insert(M{"n": 1})
+		c.Assert(err, ErrorMatches, "unauthorized|need to login|not authorized .*")
 
-	admindb := session.DB("admin")
+		admindb := session.DB("admin")
 
-	err = admindb.Login("root", "wrong")
-	c.Assert(err, ErrorMatches, "auth fails")
+		err = admindb.Login("root", "wrong")
+		c.Assert(err, ErrorMatches, "auth fails")
 
-	err = admindb.Login("root", "rapadura")
-	c.Assert(err, IsNil)
+		err = admindb.Login("root", "rapadura")
+		c.Assert(err, IsNil)
 
-	err = coll.Insert(M{"n": 1})
-	c.Assert(err, IsNil)
+		err = coll.Insert(M{"n": 1})
+		c.Assert(err, IsNil)
+	}
 }
 
 func (s *S) TestAuthLoginLogout(c *C) {
-	session, err := mgo.Dial("localhost:40002")
-	c.Assert(err, IsNil)
-	defer session.Close()
+	// Test both with a normal database and with an authenticated shard.
+	for _, addr := range []string{"localhost:40002", "localhost:40203"} {
+		session, err := mgo.Dial(addr)
+		c.Assert(err, IsNil)
+		defer session.Close()
 
-	admindb := session.DB("admin")
-	err = admindb.Login("root", "rapadura")
-	c.Assert(err, IsNil)
+		admindb := session.DB("admin")
+		err = admindb.Login("root", "rapadura")
+		c.Assert(err, IsNil)
 
-	admindb.Logout()
+		admindb.Logout()
 
-	coll := session.DB("mydb").C("mycoll")
-	err = coll.Insert(M{"n": 1})
-	c.Assert(err, ErrorMatches, "unauthorized|need to login|not authorized .*")
+		coll := session.DB("mydb").C("mycoll")
+		err = coll.Insert(M{"n": 1})
+		c.Assert(err, ErrorMatches, "unauthorized|need to login|not authorized .*")
 
-	// Must have dropped auth from the session too.
-	session = session.Copy()
-	defer session.Close()
+		// Must have dropped auth from the session too.
+		session = session.Copy()
+		defer session.Close()
 
-	coll = session.DB("mydb").C("mycoll")
-	err = coll.Insert(M{"n": 1})
-	c.Assert(err, ErrorMatches, "unauthorized|need to login|not authorized .*")
+		coll = session.DB("mydb").C("mycoll")
+		err = coll.Insert(M{"n": 1})
+		c.Assert(err, ErrorMatches, "unauthorized|need to login|not authorized .*")
+	}
 }
 
 func (s *S) TestAuthLoginLogoutAll(c *C) {
