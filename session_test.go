@@ -2864,3 +2864,23 @@ func (s *S) TestInterfaceIterBug(c *C) {
 	}
 	c.Assert(iter.Close(), IsNil)
 }
+
+func (s *S) TestFindIterCloseKillsCursor(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	ns := []int{40, 41, 42, 43, 44, 45, 46}
+	for _, n := range ns {
+		coll.Insert(M{"n": n})
+	}
+
+	cursors := serverCursorsOpen(session)
+
+	iter := coll.Find(nil).Batch(2).Iter()
+	c.Assert(iter.Next(bson.M{}), Equals, true)
+	c.Assert(iter.Close(), IsNil)
+	c.Assert(serverCursorsOpen(session), Equals, cursors)
+}
+

@@ -2220,12 +2220,30 @@ func (s *Session) slaveOkFlag() (flag uint32) {
 // a *QueryError type.
 func (iter *Iter) Close() error {
 	iter.m.Lock()
+	iter.killCursor()
 	err := iter.err
 	iter.m.Unlock()
 	if err == ErrNotFound {
 		return nil
 	}
 	return err
+}
+
+func (iter *Iter) killCursor() error {
+	if iter.op.cursorId != 0 {
+		socket, err := iter.acquireSocket()
+		if err == nil {
+			// TODO Batch kills.
+			err = socket.Query(&killCursorsOp{[]int64{iter.op.cursorId}})
+			socket.Release()
+		}
+		if err != nil && (iter.err == nil || iter.err == ErrNotFound) {
+			iter.err = err
+		}
+		iter.op.cursorId = 0
+		return err
+	}
+	return nil
 }
 
 // Timeout returns true if Next returned false due to a timeout of
@@ -2285,21 +2303,12 @@ func (iter *Iter) Next(result interface{}) bool {
 		if iter.limit > 0 {
 			iter.limit--
 			if iter.limit == 0 {
-				// XXX Must kill the cursor here.
 				if iter.docData.Len() > 0 {
 					panic(fmt.Errorf("data remains after limit exhausted: %d", iter.docData.Len()))
 				}
 				iter.err = ErrNotFound
-				if iter.op.cursorId != 0 {
-					socket, err := iter.acquireSocket()
-					if err == nil {
-						err = socket.Query(&killCursorsOp{[]int64{iter.op.cursorId}})
-						socket.Release()
-					}
-					if err != nil {
-						iter.err = err
-						return false
-					}
+				if iter.killCursor() != nil {
+					return false
 				}
 			}
 		}
