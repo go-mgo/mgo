@@ -2057,7 +2057,7 @@ func (db *Database) CollectionNames() (names []string, err error) {
 	if err != nil {
 		return nil, err
 	}
-	sort.StringSlice(names).Sort()
+	sort.Strings(names)
 	return names, nil
 }
 
@@ -2080,6 +2080,7 @@ func (s *Session) DatabaseNames() (names []string, err error) {
 			names = append(names, db.Name)
 		}
 	}
+	sort.Strings(names)
 	return names, nil
 }
 

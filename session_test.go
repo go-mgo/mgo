@@ -33,6 +33,7 @@ import (
 	"labix.org/v2/mgo/bson"
 	. "launchpad.net/gocheck"
 	"math"
+	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
@@ -141,7 +142,7 @@ func (s *S) TestInsertFindOneNil(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Find(nil).One(nil)
-	c.Assert(err, ErrorMatches, "unauthorized.*")
+	c.Assert(err, ErrorMatches, "unauthorized.*|not authorized.*")
 }
 
 func (s *S) TestInsertFindOneMap(c *C) {
@@ -263,7 +264,10 @@ func (s *S) TestDatabaseAndCollectionNames(c *C) {
 
 	names, err := session.DatabaseNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, DeepEquals, []string{"db1", "db2"})
+	if !reflect.DeepEqual(names, []string{"db1", "db2"}) {
+		// 2.4+ has "local" as well.
+		c.Assert(names, DeepEquals, []string{"db1", "db2", "local"})
+	}
 
 	names, err = db1.CollectionNames()
 	c.Assert(err, IsNil)
@@ -588,14 +592,20 @@ func (s *S) TestDropDatabase(c *C) {
 
 	names, err := session.DatabaseNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, DeepEquals, []string{"db2"})
+	if !reflect.DeepEqual(names, []string{"db2"}) {
+		// 2.4+ has "local" as well.
+		c.Assert(names, DeepEquals, []string{"db2", "local"})
+	}
 
 	err = db2.DropDatabase()
 	c.Assert(err, IsNil)
 
 	names, err = session.DatabaseNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, DeepEquals, []string(nil))
+	if !reflect.DeepEqual(names, []string(nil)) {
+		// 2.4+ has "local" as well.
+		c.Assert(names, DeepEquals, []string{"local"})
+	}
 }
 
 func (s *S) TestDropCollection(c *C) {
@@ -2759,9 +2769,11 @@ func (s *S) TestBuildInfo(c *C) {
 
 	var v []int
 	for i, a := range strings.Split(info.Version, ".") {
-		if i == 2 && strings.Contains(a, "-rc") {
-			a = a[:strings.Index(a, "-rc")]
-			info.VersionArray[len(info.VersionArray)-1] = 0
+		for _, token := range []string{"-rc", "-pre"} {
+			if i == 2 && strings.Contains(a, token) {
+				a = a[:strings.Index(a, token)]
+				info.VersionArray[len(info.VersionArray)-1] = 0
+			}
 		}
 		n, err := strconv.Atoi(a)
 		c.Assert(err, IsNil)
