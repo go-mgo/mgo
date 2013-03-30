@@ -1383,7 +1383,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	for i := 2; i != n; i++ {
 		ok := iter.Next(&result)
 		c.Assert(ok, Equals, true)
-		c.Assert(iter.Close(), IsNil)
+		c.Assert(iter.Err(), IsNil)
 		c.Assert(iter.Timeout(), Equals, false)
 		c.Assert(result.N, Equals, ns[i])
 		if i == 3 { // The batch boundary.
@@ -1409,7 +1409,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	c.Log("Will wait for Next with N=47...")
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, true)
-	c.Assert(iter.Close(), IsNil)
+	c.Assert(iter.Err(), IsNil)
 	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 47)
 	c.Log("Got Next with N=47!")
@@ -1429,7 +1429,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	started := time.Now()
 	ok = iter.Next(&result)
 	c.Assert(ok, Equals, false)
-	c.Assert(iter.Close(), IsNil)
+	c.Assert(iter.Err(), IsNil)
 	c.Assert(iter.Timeout(), Equals, true)
 	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
 
@@ -1477,7 +1477,7 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	for i := 2; i != n; i++ {
 		ok := iter.Next(&result)
 		c.Assert(ok, Equals, true)
-		c.Assert(iter.Close(), IsNil)
+		c.Assert(iter.Err(), IsNil)
 		c.Assert(iter.Timeout(), Equals, false)
 		c.Assert(result.N, Equals, ns[i])
 		if i == 3 { // The batch boundary.
@@ -1502,7 +1502,7 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	c.Log("Will wait for Next with N=47...")
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, true)
-	c.Assert(iter.Close(), IsNil)
+	c.Assert(iter.Err(), IsNil)
 	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 47)
 	c.Log("Got Next with N=47!")
@@ -1522,7 +1522,7 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	started := time.Now()
 	ok = iter.Next(&result)
 	c.Assert(ok, Equals, false)
-	c.Assert(iter.Close(), IsNil)
+	c.Assert(iter.Err(), IsNil)
 	c.Assert(iter.Timeout(), Equals, true)
 	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
 
@@ -1594,7 +1594,7 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	c.Log("Will wait for Next with N=47...")
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, true)
-	c.Assert(iter.Close(), IsNil)
+	c.Assert(iter.Err(), IsNil)
 	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 47)
 	c.Log("Got Next with N=47!")
@@ -1630,7 +1630,7 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	select {
 	case ok := <-gotNext:
 		c.Assert(ok, Equals, false)
-		c.Assert(iter.Close(), ErrorMatches, "Closed explicitly")
+		c.Assert(iter.Err(), ErrorMatches, "Closed explicitly")
 		c.Assert(iter.Timeout(), Equals, false)
 	case <-time.After(1e9):
 		c.Fatal("Closing the session did not unblock Next")
@@ -2033,7 +2033,7 @@ func (s *S) TestPrefetching(c *C) {
 			var result struct{ N int }
 			for i := 0; i < beforeMore; i++ {
 				ok := iter.Next(&result)
-				c.Assert(ok, Equals, true, Commentf("iter.Err: %v", iter.Close()))
+				c.Assert(ok, Equals, true, Commentf("iter.Err: %v", iter.Err()))
 			}
 			beforeMore = 99
 			c.Logf("Done iterating.")
@@ -2046,7 +2046,7 @@ func (s *S) TestPrefetching(c *C) {
 
 			c.Logf("Iterating over one more document on batch %d", batchi)
 			ok := iter.Next(&result)
-			c.Assert(ok, Equals, true, Commentf("iter.Err: %v", iter.Close()))
+			c.Assert(ok, Equals, true, Commentf("iter.Err: %v", iter.Err()))
 			c.Logf("Done iterating.")
 
 			session.Run("ping", nil) // Roundtrip to settle down.

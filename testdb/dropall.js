@@ -17,7 +17,6 @@ for (var i in ports) {
     var result = admin.runCommand({"listDatabases": 1})
     // Why is the command returning undefined!?
     while (typeof result.databases == "undefined") {
-        throw "result.databases is undefined"
         print("dropall.js: listing databases of :" + port + " got:", result)
         result = admin.runCommand({"listDatabases": 1})
     }
