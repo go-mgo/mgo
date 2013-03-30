@@ -2058,6 +2058,7 @@ func (s *S) TestQueryErrorNext(c *C) {
 	c.Assert(err, ErrorMatches, "Unsupported projection option: b")
 	c.Assert(err.(*mgo.QueryError).Message, Matches, "Unsupported projection option: b")
 	c.Assert(err.(*mgo.QueryError).Code, Equals, 13097)
+	c.Assert(iter.Err(), Equals, err)
 
 	// The result should be properly unmarshalled with QueryError
 	c.Assert(result.Err, Matches, "Unsupported projection option: b")
@@ -2870,17 +2871,17 @@ func (s *S) TestFindIterCloseKillsCursor(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
+	cursors := serverCursorsOpen(session)
+
 	coll := session.DB("mydb").C("mycoll")
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
 		coll.Insert(M{"n": n})
 	}
 
-	cursors := serverCursorsOpen(session)
-
 	iter := coll.Find(nil).Batch(2).Iter()
 	c.Assert(iter.Next(bson.M{}), Equals, true)
+
 	c.Assert(iter.Close(), IsNil)
 	c.Assert(serverCursorsOpen(session), Equals, cursors)
 }
-

@@ -35,7 +35,6 @@ import (
 	"math"
 	"net"
 	"reflect"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -342,7 +341,6 @@ func newSession(consistency mode, cluster *mongoCluster, syncTimeout time.Durati
 	session.SetMode(consistency, true)
 	session.SetSafe(&Safe{})
 	session.queryConfig.prefetch = defaultPrefetch
-	runtime.SetFinalizer(session, finalizeSession)
 	return session
 }
 
@@ -367,12 +365,7 @@ func copySession(session *Session, keepAuth bool) (s *Session) {
 	scopy.auth = auth
 	s = &scopy
 	debugf("New session %p on cluster %p (copy from %p)", s, cluster, session)
-	runtime.SetFinalizer(s, finalizeSession)
 	return s
-}
-
-func finalizeSession(session *Session) {
-	session.Close()
 }
 
 // LiveServers returns a list of server addresses which are
@@ -813,12 +806,12 @@ func (c *Collection) DropIndex(key ...string) error {
 //
 //   indexes, err := collection.Indexes()
 //   if err != nil {
-//       panic(err)
+//       return err
 //   }
 //   for _, index := range indexes {
 //       err = collection.DropIndex(index.Key...)
 //       if err != nil {
-//           panic(err)
+//           return err
 //       }
 //   }
 //
@@ -1398,7 +1391,7 @@ func (p *Pipe) One(result interface{}) error {
 	if iter.Next(result) {
 		return nil
 	}
-	if err := iter.Close(); err != nil {
+	if err := iter.Err(); err != nil {
 		return err
 	}
 	return ErrNotFound
@@ -2151,8 +2144,8 @@ func (q *Query) Iter() *Iter {
 //             fmt.Println(result.Id)
 //             lastId = result.Id
 //         }
-//         if iter.Close() != nil {
-//             panic(err)
+//         if err := iter.Close(); err != nil {
+//             return err
 //         }
 //         if iter.Timeout() {
 //             continue
@@ -2210,10 +2203,33 @@ func (s *Session) slaveOkFlag() (flag uint32) {
 	return
 }
 
-// Close releases resources used by the iterator and returns nil if no errors
-// happened during iteration, or the actual error otherwise. It is idempotent,
-// which means it can be called repeatedly, and will return the same result
-// every time.
+// Err returns nil if no errors happened during iteration, or the actual
+// error otherwise.
+//
+// In case a resulting document included a field named $err or errmsg, which are
+// standard ways for MongoDB to report an improper query, the returned value has
+// a *QueryError type, and includes the Err message and the Code.
+func (iter *Iter) Err() error {
+	iter.m.Lock()
+	err := iter.err
+	iter.m.Unlock()
+	if err == ErrNotFound {
+		return nil
+	}
+	return err
+}
+
+// Close kills the server cursor used by the iterator, if any, and returns
+// nil if no errors happened during iteration, or the actual error otherwise.
+//
+// Server cursors are automatically closed at the end of an iteration, which
+// means close will do nothing unless the iteration was interrupted before
+// the server finished sending results to the driver. If Close is not called
+// in such a situation, the cursor will remain available at the server until
+// the default cursor timeout period is reached. No further problems arise.
+//
+// Close is idempotent. That means it can be called repeatedly and will
+// return the same result every time.
 //
 // In case a resulting document included a field named $err or errmsg, which are
 // standard ways for MongoDB to report an improper query, the returned value has
@@ -2273,8 +2289,8 @@ func (iter *Iter) Timeout() bool {
 //    for iter.Next(&result) {
 //        fmt.Printf("Result: %v\n", result.Id)
 //    }
-//    if iter.Close() != nil {
-//        panic(iter.Close())
+//    if err := iter.Close(); err != nil {
+//        return err
 //    }
 //
 func (iter *Iter) Next(result interface{}) bool {
@@ -2368,7 +2384,7 @@ func (iter *Iter) Next(result interface{}) bool {
 //    iter := collection.Find(nil).Limit(100).Iter()
 //    err := iter.All(&result)
 //    if err != nil {
-//        panic(err)
+//        return err
 //    }
 //
 func (iter *Iter) All(result interface{}) error {
@@ -2628,7 +2644,7 @@ type MapReduceTime struct {
 //     var result []struct { Id int "_id"; Value int }
 //     _, err := collection.Find(nil).MapReduce(job, &result)
 //     if err != nil {
-//         panic(err)
+//         return err
 //     }
 //     for _, item := range result {
 //         fmt.Println(item.Value)
