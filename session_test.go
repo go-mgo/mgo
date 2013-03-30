@@ -28,6 +28,7 @@ package mgo_test
 
 import (
 	"flag"
+	"fmt"
 	"labix.org/v3/mgo"
 	"labix.org/v3/mgo/bson"
 	. "launchpad.net/gocheck"
@@ -1704,6 +1705,186 @@ func (s *S) TestIterNextResetsResult(c *C) {
 		i++
 	}
 	c.Assert(iter.Close(), IsNil)
+}
+
+func (s *S) TestFindForOnIter(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{40, 41, 42, 43, 44, 45, 46}
+	for _, n := range ns {
+		coll.Insert(M{"n": n})
+	}
+
+	session.Refresh() // Release socket.
+
+	mgo.ResetStats()
+
+	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2)
+	iter := query.Iter()
+
+	i := 2
+	var result *struct{ N int }
+	err = iter.For(&result, func() error {
+		c.Assert(i < 7, Equals, true)
+		c.Assert(result.N, Equals, ns[i])
+		if i == 1 {
+			stats := mgo.GetStats()
+			c.Assert(stats.ReceivedDocs, Equals, 2)
+		}
+		i++
+		return nil
+	})
+	c.Assert(err, IsNil)
+
+	session.Refresh() // Release socket.
+
+	stats := mgo.GetStats()
+	c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 2*GET_MORE_OP
+	c.Assert(stats.ReceivedOps, Equals, 3) // and their REPLY_OPs.
+	c.Assert(stats.ReceivedDocs, Equals, 5)
+	c.Assert(stats.SocketsInUse, Equals, 0)
+}
+
+func (s *S) TestFindFor(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{40, 41, 42, 43, 44, 45, 46}
+	for _, n := range ns {
+		coll.Insert(M{"n": n})
+	}
+
+	session.Refresh() // Release socket.
+
+	mgo.ResetStats()
+
+	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2)
+
+	i := 2
+	var result *struct{ N int }
+	err = query.For(&result, func() error {
+		c.Assert(i < 7, Equals, true)
+		c.Assert(result.N, Equals, ns[i])
+		if i == 1 {
+			stats := mgo.GetStats()
+			c.Assert(stats.ReceivedDocs, Equals, 2)
+		}
+		i++
+		return nil
+	})
+	c.Assert(err, IsNil)
+
+	session.Refresh() // Release socket.
+
+	stats := mgo.GetStats()
+	c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 2*GET_MORE_OP
+	c.Assert(stats.ReceivedOps, Equals, 3) // and their REPLY_OPs.
+	c.Assert(stats.ReceivedDocs, Equals, 5)
+	c.Assert(stats.SocketsInUse, Equals, 0)
+}
+
+func (s *S) TestFindForStopOnError(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{40, 41, 42, 43, 44, 45, 46}
+	for _, n := range ns {
+		coll.Insert(M{"n": n})
+	}
+
+	query := coll.Find(M{"n": M{"$gte": 42}})
+	i := 2
+	var result *struct{ N int }
+	err = query.For(&result, func() error {
+		c.Assert(i < 4, Equals, true)
+		c.Assert(result.N, Equals, ns[i])
+		if i == 3 {
+			return fmt.Errorf("stop!")
+		}
+		i++
+		return nil
+	})
+	c.Assert(err, ErrorMatches, "stop!")
+}
+
+func (s *S) TestFindForResetsResult(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{1, 2, 3}
+	for _, n := range ns {
+		coll.Insert(M{"n" + strconv.Itoa(n): n})
+	}
+
+	query := coll.Find(nil).Sort("$natural")
+
+	i := 0
+	var sresult *struct{ N1, N2, N3 int }
+	err = query.For(&sresult, func() error {
+		switch i {
+		case 0:
+			c.Assert(sresult.N1, Equals, 1)
+			c.Assert(sresult.N2+sresult.N3, Equals, 0)
+		case 1:
+			c.Assert(sresult.N2, Equals, 2)
+			c.Assert(sresult.N1+sresult.N3, Equals, 0)
+		case 2:
+			c.Assert(sresult.N3, Equals, 3)
+			c.Assert(sresult.N1+sresult.N2, Equals, 0)
+		}
+		i++
+		return nil
+	})
+	c.Assert(err, IsNil)
+
+	i = 0
+	var mresult M
+	err = query.For(&mresult, func() error {
+		delete(mresult, "_id")
+		switch i {
+		case 0:
+			c.Assert(mresult, DeepEquals, M{"n1": 1})
+		case 1:
+			c.Assert(mresult, DeepEquals, M{"n2": 2})
+		case 2:
+			c.Assert(mresult, DeepEquals, M{"n3": 3})
+		}
+		i++
+		return nil
+	})
+	c.Assert(err, IsNil)
+
+	i = 0
+	var iresult interface{}
+	err = query.For(&iresult, func() error {
+		mresult, ok := iresult.(bson.M)
+		c.Assert(ok, Equals, true, Commentf("%#v", iresult))
+		delete(mresult, "_id")
+		switch i {
+		case 0:
+			c.Assert(mresult, DeepEquals, bson.M{"n1": 1})
+		case 1:
+			c.Assert(mresult, DeepEquals, bson.M{"n2": 2})
+		case 2:
+			c.Assert(mresult, DeepEquals, bson.M{"n3": 3})
+		}
+		i++
+		return nil
+	})
+	c.Assert(err, IsNil)
 }
 
 func (s *S) TestFindIterSnapshot(c *C) {

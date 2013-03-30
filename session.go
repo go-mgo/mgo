@@ -2420,6 +2420,41 @@ func (q *Query) All(result interface{}) error {
 	return q.Iter().All(result)
 }
 
+// The For method is obsolete and will be removed in a future release.
+// See Iter as an elegant replacement.
+func (q *Query) For(result interface{}, f func() error) error {
+	return q.Iter().For(result, f)
+}
+
+// The For method is obsolete and will be removed in a future release.
+// See Iter as an elegant replacement.
+func (iter *Iter) For(result interface{}, f func() error) (err error) {
+	valid := false
+	v := reflect.ValueOf(result)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+		switch v.Kind() {
+		case reflect.Map, reflect.Ptr, reflect.Interface, reflect.Slice:
+			valid = v.IsNil()
+		}
+	}
+	if !valid {
+		panic("For needs a pointer to nil reference value.  See the documentation.")
+	}
+	zero := reflect.Zero(v.Type())
+	for {
+		v.Set(zero)
+		if !iter.Next(result) {
+			break
+		}
+		err = f()
+		if err != nil {
+			return err
+		}
+	}
+	return iter.Err()
+}
+
 func (iter *Iter) acquireSocket() (*mongoSocket, error) {
 	socket, err := iter.session.acquireSocket(true)
 	if err != nil {
