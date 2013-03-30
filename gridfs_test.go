@@ -29,8 +29,8 @@ package mgo_test
 import (
 	"io"
 	. "launchpad.net/gocheck"
-	"labix.org/v3/mgo"
-	"labix.org/v3/mgo/bson"
+	"labix.org/v2/mgo"
+	"labix.org/v2/mgo/bson"
 	"os"
 	"time"
 )

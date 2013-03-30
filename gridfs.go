@@ -32,7 +32,7 @@ import (
 	"errors"
 	"hash"
 	"io"
-	"labix.org/v3/mgo/bson"
+	"labix.org/v2/mgo/bson"
 	"os"
 	"sync"
 	"time"
