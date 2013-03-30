@@ -1106,3 +1106,57 @@ func (s *S) TestCustomDial(c *C) {
 	case <-time.After(100 * time.Millisecond):
 	}
 }
+
+func (s *S) TestPrimaryShutdownOnAuthShard(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
+	// Dial the shard.
+	session, err := mgo.Dial("localhost:40203")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	// Login and insert something to make it more realistic.
+	session.DB("admin").Login("root", "rapadura")
+	coll := session.DB("mydb").C("mycoll")
+	err = coll.Insert(bson.M{"n": 1})
+	c.Assert(err, IsNil)
+
+	// Dial the replica set to figure the master out.
+	rs, err := mgo.Dial("localhost:40031")
+	c.Assert(err, IsNil)
+	defer rs.Close()
+
+	// With strong consistency, this will open a socket to the master.
+	result := &struct{ Host string }{}
+	err = rs.Run("serverStatus", result)
+	c.Assert(err, IsNil)
+
+	// Kill the master.
+	host := result.Host
+	s.Stop(host)
+
+	// This must fail, since the connection was broken.
+	err = rs.Run("serverStatus", result)
+	c.Assert(err, Equals, io.EOF)
+
+	// This won't work because the master just died.
+	err = coll.Insert(bson.M{"n": 2})
+	c.Assert(err, NotNil)
+
+	// Refresh session and wait for re-election.
+	session.Refresh()
+	for i := 0; i < 60; i++ {
+		err = coll.Insert(bson.M{"n": 3})
+		if err == nil {
+			break
+		}
+		c.Logf("Waiting for replica set to elect a new master. Last error: %v", err)
+		time.Sleep(500 * time.Millisecond)
+	}
+	c.Assert(err, IsNil)
+
+	count, err := coll.Count()
+	c.Assert(count > 1, Equals, true)
+}

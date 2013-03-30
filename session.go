@@ -3045,8 +3045,11 @@ func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
 }
 
 func hasErrMsg(d []byte) bool {
-	return len(d) > 16 &&
-		d[5] == 'e' && d[6] == 'r' && d[7] == 'r' &&
-		d[8] == 'm' && d[9] == 's' && d[10] == 'g' &&
-		d[11] == '\x00' && d[4] == '\x02'
+	l := len(d)
+	for i := 0; i+8 < l; i++ {
+		if d[i] == '\x02' && d[i+1] == 'e' && d[i+2] == 'r' && d[i+3] == 'r' && d[i+4] == 'm' && d[i+5] == 's' && d[i+6] == 'g' && d[i+7] == '\x00' {
+			return true
+		}
+	}
+	return false
 }

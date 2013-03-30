@@ -33,9 +33,9 @@ import (
 	. "launchpad.net/gocheck"
 	"labix.org/v3/mgo"
 	"labix.org/v3/mgo/bson"
+	"net"
 	"os/exec"
 
-	"strings"
 	"testing"
 	"time"
 )
@@ -142,29 +142,36 @@ func run(command string) error {
 	return nil
 }
 
+var supvNames = map[string]string{
+	"40001": "db1",
+	"40002": "db2",
+	"40011": "rs1a",
+	"40012": "rs1b",
+	"40013": "rs1c",
+	"40021": "rs2a",
+	"40022": "rs2b",
+	"40023": "rs2c",
+	"40031": "rs3a",
+	"40032": "rs3b",
+	"40033": "rs3c",
+	"40041": "rs4a",
+	"40101": "cfg1",
+	"40102": "cfg2",
+	"40103": "cfg3",
+	"40201": "s1",
+	"40202": "s2",
+	"40203": "s3",
+}
+
 // supvName returns the supervisord name for the given host address.
 func supvName(host string) string {
-	switch {
-	case strings.HasSuffix(host, ":40001"):
-		return "db1"
-	case strings.HasSuffix(host, ":40011"):
-		return "rs1a"
-	case strings.HasSuffix(host, ":40012"):
-		return "rs1b"
-	case strings.HasSuffix(host, ":40013"):
-		return "rs1c"
-	case strings.HasSuffix(host, ":40021"):
-		return "rs2a"
-	case strings.HasSuffix(host, ":40022"):
-		return "rs2b"
-	case strings.HasSuffix(host, ":40023"):
-		return "rs2c"
-	case strings.HasSuffix(host, ":40101"):
-		return "cfg1"
-	case strings.HasSuffix(host, ":40201"):
-		return "s1"
-	case strings.HasSuffix(host, ":40202"):
-		return "s2"
+	host, port, err := net.SplitHostPort(host)
+	if err != nil {
+		panic(err)
 	}
-	panic("Unknown host: " + host)
+	name, ok := supvNames[port]
+	if !ok {
+		panic("Unknown host: " + host)
+	}
+	return name
 }
