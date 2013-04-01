@@ -3066,3 +3066,18 @@ func (s *S) TestFindIterCloseKillsCursor(c *C) {
 	c.Assert(iter.Close(), IsNil)
 	c.Assert(serverCursorsOpen(session), Equals, cursors)
 }
+
+func (s *S) TestLogReplay(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	for i := 0; i < 5; i++ {
+		coll.Insert(M{"ts": time.Now()})
+	}
+
+	iter := coll.Find(nil).LogReplay().Iter()
+	c.Assert(iter.Next(bson.M{}), Equals, false)
+	c.Assert(iter.Err(), ErrorMatches, "no ts field in query")
+}

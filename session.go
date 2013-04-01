@@ -1894,6 +1894,17 @@ func (q *Query) Snapshot() *Query {
 	return q
 }
 
+// LogReplay enables an option that optimizes queries that are typically
+// made against the MongoDB oplog for replaying it. This is an internal
+// implementation aspect and most likely uninteresting for other uses.
+// It has seen at least one use case, though, so it's exposed via the API.
+func (q *Query) LogReplay() *Query {
+	q.m.Lock()
+	q.op.flags |= flagLogReplay
+	q.m.Unlock()
+	return q
+}
+
 func checkQueryError(fullname string, d []byte) error {
 	l := len(d)
 	if l < 16 {
@@ -2191,6 +2202,7 @@ func (q *Query) Tail(timeout time.Duration) *Iter {
 const (
 	flagTailable  = 1 << 1
 	flagSlaveOk   = 1 << 2
+	flagLogReplay = 1 << 3
 	flagAwaitData = 1 << 5
 )
 
