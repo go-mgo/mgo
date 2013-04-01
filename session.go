@@ -1434,8 +1434,14 @@ func (err *QueryError) Error() string {
 // with the given value.
 func IsDup(err error) bool {
 	// Besides being handy, helps with https://jira.mongodb.org/browse/SERVER-7164
-	e, ok := err.(*LastError)
-	return ok && (e.Code == 11000 || e.Code == 12582)
+	// What follows makes me sad. Hopefully conventions will be more clear over time.
+	switch e := err.(type) {
+	case *LastError:
+		return e.Code == 11000 || e.Code == 11001 || e.Code == 12582
+	case *QueryError:
+		return e.Code == 11000 || e.Code == 11001 || e.Code == 12582
+	}
+	return false
 }
 
 // Insert inserts one or more documents in the respective collection.  In

@@ -700,10 +700,16 @@ func (s *S) TestCreateCollectionForceIndex(c *C) {
 	c.Assert(indexes, HasLen, 1)
 }
 
-func (s *S) TestIsDupFalse(c *C) {
+func (s *S) TestIsDupValues(c *C) {
 	c.Assert(mgo.IsDup(nil), Equals, false)
 	c.Assert(mgo.IsDup(&mgo.LastError{Code: 1}), Equals, false)
-	c.Assert(mgo.IsDup(&mgo.QueryError{Code: 11000}), Equals, false)
+	c.Assert(mgo.IsDup(&mgo.QueryError{Code: 1}), Equals, false)
+	c.Assert(mgo.IsDup(&mgo.LastError{Code: 11000}), Equals, true)
+	c.Assert(mgo.IsDup(&mgo.QueryError{Code: 11000}), Equals, true)
+	c.Assert(mgo.IsDup(&mgo.LastError{Code: 11001}), Equals, true)
+	c.Assert(mgo.IsDup(&mgo.QueryError{Code: 11001}), Equals, true)
+	c.Assert(mgo.IsDup(&mgo.LastError{Code: 12582}), Equals, true)
+	c.Assert(mgo.IsDup(&mgo.QueryError{Code: 12582}), Equals, true)
 }
 
 func (s *S) TestIsDupPrimary(c *C) {
@@ -763,6 +769,25 @@ func (s *S) TestIsDupCapped(c *C) {
 	// Quite unfortunate that the error is different for capped collections.
 	c.Assert(err, ErrorMatches, "duplicate key.*capped collection")
 	// The issue is reduced by using IsDup.
+	c.Assert(mgo.IsDup(err), Equals, true)
+}
+
+func (s *S) TestIsDupFindAndModify(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.EnsureIndex(mgo.Index{Key: []string{"n"}, Unique: true})
+	c.Assert(err, IsNil)
+
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{"n": 2})
+	c.Assert(err, IsNil)
+	_, err = coll.Find(M{"n": 1}).Apply(mgo.Change{Update: M{"$inc": M{"n": 1}}}, bson.M{})
+	c.Assert(err, ErrorMatches, ".*duplicate key error.*")
 	c.Assert(mgo.IsDup(err), Equals, true)
 }
 
