@@ -2940,14 +2940,16 @@ func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 	// Read-only lock to check for previously reserved socket.
 	s.m.RLock()
 	if s.masterSocket != nil {
+		socket := s.masterSocket
+		socket.Acquire()
 		s.m.RUnlock()
-		s.masterSocket.Acquire()
-		return s.masterSocket, nil
+		return socket, nil
 	}
 	if s.slaveSocket != nil && s.slaveOk && slaveOk {
+		socket := s.slaveSocket
+		socket.Acquire()
 		s.m.RUnlock()
-		s.slaveSocket.Acquire()
-		return s.slaveSocket, nil
+		return socket, nil
 	}
 	s.m.RUnlock()
 
