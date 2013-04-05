@@ -544,8 +544,109 @@ func (s *Session) LogoutAll() {
 	s.m.Unlock()
 }
 
+// User represents a MongoDB user.
+//
+// Relevant documentation:
+//
+//     http://docs.mongodb.org/manual/reference/privilege-documents/
+//     http://docs.mongodb.org/manual/reference/user-privileges/
+//
+type User struct {
+	// Username is how the user identifies itself to the system.
+	Username string `bson:"user"`
+
+	// Password is the plaintext password for the user. If set,
+	// the UpsertUser method will hash it into PasswordHash and
+	// unset it before the user is added to the database.
+	Password string `bson:",omitempty"`
+
+	// PasswordHash is the MD5 hash of Username+":mongo:"+Password.
+	PasswordHash string `bson:"pwd,omitempty"`
+
+	// UserSource indicates where to look for this user's credentials.
+	// It may be set to a database name, or to "$external" for
+	// consulting an external resource such as Kerberos. UserSource
+	// must not be set if Password or PasswordHash are present.
+	UserSource string `bson:"userSource,omitempty"`
+
+	// Roles indicates the set of roles the user will be provided.
+	// See the Role constants.
+	Roles []Role `bson:"roles"`
+
+	// OtherDBRoles allows assigning roles in other databases from
+	// user documents inserted in the admin database. This field
+	// only works in the admin database.
+	OtherDBRoles map[string][]Role `bson:"otherDBRoles,omitempty"`
+}
+
+type Role string
+
+const (
+	// Relevant documentation:
+	//
+	//     http://docs.mongodb.org/manual/reference/user-privileges/
+	//
+	RoleRead         Role = "read"
+	RoleReadAny      Role = "readAnyDatabase"
+	RoleReadWrite    Role = "readWrite"
+	RoleReadWriteAny Role = "readWriteAnyDatabase"
+	RoleDBAdmin      Role = "dbAdmin"
+	RoleDBAdminAny   Role = "dbAdminAnyDatabase"
+	RoleUserAdmin    Role = "userAdmin"
+	RoleUserAdminAny Role = "UserAdminAnyDatabase"
+	RoleClusterAdmin Role = "clusterAdmin"
+)
+
+// UpsertUser updates the authentication credentials and the roles for
+// a MongoDB user within the db database. If the named user doesn't exist
+// it will be created.
+//
+// This method should only be used from MongoDB 2.4 and on. For older
+// MongoDB releases, use the obsolete AddUser method instead.
+//
+// Relevant documentation:
+//
+//     http://docs.mongodb.org/manual/reference/user-privileges/
+//     http://docs.mongodb.org/manual/reference/privilege-documents/
+//
+func (db *Database) UpsertUser(user *User) error {
+	if user.Username == "" {
+		return fmt.Errorf("user has no Username")
+	}
+	if user.Password != "" {
+		psum := md5.New()
+		psum.Write([]byte(user.Username + ":mongo:" + user.Password))
+		user.PasswordHash = hex.EncodeToString(psum.Sum(nil))
+		user.Password = ""
+	}
+	if user.PasswordHash != "" && user.UserSource != "" {
+		return fmt.Errorf("user has both Password/PasswordHash and UserSource set")
+	}
+	if len(user.OtherDBRoles) > 0 && db.Name != "admin" {
+		return fmt.Errorf("user with OtherDBRoles is only supported in admin database")
+	}
+	var unset bson.D
+	if user.PasswordHash == "" {
+		unset = append(unset, bson.DocElem{"pwd", 1})
+	}
+	if user.UserSource == "" {
+		unset = append(unset, bson.DocElem{"userSource", 1})
+	}
+	// user.Roles is always sent, as it's the way MongoDB distinguishes
+	// old-style documents from new-style documents.
+	if len(user.OtherDBRoles) == 0 {
+		unset = append(unset, bson.DocElem{"otherDBRoles", 1})
+	}
+	c := db.C("system.users")
+	_, err := c.Upsert(bson.D{{"user", user.Username}}, bson.D{{"$unset", unset}, {"$set", user}})
+	return err
+}
+
 // AddUser creates or updates the authentication credentials of user within
-// the database.
+// the db database.
+//
+// This method is obsolete and should only be used with MongoDB 2.2 or
+// earlier. For MongoDB 2.4 and on, use UpsertUser instead.
 func (db *Database) AddUser(user, pass string, readOnly bool) error {
 	psum := md5.New()
 	psum.Write([]byte(user + ":mongo:" + pass))
