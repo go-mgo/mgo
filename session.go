@@ -2704,11 +2704,11 @@ func (q *Query) Distinct(key string, result interface{}) error {
 }
 
 type mapReduceCmd struct {
-	Collection string      "mapreduce"
-	Map        interface{} ",omitempty"
-	Reduce     interface{} ",omitempty"
-	Finalize   interface{} ",omitempty"
-	Limit      int32       ",omitempty"
+	Collection string "mapreduce"
+	Map        string ",omitempty"
+	Reduce     string ",omitempty"
+	Finalize   string ",omitempty"
+	Limit      int32  ",omitempty"
 	Out        interface{}
 	Query      interface{} ",omitempty"
 	Sort       interface{} ",omitempty"
@@ -2727,9 +2727,9 @@ type mapReduceResult struct {
 }
 
 type MapReduce struct {
-	Map      interface{} // Map Javascript function code (required)
-	Reduce   interface{} // Reduce Javascript function code (required)
-	Finalize interface{}      // Finalize Javascript function code (optional)
+	Map      string      // Map Javascript function code (required)
+	Reduce   string      // Reduce Javascript function code (required)
+	Finalize string      // Finalize Javascript function code (optional)
 	Out      interface{} // Output collection name or document. If nil, results are inlined into the result parameter.
 	Scope    interface{} // Optional global scope for Javascript functions
 	Verbose  bool
