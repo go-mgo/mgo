@@ -559,6 +559,8 @@ var marshalErrorItems = []testItemType{
 		"Multiple ,inline maps in struct bson_test.inlineDupMap"},
 	{&inlineBadKeyMap{},
 		"Option ,inline needs a map with string keys in struct bson_test.inlineBadKeyMap"},
+	{&inlineMap{A: 1, M: map[string]interface{}{"a": 1}},
+		`Can't have key "a" in inlined map; conflicts with struct field`},
 }
 
 func (s *S) TestMarshalErrorItems(c *C) {

@@ -28,6 +28,7 @@
 package bson
 
 import (
+	"fmt"
 	"math"
 	"net/url"
 	"reflect"
@@ -131,7 +132,16 @@ func (e *encoder) addStruct(v reflect.Value) {
 	}
 	var value reflect.Value
 	if sinfo.InlineMap >= 0 {
-		e.addMap(v.Field(sinfo.InlineMap))
+		m := v.Field(sinfo.InlineMap)
+		if m.Len() > 0 {
+			for _, k := range m.MapKeys() {
+				ks := k.String()
+				if _, found := sinfo.FieldsMap[ks]; found {
+					panic(fmt.Sprintf("Can't have key %q in inlined map; conflicts with struct field", ks))
+				}
+				e.addElem(ks, m.MapIndex(k), false)
+			}
+		}
 	}
 	for _, info := range sinfo.FieldsList {
 		if info.Inline == nil {

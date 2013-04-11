@@ -403,16 +403,17 @@ func handleErr(err *error) {
 //
 // The following flags are currently supported:
 //
-//     omitempty    Only include the field if it's not set to the zero
-//                  value for the type or to empty slices or maps.
-//                  Does not apply to zero valued structs.
+//     omitempty  Only include the field if it's not set to the zero
+//                value for the type or to empty slices or maps.
+//                Does not apply to zero valued structs.
 //
-//     minsize      Marshal an int64 value as an int32, if that's feasible
-//                  while preserving the numeric value.
+//     minsize    Marshal an int64 value as an int32, if that's feasible
+//                while preserving the numeric value.
 //
-//     inline       Inline the field, which must be a struct, causing all
-//                  of its fields to be processed as if they were part of
-//                  the outer struct.
+//     inline     Inline the field, which must be a struct or a map,
+//                causing all of its fields or keys to be processed as if
+//                they were part of the outer struct. For maps, keys must
+//                not conflict with the bson keys of other struct fields.
 //
 // Some examples:
 //
@@ -436,7 +437,21 @@ func Marshal(in interface{}) (out []byte, err error) {
 // must be a map, a pointer to a struct, or a pointer to a bson.D value.
 // The lowercased field name is used as the key for each exported field,
 // but this behavior may be changed using the respective field tag.
-// Pointer values are initialized when necessary.
+// The tag may also contain flags to tweak the marshalling behavior for
+// the field. The tag formats accepted are:
+//
+//     "[<key>][,<flag1>[,<flag2>]]"
+//
+//     `(...) bson:"[<key>][,<flag1>[,<flag2>]]" (...)`
+//
+// The following flags are currently supported during unmarshal (see the
+// Marshal method for other flags):
+//
+//     inline     Inline the field, which must be a struct or a map.
+//                Inlined structs are handled as if its fields were part
+//                of the outer struct. An inlined map causes keys that do
+//                not match any other struct field to be inserted in the
+//                map rather than being discarded as usual.
 //
 // The target field or element types of out may not necessarily match
 // the BSON values of the provided data.  The following conversions are
@@ -448,8 +463,10 @@ func Marshal(in interface{}) (out []byte, err error) {
 // - Numeric types are converted to bools as true if not 0 or false otherwise
 // - Binary and string BSON data is converted to a string, array or byte slice
 //
-// If the value would not fit the type and cannot be converted, it's silently
-// skipped.
+// If the value would not fit the type and cannot be converted, it's
+// silently skipped.
+//
+// Pointer values are initialized when necessary.
 func Unmarshal(in []byte, out interface{}) (err error) {
 	defer handleErr(&err)
 	v := reflect.ValueOf(out)
