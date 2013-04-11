@@ -1,18 +1,18 @@
 // mgo - MongoDB driver for Go
-// 
+//
 // Copyright (c) 2010-2012 - Gustavo Niemeyer <gustavo@niemeyer.net>
-// 
+//
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met: 
-// 
+// modification, are permitted provided that the following conditions are met:
+//
 // 1. Redistributions of source code must retain the above copyright notice, this
-//    list of conditions and the following disclaimer. 
+//    list of conditions and the following disclaimer.
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
-//    and/or other materials provided with the distribution. 
-// 
+//    and/or other materials provided with the distribution.
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 // ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 // WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -45,6 +45,7 @@ type mongoServer struct {
 	liveSockets   []*mongoSocket
 	closed        bool
 	master        bool
+	abended	      bool
 	sync          chan bool
 	dial          dialer
 }
@@ -81,13 +82,14 @@ var errSocketLimit = errors.New("per-server connection limit reached")
 // the same number of times as AcquireSocket + Acquire were called for it.
 // If the limit argument is not zero, a socket will only be returned if the
 // number of sockets in use for this server is under the provided limit.
-func (server *mongoServer) AcquireSocket(limit int) (socket *mongoSocket, err error) {
+func (server *mongoServer) AcquireSocket(limit int) (socket *mongoSocket, abended bool, err error) {
 	for {
 		server.Lock()
+		abended = server.abended
 		n := len(server.unusedSockets)
 		if limit > 0 && len(server.liveSockets)-n >= limit {
 			server.Unlock()
-			return nil, errSocketLimit
+			return nil, false, errSocketLimit
 		}
 		if n > 0 {
 			socket = server.unusedSockets[n-1]
@@ -109,7 +111,7 @@ func (server *mongoServer) AcquireSocket(limit int) (socket *mongoSocket, err er
 		}
 		return
 	}
-	panic("unreached")
+	panic("unreachable")
 }
 
 // Connect establishes a new connection to the server. This should
@@ -187,6 +189,7 @@ func removeSocket(sockets []*mongoSocket, socket *mongoSocket) []*mongoSocket {
 // abnormally, and thus should be discarded rather than cached.
 func (server *mongoServer) AbendSocket(socket *mongoSocket) {
 	server.Lock()
+	server.abended = true
 	if server.closed {
 		server.Unlock()
 		return
@@ -205,6 +208,7 @@ func (server *mongoServer) AbendSocket(socket *mongoSocket) {
 // the same server address.
 func (server *mongoServer) Merge(other *mongoServer) {
 	server.Lock()
+	server.abended = false
 	server.master = other.master
 	server.Unlock()
 	// Sockets of other are ignored for the moment. Merging them

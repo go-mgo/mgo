@@ -350,7 +350,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 	socket.Lock()
 	if socket.dead != nil {
 		socket.Unlock()
-		debug("Socket %p to %s: failing query, already closed: %s", socket, socket.addr, socket.dead.Error())
+		debugf("Socket %p to %s: failing query, already closed: %s", socket, socket.addr, socket.dead.Error())
 		// XXX This seems necessary in case the session is closed concurrently
 		// with a query being performed, but it's not yet tested:
 		for i := 0; i != requestCount; i++ {

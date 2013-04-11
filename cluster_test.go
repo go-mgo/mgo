@@ -464,6 +464,61 @@ func (s *S) TestPrimaryShutdownStrong(c *C) {
 	err = session.Run("serverStatus", result)
 	c.Assert(err, IsNil)
 	c.Assert(result.Host, Not(Equals), host)
+
+	// Insert some data to confirm it's indeed a master.
+	err = session.DB("mydb").C("mycoll").Insert(M{"n": 42})
+	c.Assert(err, IsNil)
+}
+
+func (s *S) TestPrimaryHiccup(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
+	session, err := mgo.Dial("localhost:40021")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	// With strong consistency, this will open a socket to the master.
+	result := &struct{ Host string }{}
+	err = session.Run("serverStatus", result)
+	c.Assert(err, IsNil)
+
+	// Establish a few extra sessions to create spare sockets to
+	// the master. This increases a bit the chances of getting an
+	// incorrect cached socket.
+	var sessions []*mgo.Session
+	for i := 0; i < 20; i++ {
+		sessions = append(sessions, session.Copy())
+		err = sessions[len(sessions)-1].Run("serverStatus", result)
+		c.Assert(err, IsNil)
+	}
+	for i := range sessions {
+		sessions[i].Close()
+	}
+
+	// Kill the master, but bring it back immediatelly.
+	host := result.Host
+	s.Stop(host)
+	s.StartAll()
+
+	// This must fail, since the connection was broken.
+	err = session.Run("serverStatus", result)
+	c.Assert(err, Equals, io.EOF)
+
+	// With strong consistency, it fails again until reset.
+	err = session.Run("serverStatus", result)
+	c.Assert(err, Equals, io.EOF)
+
+	session.Refresh()
+
+	// Now we should be able to talk to the new master.
+	// Increase the timeout since this may take quite a while.
+	session.SetSyncTimeout(3 * time.Minute)
+
+	// Insert some data to confirm it's indeed a master.
+	err = session.DB("mydb").C("mycoll").Insert(M{"n": 42})
+	c.Assert(err, IsNil)
 }
 
 func (s *S) TestPrimaryShutdownMonotonic(c *C) {
@@ -948,10 +1003,6 @@ func (s *S) TestRemovalOfClusterMember(c *C) {
 		master.Run(bson.D{{"$eval", `rs.add("` + slaveAddr + `")`}}, nil)
 		master.Close()
 		slave.Close()
-
-		s.Stop(slaveAddr)
-		// For some reason it remains FATAL if we don't wait.
-		time.Sleep(3e9)
 	}()
 
 	c.Logf("========== Removing slave: %s ==========", slaveAddr)
@@ -982,6 +1033,8 @@ func (s *S) TestRemovalOfClusterMember(c *C) {
 	if len(live) != 2 {
 		c.Errorf("Removed server still considered live: %#s", live)
 	}
+
+	c.Log("========== Test succeeded. ==========")
 }
 
 func (s *S) TestSocketLimit(c *C) {

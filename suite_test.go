@@ -114,6 +114,8 @@ func (s *S) TearDownTest(c *C) {
 }
 
 func (s *S) Stop(host string) {
+	// Give a moment for slaves to sync and avoid getting rollback issues.
+	time.Sleep(2e9)
 	err := run("cd _testdb && supervisorctl stop " + supvName(host))
 	if err != nil {
 		panic(err.Error())

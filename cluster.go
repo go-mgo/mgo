@@ -1,18 +1,18 @@
 // mgo - MongoDB driver for Go
-// 
+//
 // Copyright (c) 2010-2012 - Gustavo Niemeyer <gustavo@niemeyer.net>
-// 
+//
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met: 
-// 
+// modification, are permitted provided that the following conditions are met:
+//
 // 1. Redistributions of source code must retain the above copyright notice, this
-//    list of conditions and the following disclaimer. 
+//    list of conditions and the following disclaimer.
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
-//    and/or other materials provided with the distribution. 
-// 
+//    and/or other materials provided with the distribution.
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 // ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 // WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -56,10 +56,10 @@ type mongoCluster struct {
 
 func newCluster(userSeeds []string, direct bool, dial dialer) *mongoCluster {
 	cluster := &mongoCluster{
-		userSeeds: userSeeds,
+		userSeeds:  userSeeds,
 		references: 1,
-		direct: direct,
-		dial: dial,
+		direct:     direct,
+		dial:       dial,
 	}
 	cluster.serverSynced.L = cluster.RWMutex.RLocker()
 	cluster.sync = make(chan bool, 1)
@@ -123,6 +123,15 @@ type isMasterResult struct {
 	Passives  []string
 }
 
+func (cluster *mongoCluster) isMaster(socket *mongoSocket, result *isMasterResult) error {
+	// Monotonic will let us talk to a slave and still hold the socket.
+	session := newSession(Monotonic, cluster, 10*time.Second)
+	session.setSocket(socket)
+	err := session.Run("ismaster", result)
+	session.Close()
+	return err
+}
+
 func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, err error) {
 	addr := server.Addr
 	log("SYNC Processing ", addr, "...")
@@ -134,22 +143,14 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 			return nil, tryerr
 		}
 
-		socket, err := server.AcquireSocket(0)
+		socket, _, err := server.AcquireSocket(0)
 		if err != nil {
 			tryerr = err
 			logf("SYNC Failed to get socket to %s: %v", addr, err)
 			continue
 		}
-
-		// Monotonic will let us talk to a slave and still hold the socket.
-		session := newSession(Monotonic, cluster, 10 * time.Second)
-		session.setSocket(socket)
-
-		// session holds the socket now.
+		err = cluster.isMaster(socket, &result)
 		socket.Release()
-
-		err = session.Run("ismaster", &result)
-		session.Close()
 		if err != nil {
 			tryerr = err
 			logf("SYNC Command 'ismaster' to %s failed: %v", addr, err)
@@ -188,11 +189,24 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (hosts []string, er
 	return hosts, nil
 }
 
-func (cluster *mongoCluster) mergeServer(server *mongoServer) {
+type syncKind bool
+
+const (
+	completeSync syncKind = true
+	partialSync  syncKind = false
+)
+
+func (cluster *mongoCluster) mergeServer(server *mongoServer, syncKind syncKind) {
 	cluster.Lock()
 	previous := cluster.servers.Search(server)
 	isMaster := server.IsMaster()
 	if previous == nil {
+		if syncKind == partialSync {
+			cluster.Unlock()
+			server.Close()
+			log("SYNC Discarding unknown server ", server.Addr, " due to partial sync.")
+			return
+		}
 		cluster.servers.Add(server)
 		if isMaster {
 			cluster.masters.Add(server)
@@ -255,7 +269,7 @@ func (cluster *mongoCluster) syncServers() {
 
 // How long to wait for a checkup of the cluster topology if nothing
 // else kicks a synchronization before that.
-const syncServersDelay = 3 * time.Minute
+const syncServersDelay = 30 * time.Second
 
 // syncServersLoop loops while the cluster is alive to keep its idea of
 // the server topology up-to-date. It must be called just once from
@@ -329,7 +343,7 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 	mergePending := make(map[string]*mongoServer)
 	mergeRequested := make(map[string]bool)
 	seen := make(map[string]bool)
-	goodSync := false
+	syncKind := partialSync
 
 	var spawnSync func(addr string, byMaster bool)
 	spawnSync = func(addr string, byMaster bool) {
@@ -348,7 +362,7 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 				if s, found := mergePending[server.ResolvedAddr]; found {
 					delete(mergePending, server.ResolvedAddr)
 					m.Unlock()
-					cluster.mergeServer(s)
+					cluster.mergeServer(s, completeSync)
 					return
 				}
 				mergeRequested[server.ResolvedAddr] = true
@@ -377,11 +391,11 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 					mergePending[server.ResolvedAddr] = server
 				}
 				if merge {
-					goodSync = true
+					syncKind = completeSync
 				}
 				m.Unlock()
 				if merge {
-					cluster.mergeServer(server)
+					cluster.mergeServer(server, completeSync)
 				}
 			} else {
 				server.Close()
@@ -389,16 +403,21 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 		}()
 	}
 
-	for _, addr := range cluster.getKnownAddrs() {
+	knownAddrs := cluster.getKnownAddrs()
+	for _, addr := range knownAddrs {
 		spawnSync(addr, false)
 	}
 	wg.Wait()
 
-	for _, server := range mergePending {
-		if goodSync {
+	if syncKind == completeSync {
+		logf("SYNC Synchronization was complete (got data from primary).")
+		for _, server := range mergePending {
 			cluster.removeServer(server)
-		} else {
-			server.Close()
+		}
+	} else {
+		logf("SYNC Synchronization was partial (cannot talk to primary).")
+		for _, server := range mergePending {
+			cluster.mergeServer(server, partialSync)
 		}
 	}
 
@@ -408,7 +427,7 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 
 	// Update dynamic seeds, but only if we have any good servers. Otherwise,
 	// leave them alone for better chances of a successful sync in the future.
-	if goodSync {
+	if syncKind == completeSync {
 		dynaSeeds := make([]string, cluster.servers.Len())
 		for i, server := range cluster.servers.Slice() {
 			dynaSeeds[i] = server.Addr
@@ -457,7 +476,7 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Durati
 		}
 		cluster.RUnlock()
 
-		s, err = server.AcquireSocket(socketsPerServer)
+		s, abended, err := server.AcquireSocket(socketsPerServer)
 		if err == errSocketLimit {
 			if !warnedLimit {
 				log("WARNING: Per-server connection limit reached.")
@@ -469,6 +488,17 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Durati
 			cluster.removeServer(server)
 			cluster.syncServers()
 			continue
+		}
+		if abended && !slaveOk {
+			var result isMasterResult
+			err := cluster.isMaster(s, &result)
+			if err != nil || !result.IsMaster {
+				logf("Cannot confirm server %s as master (%v)", server.Addr, err)
+				s.Release()
+				cluster.syncServers()
+				time.Sleep(1e8)
+				continue
+			}
 		}
 		return s, nil
 	}

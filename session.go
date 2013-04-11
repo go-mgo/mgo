@@ -2581,11 +2581,11 @@ func (iter *Iter) acquireSocket() (*mongoSocket, error) {
 	}
 	if socket.Server() != iter.server {
 		// Socket server changed during iteration. This may happen
-		// with Eventual session, if a Refresh is done, or if a
+		// with Eventual sessions, if a Refresh is done, or if a
 		// monotonic session gets a write and shifts from secondary
 		// to primary. Our cursor is in a specific server, though.
 		socket.Release()
-		socket, err = iter.server.AcquireSocket(0)
+		socket, _, err = iter.server.AcquireSocket(0)
 		if err != nil {
 			return nil, err
 		}
