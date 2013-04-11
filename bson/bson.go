@@ -506,6 +506,7 @@ func (e *TypeError) Error() string {
 type structInfo struct {
 	FieldsMap  map[string]fieldInfo
 	FieldsList []fieldInfo
+	InlineMap  int
 	Zero       reflect.Value
 }
 
@@ -536,6 +537,7 @@ func getStructInfo(st reflect.Type) (*structInfo, error) {
 	n := st.NumField()
 	fieldsMap := make(map[string]fieldInfo)
 	fieldsList := make([]fieldInfo, 0, n)
+	inlineMap := -1
 	for i := 0; i != n; i++ {
 		field := st.Field(i)
 		if field.PkgPath != "" {
@@ -590,25 +592,35 @@ func getStructInfo(st reflect.Type) (*structInfo, error) {
 		}
 
 		if inline {
-			if field.Type.Kind() != reflect.Struct {
-				panic("Option ,inline needs a struct value field")
-			}
-			sinfo, err := getStructInfo(field.Type)
-			if err != nil {
-				return nil, err
-			}
-			for _, finfo := range sinfo.FieldsList {
-				if _, found := fieldsMap[finfo.Key]; found {
-					msg := "Duplicated key '" + finfo.Key + "' in struct " + st.String()
-					return nil, errors.New(msg)
+			switch field.Type.Kind() {
+			case reflect.Map:
+				if inlineMap >= 0 {
+					return nil, errors.New("Multiple ,inline maps in struct " + st.String())
 				}
-				if finfo.Inline == nil {
-					finfo.Inline = []int{i, finfo.Num}
-				} else {
-					finfo.Inline = append([]int{i}, finfo.Inline...)
+				if field.Type.Key() != reflect.TypeOf("") {
+					return nil, errors.New("Option ,inline needs a map with string keys in struct " + st.String())
 				}
-				fieldsMap[finfo.Key] = finfo
-				fieldsList = append(fieldsList, finfo)
+				inlineMap = info.Num
+			case reflect.Struct:
+				sinfo, err := getStructInfo(field.Type)
+				if err != nil {
+					return nil, err
+				}
+				for _, finfo := range sinfo.FieldsList {
+					if _, found := fieldsMap[finfo.Key]; found {
+						msg := "Duplicated key '" + finfo.Key + "' in struct " + st.String()
+						return nil, errors.New(msg)
+					}
+					if finfo.Inline == nil {
+						finfo.Inline = []int{i, finfo.Num}
+					} else {
+						finfo.Inline = append([]int{i}, finfo.Inline...)
+					}
+					fieldsMap[finfo.Key] = finfo
+					fieldsList = append(fieldsList, finfo)
+				}
+			default:
+				panic("Option ,inline needs a struct value or map field")
 			}
 			continue
 		}
@@ -630,6 +642,7 @@ func getStructInfo(st reflect.Type) (*structInfo, error) {
 	sinfo = &structInfo{
 		fieldsMap,
 		fieldsList[:len(fieldsMap)],
+		inlineMap,
 		reflect.New(st).Elem(),
 	}
 	structMapMutex.Lock()

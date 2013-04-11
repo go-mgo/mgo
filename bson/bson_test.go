@@ -552,9 +552,13 @@ var marshalErrorItems = []testItemType{
 	{bson.Raw{0x0A, []byte{}},
 		"Attempted to unmarshal Raw kind 10 as a document"},
 	{&inlineCantPtr{&struct{ A, B int }{1, 2}},
-		"Option ,inline needs a struct value field"},
+		"Option ,inline needs a struct value or map field"},
 	{&inlineDupName{1, struct{ A, B int }{2, 3}},
 		"Duplicated key 'a' in struct bson_test.inlineDupName"},
+	{&inlineDupMap{},
+		"Multiple ,inline maps in struct bson_test.inlineDupMap"},
+	{&inlineBadKeyMap{},
+		"Option ,inline needs a map with string keys in struct bson_test.inlineBadKeyMap"},
 }
 
 func (s *S) TestMarshalErrorItems(c *C) {
@@ -951,6 +955,25 @@ type inlineDupName struct {
 	A int
 	V struct{ A, B int } ",inline"
 }
+type inlineMap struct {
+	A int
+	M map[string]interface{} ",inline"
+}
+type inlineMapInt struct {
+	A int
+	M map[string]int ",inline"
+}
+type inlineMapMyM struct {
+	A int
+	M MyM ",inline"
+}
+type inlineDupMap struct {
+	M1 map[string]interface{} ",inline"
+	M2 map[string]interface{} ",inline"
+}
+type inlineBadKeyMap struct {
+	M map[int]int ",inline"
+}
 
 type MyBytes []byte
 type MyBool bool
@@ -1114,6 +1137,11 @@ var twoWayCrossItems = []crossTypeItem{
 	{&shortNonEmptyInt{}, map[string]interface{}{}},
 
 	{&inlineInt{struct{ A, B int }{1, 2}}, map[string]interface{}{"a": 1, "b": 2}},
+	{&inlineMap{A: 1, M: map[string]interface{}{"b": 2}}, map[string]interface{}{"a": 1, "b": 2}},
+	{&inlineMap{A: 1, M: nil}, map[string]interface{}{"a": 1}},
+	{&inlineMapInt{A: 1, M: map[string]int{"b": 2}}, map[string]int{"a": 1, "b": 2}},
+	{&inlineMapInt{A: 1, M: nil}, map[string]int{"a": 1}},
+	{&inlineMapMyM{A: 1, M: MyM{"b": MyM{"c": 3}}}, map[string]interface{}{"a": 1, "b": map[string]interface{}{"c": 3}}},
 
 	// []byte <=> MyBytes
 	{&struct{ B MyBytes }{[]byte("abc")}, map[string]string{"b": "abc"}},
@@ -1149,8 +1177,10 @@ var twoWayCrossItems = []crossTypeItem{
 // Same thing, but only one way (obj1 => obj2).
 var oneWayCrossItems = []crossTypeItem{
 	// map <=> struct
-	{map[string]interface{}{"a": 1, "b": "2", "c": 3},
-		map[string]int{"a": 1, "c": 3}},
+	{map[string]interface{}{"a": 1, "b": "2", "c": 3}, map[string]int{"a": 1, "c": 3}},
+
+	// inline map elides badly typed values
+	{map[string]interface{}{"a": 1, "b": "2", "c": 3}, &inlineMapInt{A: 1, M: map[string]int{"c": 3}}},
 
 	// Can't decode int into struct.
 	{bson.M{"a": bson.M{"b": 2}}, &struct{ A bool }{}},

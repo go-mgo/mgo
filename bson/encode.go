@@ -130,6 +130,9 @@ func (e *encoder) addStruct(v reflect.Value) {
 		panic(err)
 	}
 	var value reflect.Value
+	if sinfo.InlineMap >= 0 {
+		e.addMap(v.Field(sinfo.InlineMap))
+	}
 	for _, info := range sinfo.FieldsList {
 		if info.Inline == nil {
 			value = v.Field(info.Num)

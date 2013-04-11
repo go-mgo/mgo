@@ -113,6 +113,13 @@ func getSetter(outt reflect.Type, out reflect.Value) Setter {
 	return out.Interface().(Setter)
 }
 
+func clearMap(m reflect.Value) {
+	var none reflect.Value
+	for _, k := range m.MapKeys() {
+		m.SetMapIndex(k, none)
+	}
+}
+
 func (d *decoder) readDocTo(out reflect.Value) {
 	var elemType reflect.Type
 	outt := out.Type()
@@ -141,6 +148,7 @@ func (d *decoder) readDocTo(out reflect.Value) {
 	}
 
 	var fieldsMap map[string]fieldInfo
+	var inlineMap reflect.Value
 	start := d.i
 
 	origout := out
@@ -171,10 +179,7 @@ func (d *decoder) readDocTo(out reflect.Value) {
 		if out.IsNil() {
 			out.Set(reflect.MakeMap(out.Type()))
 		} else if out.Len() > 0 {
-			var none reflect.Value
-			for _, k := range out.MapKeys() {
-				out.SetMapIndex(k, none)
-			}
+			clearMap(out)
 		}
 	case reflect.Struct:
 		if outt != typeRaw {
@@ -184,6 +189,16 @@ func (d *decoder) readDocTo(out reflect.Value) {
 			}
 			fieldsMap = sinfo.FieldsMap
 			out.Set(sinfo.Zero)
+			if sinfo.InlineMap != -1 {
+				inlineMap = out.Field(sinfo.InlineMap)
+				if !inlineMap.IsNil() && inlineMap.Len() > 0 {
+					clearMap(inlineMap)
+				}
+				elemType = inlineMap.Type().Elem()
+				if elemType == typeIface {
+					d.docType = inlineMap.Type()
+				}
+			}
 		}
 	case reflect.Slice:
 		if outt.Elem() == typeDocElem {
@@ -214,13 +229,21 @@ func (d *decoder) readDocTo(out reflect.Value) {
 			}
 		case reflect.Struct:
 			if outt == typeRaw {
-				d.readElemTo(blackHole, kind)
+				d.dropElem(kind)
 			} else {
 				if info, ok := fieldsMap[name]; ok {
 					if info.Inline == nil {
 						d.readElemTo(out.Field(info.Num), kind)
 					} else {
 						d.readElemTo(out.FieldByIndex(info.Inline), kind)
+					}
+				} else if inlineMap.IsValid() {
+					if inlineMap.IsNil() {
+						inlineMap.Set(reflect.MakeMap(inlineMap.Type()))
+					}
+					e := reflect.New(elemType).Elem()
+					if d.readElemTo(e, kind) {
+						inlineMap.SetMapIndex(reflect.ValueOf(name), e)
 					}
 				} else {
 					d.dropElem(kind)
