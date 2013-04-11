@@ -1,18 +1,18 @@
 // mgo - MongoDB driver for Go
-// 
+//
 // Copyright (c) 2010-2012 - Gustavo Niemeyer <gustavo@niemeyer.net>
-// 
+//
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met: 
-// 
+// modification, are permitted provided that the following conditions are met:
+//
 // 1. Redistributions of source code must retain the above copyright notice, this
-//    list of conditions and the following disclaimer. 
+//    list of conditions and the following disclaimer.
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
-//    and/or other materials provided with the distribution. 
-// 
+//    and/or other materials provided with the distribution.
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 // ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 // WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -292,6 +292,34 @@ func (s *S) TestSelect(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result.A, Equals, 0)
 	c.Assert(result.B, Equals, 2)
+}
+
+func (s *S) TestInlineMap(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	var v, result1 struct { A int; M map[string]int ",inline" }
+
+	v.A = 1
+	v.M = map[string]int{"b": 2}
+	err = coll.Insert(v)
+	c.Assert(err, IsNil)
+
+	noId := M{"_id": 0}
+
+	err = coll.Find(nil).Select(noId).One(&result1)
+	c.Assert(err, IsNil)
+	c.Assert(result1.A, Equals, 1)
+	c.Assert(result1.M, DeepEquals, map[string]int{"b": 2})
+
+	var result2 M
+	err = coll.Find(nil).Select(noId).One(&result2)
+	c.Assert(err, IsNil)
+	c.Assert(result2, DeepEquals, M{"a": 1, "b": 2})
+
 }
 
 func (s *S) TestUpdate(c *C) {
@@ -732,8 +760,8 @@ func (s *S) TestIsDupUnique(c *C) {
 	defer session.Close()
 
 	index := mgo.Index{
-		Key:      []string{"a", "b"},
-		Unique:   true,
+		Key:    []string{"a", "b"},
+		Unique: true,
 	}
 
 	coll := session.DB("mydb").C("mycoll")
@@ -1201,7 +1229,7 @@ func serverCursorsOpen(session *mgo.Session) int {
 	var result struct {
 		Cursors struct {
 			TotalOpen int `bson:"totalOpen"`
-			TimedOut int  `bson:"timedOut"`
+			TimedOut  int `bson:"timedOut"`
 		}
 	}
 	err := session.Run("serverStatus", &result)
@@ -2592,7 +2620,7 @@ func (s *S) TestEnsureIndexExpireAfter(c *C) {
 	indexes, err := coll.Indexes()
 	c.Assert(err, IsNil)
 	c.Assert(indexes[1].Name, Equals, "t_1")
-	c.Assert(indexes[1].ExpireAfter, Equals, 1 * time.Minute)
+	c.Assert(indexes[1].ExpireAfter, Equals, 1*time.Minute)
 
 	if *testTTL {
 		worked := false
