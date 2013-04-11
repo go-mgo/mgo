@@ -102,17 +102,15 @@ func (s *S) TearDownTest(c *C) {
 	if s.stopped {
 		s.StartAll()
 	}
-	for i := 0; ; i++ {
+	for i := 0; i < 20; i++ {
 		stats := mgo.GetStats()
 		if stats.SocketsInUse == 0 && stats.SocketsAlive == 0 {
-			break
-		}
-		if i == 20 {
-			c.Fatal("Test left sockets in a dirty state")
+			return
 		}
 		c.Logf("Waiting for sockets to die: %d in use, %d alive", stats.SocketsInUse, stats.SocketsAlive)
 		time.Sleep(5e8)
 	}
+	c.Fatal("Test left sockets in a dirty state")
 }
 
 func (s *S) Stop(host string) {
