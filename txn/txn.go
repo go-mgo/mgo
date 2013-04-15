@@ -244,10 +244,10 @@ var ErrAborted = fmt.Errorf("transaction aborted")
 // field of the transaction document.
 //
 // Operations across documents are not atomically applied, but are
-// guaranteed to be eventually all applied or all aborted, as long as
-// the affected documents are only modified through transactions.
-// If documents are simultaneously modified by transactions and out
-// of transactions the behavior is undefined.
+// guaranteed to be eventually all applied in the order provided or
+// all aborted, as long as the affected documents are only modified
+// through transactions. If documents are simultaneously modified
+// by transactions and out of transactions the behavior is undefined.
 //
 // If Run returns no errors, all operations were applied successfully.
 // If it returns ErrAborted, one or more operations can't be applied
