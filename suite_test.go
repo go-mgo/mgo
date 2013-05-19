@@ -35,6 +35,8 @@ import (
 	"labix.org/v2/mgo/bson"
 	"net"
 	"os/exec"
+	"strconv"
+	"syscall"
 
 	"testing"
 	"time"
@@ -61,6 +63,7 @@ type S struct {
 	session *mgo.Session
 	stopped bool
 	build mgo.BuildInfo
+	frozen []string
 }
 
 func (s *S) versionAtLeast(v ...int) bool {
@@ -102,25 +105,63 @@ func (s *S) TearDownTest(c *C) {
 	if s.stopped {
 		s.StartAll()
 	}
+	for _, host := range s.frozen {
+		if host != "" {
+			s.Thaw(host)
+		}
+	}
 	for i := 0; i < 20; i++ {
 		stats := mgo.GetStats()
 		if stats.SocketsInUse == 0 && stats.SocketsAlive == 0 {
 			return
 		}
 		c.Logf("Waiting for sockets to die: %d in use, %d alive", stats.SocketsInUse, stats.SocketsAlive)
-		time.Sleep(5e8)
+		time.Sleep(500 * time.Millisecond)
 	}
 	c.Fatal("Test left sockets in a dirty state")
 }
 
 func (s *S) Stop(host string) {
 	// Give a moment for slaves to sync and avoid getting rollback issues.
-	time.Sleep(2e9)
+	time.Sleep(2 * time.Second)
 	err := run("cd _testdb && supervisorctl stop " + supvName(host))
 	if err != nil {
-		panic(err.Error())
+		panic(err)
 	}
 	s.stopped = true
+}
+
+func (s *S) pid(host string) int {
+	output, err := exec.Command("lsof", "-iTCP:"+hostPort(host), "-sTCP:LISTEN", "-Fp").CombinedOutput()
+	if err != nil {
+		panic(err)
+	}
+	pidstr := string(output[1:len(output)-1])
+	pid, err := strconv.Atoi(pidstr)
+	if err != nil {
+		panic("cannot convert pid to int: " + pidstr)
+	}
+	return pid
+}
+
+func (s *S) Freeze(host string) {
+	err := syscall.Kill(s.pid(host), syscall.SIGSTOP)
+	if err != nil {
+		panic(err)
+	}
+	s.frozen = append(s.frozen, host)
+}
+
+func (s *S) Thaw(host string) {
+	err := syscall.Kill(s.pid(host), syscall.SIGCONT)
+	if err != nil {
+		panic(err)
+	}
+	for i, frozen := range s.frozen {
+		if frozen == host {
+			s.frozen[i] = ""
+		}
+	}
 }
 
 func (s *S) StartAll() {
@@ -128,7 +169,7 @@ func (s *S) StartAll() {
 	run("cd _testdb && supervisorctl start all")
 	err := run("cd testdb && mongo --nodb wait.js")
 	if err != nil {
-		panic(err.Error())
+		panic(err)
 	}
 	s.stopped = false
 }
@@ -174,4 +215,12 @@ func supvName(host string) string {
 		panic("Unknown host: " + host)
 	}
 	return name
+}
+
+func hostPort(host string) string {
+	_, port, err := net.SplitHostPort(host)
+	if err != nil {
+		panic(err)
+	}
+	return port
 }

@@ -1213,3 +1213,67 @@ func (s *S) TestPrimaryShutdownOnAuthShard(c *C) {
 	count, err := coll.Count()
 	c.Assert(count > 1, Equals, true)
 }
+
+func (s *S) TestNearestSecondary(c *C) {
+	defer mgo.HackPingDelay(3 * time.Second)()
+
+	rs1a := "127.0.0.1:40011"
+	rs1b := "127.0.0.1:40012"
+	rs1c := "127.0.0.1:40013"
+	s.Freeze(rs1b)
+
+	session, err := mgo.Dial(rs1a)
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	// Wait for the sync up to run through the first couple of servers.
+	for len(session.LiveServers()) != 2 {
+		c.Log("Waiting for two servers to be alive...")
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Extra delay to ensure the third server gets penalized.
+	time.Sleep(500 * time.Millisecond)
+
+	// Release third server.
+	s.Thaw(rs1b)
+
+	// Wait for it to come up.
+	for len(session.LiveServers()) != 3 {
+		c.Log("Waiting for all servers to be alive...")
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	session.SetMode(mgo.Monotonic, true)
+	var result struct{ Host string }
+
+	// See which slave picks the line, several times to avoid chance.
+	for i := 0; i < 10; i++ {
+		session.Refresh()
+		err = session.Run("serverStatus", &result)
+		c.Assert(err, IsNil)
+		c.Assert(hostPort(result.Host), Equals, hostPort(rs1c))
+	}
+
+	if *fast {
+		// Don't hold back for several seconds.
+		return
+	}
+
+	// Now hold the other server for long enough to penalize it.
+	s.Freeze(rs1c)
+	time.Sleep(5 * time.Second)
+	s.Thaw(rs1c)
+
+	// Wait for the ping to be processed.
+	time.Sleep(500 * time.Millisecond)
+
+	// Repeating the test should now pick the former server consistently.
+	for i := 0; i < 10; i++ {
+		session.Refresh()
+		err = session.Run("serverStatus", &result)
+		c.Assert(err, IsNil)
+		c.Assert(hostPort(result.Host), Equals, hostPort(rs1b))
+	}
+}
+
