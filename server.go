@@ -220,6 +220,7 @@ func (server *mongoServer) pinger(loop bool) {
 		collection: "admin.$cmd",
 		query:      bson.D{{"ping", 1}},
 		flags:      flagSlaveOk,
+		limit:      -1,
 	}
 	for {
 		if loop {
