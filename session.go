@@ -3166,7 +3166,8 @@ func (iter *Iter) replyFunc() replyFunc {
 // will also be returned as err.
 func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
 	s := c.Database.Session
-	socket, err := s.acquireSocket(false)
+	dbname := c.Database.Name
+	socket, err := s.acquireSocket(dbname == "local")
 	if err != nil {
 		return nil, err
 	}
@@ -3184,7 +3185,7 @@ func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
 		var replyErr error
 		mutex.Lock()
 		query := *safeOp // Copy the data.
-		query.collection = c.Database.Name + ".$cmd"
+		query.collection = dbname + ".$cmd"
 		query.replyFunc = func(err error, reply *replyOp, docNum int, docData []byte) {
 			replyData = docData
 			replyErr = err

@@ -848,7 +848,19 @@ func (s *S) TestDirect(c *C) {
 	err = coll.Insert(M{"test": 1})
 	c.Assert(err, ErrorMatches, "no reachable servers")
 
-	// Slave is still reachable.
+	// Writing to the local database is okay.
+	coll = session.DB("local").C("mycoll")
+	defer coll.RemoveAll(nil)
+	id := bson.NewObjectId()
+	err = coll.Insert(M{"_id": id})
+	c.Assert(err, IsNil)
+
+	// Data was stored in the right server.
+	n, err := coll.Find(M{"_id": id}).Count()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 1)
+
+	// Server hasn't changed.
 	result.Host = ""
 	err = session.Run("serverStatus", result)
 	c.Assert(err, IsNil)
