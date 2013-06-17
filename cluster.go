@@ -64,6 +64,7 @@ func newCluster(userSeeds []string, direct bool, dial dialer) *mongoCluster {
 	}
 	cluster.serverSynced.L = cluster.RWMutex.RLocker()
 	cluster.sync = make(chan bool, 1)
+	stats.cluster(+1)
 	go cluster.syncServersLoop()
 	return cluster
 }
@@ -91,6 +92,7 @@ func (cluster *mongoCluster) Release() {
 		}
 		// Wake up the sync loop so it can die.
 		cluster.syncServers()
+		stats.cluster(-1)
 	}
 	cluster.Unlock()
 }

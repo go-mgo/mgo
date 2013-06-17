@@ -58,6 +58,7 @@ func ResetStats() {
 	old := stats
 	stats = &Stats{}
 	// These are absolute values:
+	stats.Clusters = old.Clusters
 	stats.SocketsInUse = old.SocketsInUse
 	stats.SocketsAlive = old.SocketsAlive
 	stats.SocketRefs = old.SocketRefs
@@ -66,6 +67,7 @@ func ResetStats() {
 }
 
 type Stats struct {
+	Clusters     int
 	MasterConns  int
 	SlaveConns   int
 	SentOps      int
@@ -74,6 +76,14 @@ type Stats struct {
 	SocketsAlive int
 	SocketsInUse int
 	SocketRefs   int
+}
+
+func (stats *Stats) cluster(delta int) {
+	if stats != nil {
+		statsMutex.Lock()
+		stats.Clusters += delta
+		statsMutex.Unlock()
+	}
 }
 
 func (stats *Stats) conn(delta int, master bool) {

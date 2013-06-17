@@ -110,15 +110,29 @@ func (s *S) TearDownTest(c *C) {
 			s.Thaw(host)
 		}
 	}
-	for i := 0; i < 20; i++ {
-		stats := mgo.GetStats()
+	var stats mgo.Stats
+	for i := 0; ; i++ {
+		stats = mgo.GetStats()
 		if stats.SocketsInUse == 0 && stats.SocketsAlive == 0 {
-			return
+			break
+		}
+		if i == 20 {
+			c.Fatal("Test left sockets in a dirty state")
 		}
 		c.Logf("Waiting for sockets to die: %d in use, %d alive", stats.SocketsInUse, stats.SocketsAlive)
 		time.Sleep(500 * time.Millisecond)
 	}
-	c.Fatal("Test left sockets in a dirty state")
+	for i := 0; ; i++ {
+		stats = mgo.GetStats()
+		if stats.Clusters == 0 {
+			break
+		}
+		if i == 60 {
+			c.Fatal("Test left clusters alive")
+		}
+		c.Logf("Waiting for clusters to die: %d alive", stats.Clusters)
+		time.Sleep(1 * time.Second)
+	}
 }
 
 func (s *S) Stop(host string) {
