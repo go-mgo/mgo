@@ -2347,11 +2347,11 @@ func (s *S) TestEnsureIndex(c *C) {
 	c.Assert(err, IsNil)
 
 	result3 := M{}
-	err = sysidx.Find(M{"name": "loc_old_"}).One(result3)
+	err = sysidx.Find(M{"name": "loc_old_2d"}).One(result3)
 	c.Assert(err, IsNil)
 
 	result4 := M{}
-	err = sysidx.Find(M{"name": "loc_"}).One(result4)
+	err = sysidx.Find(M{"name": "loc_2d"}).One(result4)
 	c.Assert(err, IsNil)
 
 	delete(result1, "v")
@@ -2375,7 +2375,7 @@ func (s *S) TestEnsureIndex(c *C) {
 
 	delete(result3, "v")
 	expected3 := M{
-		"name": "loc_old_",
+		"name": "loc_old_2d",
 		"key":  M{"loc_old": "2d"},
 		"ns":   "mydb.mycoll",
 		"min":  -500,
@@ -2386,7 +2386,7 @@ func (s *S) TestEnsureIndex(c *C) {
 
 	delete(result4, "v")
 	expected4 := M{
-		"name": "loc_",
+		"name": "loc_2d",
 		"key":  M{"loc": "2d"},
 		"ns":   "mydb.mycoll",
 		"min":  -500,
@@ -2586,10 +2586,40 @@ func (s *S) TestEnsureIndexGetIndexes(c *C) {
 	c.Assert(indexes[1].Key, DeepEquals, []string{"a"})
 	c.Assert(indexes[2].Name, Equals, "b_-1")
 	c.Assert(indexes[2].Key, DeepEquals, []string{"-b"})
-	c.Assert(indexes[3].Name, Equals, "c_")
+	c.Assert(indexes[3].Name, Equals, "c_2d")
 	c.Assert(indexes[3].Key, DeepEquals, []string{"$2d:c"})
-	c.Assert(indexes[4].Name, Equals, "d_")
+	c.Assert(indexes[4].Name, Equals, "d_2d")
 	c.Assert(indexes[4].Key, DeepEquals, []string{"$2d:d"})
+}
+
+func (s *S) TestEnsureIndexEvalGetIndexes(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({b: -1})"}}, nil)
+	c.Assert(err, IsNil)
+	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({a: 1})"}}, nil)
+	c.Assert(err, IsNil)
+	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({c: '2d'})"}}, nil)
+	c.Assert(err, IsNil)
+	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({d: -1, e: 1})"}}, nil)
+	c.Assert(err, IsNil)
+
+	indexes, err := coll.Indexes()
+	c.Assert(err, IsNil)
+
+	c.Assert(indexes[0].Name, Equals, "_id_")
+	c.Assert(indexes[1].Name, Equals, "a_1")
+	c.Assert(indexes[1].Key, DeepEquals, []string{"a"})
+	c.Assert(indexes[2].Name, Equals, "b_-1")
+	c.Assert(indexes[2].Key, DeepEquals, []string{"-b"})
+	c.Assert(indexes[3].Name, Equals, "c_2d")
+	c.Assert(indexes[3].Key, DeepEquals, []string{"$2d:c"})
+	c.Assert(indexes[4].Name, Equals, "d_-1_e_1")
+	c.Assert(indexes[4].Key, DeepEquals, []string{"-d", "e"})
 }
 
 var testTTL = flag.Bool("test-ttl", false, "test TTL collections (may take 1 minute)")

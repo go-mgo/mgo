@@ -700,6 +700,7 @@ func parseIndexKey(key []string) (name string, realKey bson.D, err error) {
 				if c := strings.Index(field, ":"); c > 1 && c < len(field)-1 {
 					kind = field[1:c]
 					field = field[c+1:]
+					name += field + "_" + kind
 				}
 			}
 			switch field[0] {
@@ -709,7 +710,10 @@ func parseIndexKey(key []string) (name string, realKey bson.D, err error) {
 			case '@':
 				order = "2d"
 				field = field[1:]
-				name += field + "_" // Why don't they put 2d here?
+				// The shell used to render this field as key_ instead of key_2d,
+				// and mgo followed suit. This has been fixed in recent server
+				// releases, and mgo followed as well.
+				name += field + "_2d"
 			case '-':
 				order = -1
 				field = field[1:]
@@ -723,7 +727,6 @@ func parseIndexKey(key []string) (name string, realKey bson.D, err error) {
 					name += field + "_1"
 				} else {
 					order = kind
-					name += field + "_" // Seems wrong. What about the kind?
 				}
 			}
 		}
@@ -943,17 +946,21 @@ func (c *Collection) Indexes() (indexes []Index, err error) {
 func simpleIndexKey(realKey bson.D) (key []string) {
 	for i := range realKey {
 		field := realKey[i].Name
-		i, _ := realKey[i].Value.(int)
-		if i == 1 {
+		vi, ok := realKey[i].Value.(int)
+		if !ok {
+			vf, _ := realKey[i].Value.(float64)
+			vi = int(vf)
+		}
+		if vi == 1 {
 			key = append(key, field)
 			continue
 		}
-		if i == -1 {
+		if vi == -1 {
 			key = append(key, "-"+field)
 			continue
 		}
-		if s, ok := realKey[i].Value.(string); ok {
-			key = append(key, "$"+s+":"+field)
+		if vs, ok := realKey[i].Value.(string); ok {
+			key = append(key, "$"+vs+":"+field)
 			continue
 		}
 		panic("Got unknown index key type for field " + field)
