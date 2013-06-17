@@ -240,7 +240,7 @@ func (server *mongoServer) pinger(loop bool) {
 			delay := time.Now().Sub(start)
 
 			server.pingWindow[server.pingIndex] = delay
-			server.pingIndex = (server.pingIndex+1)%len(server.pingWindow)
+			server.pingIndex = (server.pingIndex + 1) % len(server.pingWindow)
 			server.pingCount++
 			var max time.Duration
 			for i := 0; i < len(server.pingWindow) && uint32(i) < server.pingCount; i++ {
@@ -255,7 +255,7 @@ func (server *mongoServer) pinger(loop bool) {
 			}
 			server.pingValue = max
 			server.Unlock()
-			logf("Ping for %s is %d ms", server.Addr, max / time.Millisecond)
+			logf("Ping for %s is %d ms", server.Addr, max/time.Millisecond)
 		}
 		if !loop {
 			return
@@ -352,7 +352,7 @@ func (servers *mongoServers) MostAvailable() *mongoServer {
 		case next.master != best.master:
 			// Prefer slaves.
 			swap = best.master
-		case next.pingValue < best.pingValue - 15 * time.Millisecond:
+		case next.pingValue < best.pingValue-15*time.Millisecond:
 			// Prefer nearest server.
 			swap = true
 		case len(next.liveSockets)-len(next.unusedSockets) < len(best.liveSockets)-len(best.unusedSockets):

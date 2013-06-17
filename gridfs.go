@@ -1,18 +1,18 @@
 // mgo - MongoDB driver for Go
-// 
+//
 // Copyright (c) 2010-2012 - Gustavo Niemeyer <gustavo@niemeyer.net>
-// 
+//
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met: 
-// 
+// modification, are permitted provided that the following conditions are met:
+//
 // 1. Redistributions of source code must retain the above copyright notice, this
-//    list of conditions and the following disclaimer. 
+//    list of conditions and the following disclaimer.
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
-//    and/or other materials provided with the distribution. 
-// 
+//    and/or other materials provided with the distribution.
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 // ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 // WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -72,10 +72,10 @@ type GridFile struct {
 }
 
 type gfsFile struct {
-	Id          interface{}    "_id"
-	ChunkSize   int            "chunkSize"
-	UploadDate  time.Time      "uploadDate"
-	Length      int64          ",minsize"
+	Id          interface{} "_id"
+	ChunkSize   int         "chunkSize"
+	UploadDate  time.Time   "uploadDate"
+	Length      int64       ",minsize"
 	MD5         string
 	Filename    string    ",omitempty"
 	ContentType string    "contentType,omitempty"
@@ -165,7 +165,7 @@ func (gfs *GridFS) Create(name string) (file *GridFile, err error) {
 // completed successfully.
 //
 // The following example will print the first 8192 bytes from the file:
-// 
+//
 //     func check(err os.Error) {
 //         if err != nil {
 //             panic(err.String())
@@ -214,7 +214,7 @@ func (gfs *GridFS) OpenId(id interface{}) (file *GridFile, err error) {
 // completed successfully.
 //
 // The following example will print the first 8192 bytes from the file:
-// 
+//
 //     file, err := db.GridFS("fs").Open("myfile.txt")
 //     check(err)
 //     b := make([]byte, 8192)
@@ -307,7 +307,7 @@ func (gfs *GridFS) OpenNext(iter *Iter, file **GridFile) bool {
 //
 //     files := db.C("fs" + ".files")
 //     iter := files.Find(nil).Iter()
-//    
+//
 func (gfs *GridFS) Find(query interface{}) *Query {
 	return gfs.Files.Find(query)
 }

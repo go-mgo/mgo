@@ -301,7 +301,10 @@ func (s *S) TestInlineMap(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
-	var v, result1 struct { A int; M map[string]int ",inline" }
+	var v, result1 struct {
+		A int
+		M map[string]int ",inline"
+	}
 
 	v.A = 1
 	v.M = map[string]int{"b": 2}

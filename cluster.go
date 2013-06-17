@@ -141,7 +141,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (isMaster bool, hos
 	var tryerr error
 	for retry := 0; ; retry++ {
 		// Retry a few times as there is a small chance that a pre-existing
-		// socket times out exactly when an attempt is made to use it. 
+		// socket times out exactly when an attempt is made to use it.
 		switch retry {
 		case 1, 2:
 			// Don't abuse the server needlessly if there's something actually wrong.

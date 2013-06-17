@@ -1,18 +1,18 @@
 // mgo - MongoDB driver for Go
-// 
+//
 // Copyright (c) 2010-2012 - Gustavo Niemeyer <gustavo@niemeyer.net>
-// 
+//
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met: 
-// 
+// modification, are permitted provided that the following conditions are met:
+//
 // 1. Redistributions of source code must retain the above copyright notice, this
-//    list of conditions and the following disclaimer. 
+//    list of conditions and the following disclaimer.
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
-//    and/or other materials provided with the distribution. 
-// 
+//    and/or other materials provided with the distribution.
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 // ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 // WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -29,9 +29,9 @@ package mgo_test
 import (
 	"fmt"
 	"io"
-	. "launchpad.net/gocheck"
 	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
+	. "launchpad.net/gocheck"
 	"net"
 	"strings"
 	"time"
@@ -766,7 +766,7 @@ func (s *S) TestTopologySyncWithSlaveSeed(c *C) {
 	c.Assert(result.Ok, Equals, true)
 
 	// One connection to each during discovery. Master
-	// socket recycled for insert. 
+	// socket recycled for insert.
 	stats := mgo.GetStats()
 	c.Assert(stats.MasterConns, Equals, 1)
 	c.Assert(stats.SlaveConns, Equals, 2)
@@ -1002,7 +1002,10 @@ func (s *S) TestRemovalOfClusterMember(c *C) {
 		c.Fatalf("Test started with bad cluster state: %v", master.LiveServers())
 	}
 
-	result := &struct{ IsMaster bool; Me string }{}
+	result := &struct {
+		IsMaster bool
+		Me       string
+	}{}
 	slave := master.Copy()
 	slave.SetMode(mgo.Monotonic, true) // Monotonic can hold a non-master socket persistently.
 	err = slave.Run("isMaster", result)
@@ -1149,7 +1152,7 @@ func (s *S) TestCustomDial(c *C) {
 	}
 	info := mgo.DialInfo{
 		Addrs: []string{"localhost:40012"},
-		Dial: dial,
+		Dial:  dial,
 	}
 
 	// Use hostname here rather than IP, to make things trickier.
@@ -1288,4 +1291,3 @@ func (s *S) TestNearestSecondary(c *C) {
 		c.Assert(hostPort(result.Host), Equals, hostPort(rs1b))
 	}
 }
-
