@@ -73,6 +73,7 @@ func newServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer) *
 }
 
 var errSocketLimit = errors.New("per-server connection limit reached")
+var errServerClosed = errors.New("server was closed")
 
 // AcquireSocket returns a socket for communicating with the server.
 // This will attempt to reuse an old connection, if one is available. Otherwise,
@@ -104,6 +105,10 @@ func (server *mongoServer) AcquireSocket(limit int) (socket *mongoSocket, abende
 			socket, err = server.Connect()
 			if err == nil {
 				server.Lock()
+				if server.closed {
+					socket.Close()
+					return nil, false, errServerClosed
+				}
 				server.liveSockets = append(server.liveSockets, socket)
 				server.Unlock()
 			}
@@ -256,6 +261,8 @@ func (server *mongoServer) pinger(loop bool) {
 			server.pingValue = max
 			server.Unlock()
 			logf("Ping for %s is %d ms", server.Addr, max / time.Millisecond)
+		} else if err == errServerClosed {
+			return
 		}
 		if !loop {
 			return

@@ -1,6 +1,7 @@
 package mgo
 
 import (
+	"net"
 	"time"
 )
 
@@ -20,4 +21,8 @@ func HackPingDelay(newDelay time.Duration) (restore func()) {
 	}
 	pingDelay = newDelay
 	return
+}
+
+func NewServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer) *mongoServer {
+	return newServer(addr, tcpaddr, sync, dial)
 }
