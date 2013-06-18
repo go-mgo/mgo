@@ -3,6 +3,7 @@ package mgo
 import (
 	. "launchpad.net/gocheck"
 	"net"
+        "runtime"
 )
 
 type ServerSuite struct {
@@ -50,7 +51,7 @@ func (s *ServerSuite) TestCloseDuringConnect(c *C) {
 		if count == 0 {
 			break
 		}
-		logf("server had %d unused sockets waiting for 0", count)
+                runtime.Gosched()
 	}
 	conn, _, err := server.AcquireSocket(0)
 	c.Check(err, Equals, errServerClosed)

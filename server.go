@@ -86,6 +86,10 @@ func (server *mongoServer) AcquireSocket(limit int) (socket *mongoSocket, abende
 	for {
 		server.Lock()
 		abended = server.abended
+		if server.closed {
+			server.Unlock()
+			return nil, abended, errServerClosed
+		}
 		n := len(server.unusedSockets)
 		if limit > 0 && len(server.liveSockets)-n >= limit {
 			server.Unlock()
@@ -105,13 +109,14 @@ func (server *mongoServer) AcquireSocket(limit int) (socket *mongoSocket, abende
 			socket, err = server.Connect()
 			if err == nil {
 				server.Lock()
+				// We've waited for the Connect, see if we got
+				// closed in the meantime
 				if server.closed {
+					server.Unlock()
 					socket.Close()
-					socket = nil
-					err = errServerClosed
-				} else {
-					server.liveSockets = append(server.liveSockets, socket)
+					return nil, abended, errServerClosed
 				}
+				server.liveSockets = append(server.liveSockets, socket)
 				server.Unlock()
 			}
 		}
@@ -232,12 +237,6 @@ func (server *mongoServer) pinger(loop bool) {
 	for {
 		if loop {
 			time.Sleep(pingDelay)
-			server.RLock()
-			closed := server.closed
-			server.RUnlock()
-			if closed {
-				return
-			}
 		}
 		op := op
 		socket, _, err := server.AcquireSocket(0)
