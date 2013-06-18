@@ -107,9 +107,11 @@ func (server *mongoServer) AcquireSocket(limit int) (socket *mongoSocket, abende
 				server.Lock()
 				if server.closed {
 					socket.Close()
-					return nil, false, errServerClosed
+					socket = nil
+					err = errServerClosed
+				} else {
+					server.liveSockets = append(server.liveSockets, socket)
 				}
-				server.liveSockets = append(server.liveSockets, socket)
 				server.Unlock()
 			}
 		}
