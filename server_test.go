@@ -28,7 +28,7 @@ func (s *ServerSuite) TestCloseDuringConnect(c *C) {
 		// Accept a connection but don't do anything with it
 		for {
 			conn, err := localhostServer.Accept()
-			c.Logf("got connection: %v", conn)
+                        logf("got connection: %v", conn)
 			if err != nil {
 				return
 			}
@@ -38,6 +38,20 @@ func (s *ServerSuite) TestCloseDuringConnect(c *C) {
 	tcpaddr := localhostServer.Addr().(*net.TCPAddr)
 	server = newServer(tcpaddr.String(), tcpaddr, make(chan bool), closeDial)
 	c.Assert(server, NotNil)
+	// It is possible for newServer to ping the remote host, and the
+	// request returns immediately (because writing to the socket fails).
+	// In which case pinger(loop=false) puts the closed socket back into
+	// unused. We have to wait until readLoop gets a EOF and removes the
+	// socket from the queue.
+	for {
+		server.RLock()
+		count := len(server.unusedSockets)
+		server.RUnlock()
+		if count == 0 {
+			break
+		}
+                logf("server had %d unused sockets waiting for 0", count)
+	}
 	conn, _, err := server.AcquireSocket(0)
 	c.Check(err, Equals, errServerClosed)
 	c.Assert(conn, IsNil)
