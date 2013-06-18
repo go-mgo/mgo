@@ -28,7 +28,7 @@ func (s *ServerSuite) TestCloseDuringConnect(c *C) {
 		// Accept a connection but don't do anything with it
 		for {
 			conn, err := localhostServer.Accept()
-                        logf("got connection: %v", conn)
+			logf("got connection: %v", conn)
 			if err != nil {
 				return
 			}
@@ -50,7 +50,7 @@ func (s *ServerSuite) TestCloseDuringConnect(c *C) {
 		if count == 0 {
 			break
 		}
-                logf("server had %d unused sockets waiting for 0", count)
+		logf("server had %d unused sockets waiting for 0", count)
 	}
 	conn, _, err := server.AcquireSocket(0)
 	c.Check(err, Equals, errServerClosed)
