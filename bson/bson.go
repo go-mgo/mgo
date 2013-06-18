@@ -658,7 +658,7 @@ func getStructInfo(st reflect.Type) (*structInfo, error) {
 	}
 	sinfo = &structInfo{
 		fieldsMap,
-		fieldsList[:len(fieldsMap)],
+		fieldsList,
 		inlineMap,
 		reflect.New(st).Elem(),
 	}
