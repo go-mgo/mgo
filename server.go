@@ -113,6 +113,7 @@ func (server *mongoServer) AcquireSocket(limit int) (socket *mongoSocket, abende
 				// closed in the meantime
 				if server.closed {
 					server.Unlock()
+					socket.Release()
 					socket.Close()
 					return nil, abended, errServerClosed
 				}

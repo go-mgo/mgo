@@ -34,6 +34,7 @@ import (
 	. "launchpad.net/gocheck"
 	"net"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -1290,4 +1291,23 @@ func (s *S) TestNearestSecondary(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(hostPort(result.Host), Equals, hostPort(rs1b))
 	}
+}
+
+func (s *S) TestConnectCloseConcurrency(c *C) {
+	restore := mgo.HackPingDelay(1)
+	defer restore()
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < 500; i++ {
+		go func() {
+			defer wg.Done()
+			session, err := mgo.Dial("localhost:40001")
+			if err != nil {
+				c.Fatal(err)
+			}
+			time.Sleep(1)
+			session.Close()
+		}()
+	}
+	wg.Wait()
 }
