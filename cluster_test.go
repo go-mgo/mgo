@@ -1297,8 +1297,9 @@ func (s *S) TestConnectCloseConcurrency(c *C) {
 	restore := mgo.HackPingDelay(1)
 	defer restore()
 	var wg sync.WaitGroup
+	const n = 500
 	wg.Add(n)
-	for i := 0; i < 500; i++ {
+	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
 			session, err := mgo.Dial("localhost:40001")
