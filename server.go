@@ -361,9 +361,9 @@ func (servers *mongoServers) MostAvailable() *mongoServer {
 		case next.master != best.master:
 			// Prefer slaves.
 			swap = best.master
-		case next.pingValue < best.pingValue-15*time.Millisecond:
+		case absDuration(next.pingValue-best.pingValue) > 15*time.Millisecond:
 			// Prefer nearest server.
-			swap = true
+			swap = next.pingValue < best.pingValue
 		case len(next.liveSockets)-len(next.unusedSockets) < len(best.liveSockets)-len(best.unusedSockets):
 			// Prefer servers with less connections.
 			swap = true
@@ -377,4 +377,11 @@ func (servers *mongoServers) MostAvailable() *mongoServer {
 	}
 	best.RUnlock()
 	return best
+}
+
+func absDuration(d time.Duration) time.Duration {
+	if d < 0 {
+		return -d
+	}
+	return d
 }
