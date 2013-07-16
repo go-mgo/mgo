@@ -1,21 +1,21 @@
 //var settings = {heartbeatSleep: 0.05, heartbeatTimeout: 0.5}
-var settings = {}
+var settings = {};
 
 // We know the master of the first set (pri=1), but not of the second.
 var rs1cfg = {_id: "rs1",
-              members: [{_id: 1, host: "127.0.0.1:40011", priority: 1},
-                        {_id: 2, host: "127.0.0.1:40012", priority: 0},
-                        {_id: 3, host: "127.0.0.1:40013", priority: 0}],
+              members: [{_id: 1, host: "127.0.0.1:40011", priority: 1, tags: {rs1: "a"}},
+                        {_id: 2, host: "127.0.0.1:40012", priority: 0, tags: {rs1: "b"}},
+                        {_id: 3, host: "127.0.0.1:40013", priority: 0, tags: {rs1: "c"}}],
               settings: settings}
 var rs2cfg = {_id: "rs2",
-              members: [{_id: 1, host: "127.0.0.1:40021", priority: 1},
-                        {_id: 2, host: "127.0.0.1:40022", priority: 1},
-                        {_id: 3, host: "127.0.0.1:40023", priority: 1}],
+              members: [{_id: 1, host: "127.0.0.1:40021", priority: 1, tags: {rs2: "a"}},
+                        {_id: 2, host: "127.0.0.1:40022", priority: 1, tags: {rs2: "b"}},
+                        {_id: 3, host: "127.0.0.1:40023", priority: 1, tags: {rs2: "c"}}],
               settings: settings}
 var rs3cfg = {_id: "rs3",
-              members: [{_id: 1, host: "127.0.0.1:40031", priority: 1},
-                        {_id: 2, host: "127.0.0.1:40032", priority: 1},
-                        {_id: 3, host: "127.0.0.1:40033", priority: 1}],
+              members: [{_id: 1, host: "127.0.0.1:40031", priority: 1, tags: {rs3: "a"}},
+                        {_id: 2, host: "127.0.0.1:40032", priority: 1, tags: {rs3: "b"}},
+                        {_id: 3, host: "127.0.0.1:40033", priority: 1, tags: {rs3: "c"}}],
               settings: settings}
 
 for (var i = 0; i != 60; i++) {

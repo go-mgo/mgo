@@ -28,6 +28,7 @@ package mgo
 
 import (
 	"errors"
+	"labix.org/v2/mgo/bson"
 	"net"
 	"sync"
 	"time"
@@ -124,6 +125,7 @@ type isMasterResult struct {
 	Primary   string
 	Hosts     []string
 	Passives  []string
+	Tags      bson.D
 }
 
 func (cluster *mongoCluster) isMaster(socket *mongoSocket, result *isMasterResult) error {
@@ -184,6 +186,8 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (isMaster bool, hos
 		stats.conn(-1, false)
 		return false, nil, errors.New(addr + " is not a master nor slave")
 	}
+
+	server.SetTags(result.Tags)
 
 	hosts = make([]string, 0, 1+len(result.Hosts)+len(result.Passives))
 	if result.Primary != "" {

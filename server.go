@@ -28,6 +28,7 @@ package mgo
 
 import (
 	"errors"
+	"fmt"
 	"labix.org/v2/mgo/bson"
 	"net"
 	"sort"
@@ -54,6 +55,7 @@ type mongoServer struct {
 	pingIndex     int
 	pingCount     uint32
 	pingWindow    [6]time.Duration
+	tags          bson.D
 }
 
 type dialer func(addr net.Addr) (net.Conn, error)
@@ -211,6 +213,13 @@ func (server *mongoServer) AbendSocket(socket *mongoSocket) {
 	case server.sync <- true:
 	default:
 	}
+}
+
+func (server *mongoServer) SetTags(tags bson.D) {
+	server.Lock()
+	server.tags = tags
+	fmt.Printf("tags: %#v\n", tags)
+	server.Unlock()
 }
 
 func (server *mongoServer) SetMaster(isMaster bool) {
