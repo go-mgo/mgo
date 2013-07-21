@@ -269,32 +269,27 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 		}
 
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if v.Type().Kind() <= reflect.Int32 {
-			e.addElemName('\x10', name)
-			e.addInt32(int32(v.Int()))
-		} else {
-			switch v.Type() {
-			case typeMongoTimestamp:
-				e.addElemName('\x11', name)
-				e.addInt64(v.Int())
+		switch v.Type() {
+		case typeMongoTimestamp:
+			e.addElemName('\x11', name)
+			e.addInt64(v.Int())
 
-			case typeOrderKey:
-				if v.Int() == int64(MaxKey) {
-					e.addElemName('\x7F', name)
-				} else {
-					e.addElemName('\xFF', name)
-				}
+		case typeOrderKey:
+			if v.Int() == int64(MaxKey) {
+				e.addElemName('\x7F', name)
+			} else {
+				e.addElemName('\xFF', name)
+			}
 
-			default:
-				i := v.Int()
-				if minSize && i >= math.MinInt32 && i <= math.MaxInt32 {
-					// It fits into an int32, encode as such.
-					e.addElemName('\x10', name)
-					e.addInt32(int32(i))
-				} else {
-					e.addElemName('\x12', name)
-					e.addInt64(i)
-				}
+		default:
+			i := v.Int()
+			if (minSize || v.Type().Kind() != reflect.Int64) && i >= math.MinInt32 && i <= math.MaxInt32 {
+				// It fits into an int32, encode as such.
+				e.addElemName('\x10', name)
+				e.addInt32(int32(i))
+			} else {
+				e.addElemName('\x12', name)
+				e.addInt64(i)
 			}
 		}
 

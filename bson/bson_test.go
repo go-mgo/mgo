@@ -353,6 +353,20 @@ func (s *S) TestUnmarshalStructSampleItems(c *C) {
 	}
 }
 
+func (s *S) Test64bitInt(c *C) {
+	var i int64 = (1 << 31)
+	if int(i) > 0 {
+		data, err := bson.Marshal(bson.M{"i": int(i)})
+		c.Assert(err, IsNil)
+		c.Assert(string(data), Equals, wrapInDoc("\x12i\x00\x00\x00\x00\x80\x00\x00\x00\x00"))
+
+		var result struct { I int }
+		err = bson.Unmarshal(data, &result)
+		c.Assert(err, IsNil)
+		c.Assert(int64(result.I), Equals, i)
+	}
+}
+
 // --------------------------------------------------------------------------
 // Generic two-way struct marshaling tests.
 
