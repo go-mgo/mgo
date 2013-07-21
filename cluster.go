@@ -126,6 +126,7 @@ type isMasterResult struct {
 	Hosts     []string
 	Passives  []string
 	Tags      bson.D
+	Msg       string
 }
 
 func (cluster *mongoCluster) isMaster(socket *mongoSocket, result *isMasterResult) error {
@@ -137,7 +138,7 @@ func (cluster *mongoCluster) isMaster(socket *mongoSocket, result *isMasterResul
 	return err
 }
 
-func (cluster *mongoCluster) syncServer(server *mongoServer) (isMaster bool, hosts []string, err error) {
+func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerInfo, hosts []string, err error) {
 	addr := server.Addr
 	log("SYNC Processing ", addr, "...")
 
@@ -151,7 +152,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (isMaster bool, hos
 			// Don't abuse the server needlessly if there's something actually wrong.
 			time.Sleep(500 * time.Millisecond)
 		case 3:
-			return false, nil, tryerr
+			return nil, nil, tryerr
 		}
 
 		socket, _, err := server.AcquireSocket(0)
@@ -184,10 +185,14 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (isMaster bool, hos
 		logf("SYNC %s is neither a master nor a slave.", addr)
 		// Made an incorrect assumption above, so fix stats.
 		stats.conn(-1, false)
-		return false, nil, errors.New(addr + " is not a master nor slave")
+		return nil, nil, errors.New(addr + " is not a master nor slave")
 	}
 
-	server.SetTags(result.Tags)
+	info = &mongoServerInfo{
+		Master: result.IsMaster,
+		Mongos: result.Msg == "isdbgrid",
+		Tags:   result.Tags,
+	}
 
 	hosts = make([]string, 0, 1+len(result.Hosts)+len(result.Passives))
 	if result.Primary != "" {
@@ -198,7 +203,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (isMaster bool, hos
 	hosts = append(hosts, result.Passives...)
 
 	debugf("SYNC %s knows about the following peers: %#v", addr, hosts)
-	return result.IsMaster, hosts, nil
+	return info, hosts, nil
 }
 
 type syncKind bool
@@ -208,7 +213,7 @@ const (
 	partialSync  syncKind = false
 )
 
-func (cluster *mongoCluster) addServer(server *mongoServer, isMaster bool, syncKind syncKind) {
+func (cluster *mongoCluster) addServer(server *mongoServer, info *mongoServerInfo, syncKind syncKind) {
 	cluster.Lock()
 	current := cluster.servers.Search(server.ResolvedAddr)
 	if current == nil {
@@ -219,8 +224,7 @@ func (cluster *mongoCluster) addServer(server *mongoServer, isMaster bool, syncK
 			return
 		}
 		cluster.servers.Add(server)
-		if isMaster {
-			server.SetMaster(true)
+		if info.Master {
 			cluster.masters.Add(server)
 			log("SYNC Adding ", server.Addr, " to cluster as a master.")
 		} else {
@@ -230,9 +234,8 @@ func (cluster *mongoCluster) addServer(server *mongoServer, isMaster bool, syncK
 		if server != current {
 			panic("addServer attempting to add duplicated server")
 		}
-		if server.IsMaster() != isMaster {
-			server.SetMaster(isMaster)
-			if isMaster {
+		if server.Info().Master != info.Master {
+			if info.Master {
 				log("SYNC Server ", server.Addr, " is now a master.")
 				cluster.masters.Add(server)
 			} else {
@@ -241,6 +244,7 @@ func (cluster *mongoCluster) addServer(server *mongoServer, isMaster bool, syncK
 			}
 		}
 	}
+	server.SetInfo(info)
 	debugf("SYNC Broadcasting availability of server %s", server.Addr)
 	cluster.serverSynced.Broadcast()
 	cluster.Unlock()
@@ -372,12 +376,17 @@ func resolveAddr(addr string) (*net.TCPAddr, error) {
 	return tcpaddr, nil
 }
 
+type pendingAdd struct {
+	server *mongoServer
+	info   *mongoServerInfo
+}
+
 func (cluster *mongoCluster) syncServersIteration(direct bool) {
 	log("SYNC Starting full topology synchronization...")
 
 	var wg sync.WaitGroup
 	var m sync.Mutex
-	notYetAdded := make(map[string]*mongoServer)
+	notYetAdded := make(map[string]pendingAdd)
 	addIfFound := make(map[string]bool)
 	seen := make(map[string]bool)
 	syncKind := partialSync
@@ -397,10 +406,10 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 
 			m.Lock()
 			if byMaster {
-				if s, ok := notYetAdded[resolvedAddr]; ok {
+				if pending, ok := notYetAdded[resolvedAddr]; ok {
 					delete(notYetAdded, resolvedAddr)
 					m.Unlock()
-					cluster.addServer(s, false, completeSync)
+					cluster.addServer(pending.server, pending.info, completeSync)
 					return
 				}
 				addIfFound[resolvedAddr] = true
@@ -413,26 +422,26 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 			m.Unlock()
 
 			server := cluster.server(addr, tcpaddr)
-			isMaster, hosts, err := cluster.syncServer(server)
+			info, hosts, err := cluster.syncServer(server)
 			if err != nil {
 				cluster.removeServer(server)
 				return
 			}
 
 			m.Lock()
-			add := direct || isMaster || addIfFound[resolvedAddr]
+			add := direct || info.Master || addIfFound[resolvedAddr]
 			if add {
 				syncKind = completeSync
 			} else {
-				notYetAdded[resolvedAddr] = server
+				notYetAdded[resolvedAddr] = pendingAdd{server, info}
 			}
 			m.Unlock()
 			if add {
-				cluster.addServer(server, isMaster, completeSync)
+				cluster.addServer(server, info, completeSync)
 			}
 			if !direct {
 				for _, addr := range hosts {
-					spawnSync(addr, isMaster)
+					spawnSync(addr, info.Master)
 				}
 			}
 		}()
@@ -446,13 +455,13 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 
 	if syncKind == completeSync {
 		logf("SYNC Synchronization was complete (got data from primary).")
-		for _, server := range notYetAdded {
-			cluster.removeServer(server)
+		for _, pending := range notYetAdded {
+			cluster.removeServer(pending.server)
 		}
 	} else {
 		logf("SYNC Synchronization was partial (cannot talk to primary).")
-		for _, server := range notYetAdded {
-			cluster.addServer(server, false, partialSync)
+		for _, pending := range notYetAdded {
+			cluster.addServer(pending.server, pending.info, partialSync)
 		}
 	}
 
@@ -478,7 +487,7 @@ var socketsPerServer = 4096
 // AcquireSocket returns a socket to a server in the cluster.  If slaveOk is
 // true, it will attempt to return a socket to a slave server.  If it is
 // false, the socket will necessarily be to a master server.
-func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Duration) (s *mongoSocket, err error) {
+func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Duration, serverTags []bson.D) (s *mongoSocket, err error) {
 	var started time.Time
 	warnedLimit := false
 	for {
@@ -505,11 +514,17 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Durati
 
 		var server *mongoServer
 		if slaveOk {
-			server = cluster.servers.MostAvailable()
+			server = cluster.servers.BestFit(serverTags)
 		} else {
-			server = cluster.masters.MostAvailable()
+			server = cluster.masters.BestFit(nil)
 		}
 		cluster.RUnlock()
+
+		if server == nil {
+			// Must have failed the requested tags. Sleep to avoid spinning.
+			time.Sleep(1e8)
+			continue
+		}
 
 		s, abended, err := server.AcquireSocket(socketsPerServer)
 		if err == errSocketLimit {

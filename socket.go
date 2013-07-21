@@ -48,7 +48,17 @@ type mongoSocket struct {
 	cachedNonce   string
 	gotNonce      sync.Cond
 	dead          error
+	serverInfo    *mongoServerInfo
 }
+
+type queryOpFlags uint32
+
+const (
+	flagTailable  queryOpFlags = 1 << 1
+	flagSlaveOk   queryOpFlags = 1 << 2
+	flagLogReplay queryOpFlags = 1 << 3
+	flagAwaitData queryOpFlags = 1 << 5
+)
 
 type queryOp struct {
 	collection string
@@ -56,8 +66,39 @@ type queryOp struct {
 	skip       int32
 	limit      int32
 	selector   interface{}
-	flags      uint32
+	flags      queryOpFlags
 	replyFunc  replyFunc
+
+	options    queryWrapper
+	hasOptions bool
+	serverTags []bson.D
+}
+
+type queryWrapper struct {
+	Query          interface{} "$query"
+	OrderBy        interface{} "$orderby,omitempty"
+	Hint           interface{} "$hint,omitempty"
+	Explain        bool        "$explain,omitempty"
+	Snapshot       bool        "$snapshot,omitempty"
+	ReadPreference bson.D      "$readPreference,omitempty"
+}
+
+func (op *queryOp) finalQuery(socket *mongoSocket) interface{} {
+	if op.flags&flagSlaveOk != 0 && len(op.serverTags) > 0 && socket.ServerInfo().Mongos {
+		op.hasOptions = true
+		op.options.ReadPreference = bson.D{{"mode", "secondaryPreferred"}, {"tags", op.serverTags}}
+	}
+	if op.hasOptions {
+		if op.query == nil {
+			var empty bson.D
+			op.options.Query = empty
+		} else {
+			op.options.Query = op.query
+		}
+		debugf("final query is %#v\n", &op.options)
+		return &op.options
+	}
+	return op.query
 }
 
 type getMoreOp struct {
@@ -106,7 +147,7 @@ func newSocket(server *mongoServer, conn net.Conn) *mongoSocket {
 	socket.gotNonce.L = &socket.Mutex
 	socket.replyFuncs = make(map[uint32]replyFunc)
 	socket.server = server
-	if err := socket.InitialAcquire(); err != nil {
+	if err := socket.InitialAcquire(server.Info()); err != nil {
 		panic("newSocket: InitialAcquire returned error: " + err.Error())
 	}
 	stats.socketsAlive(+1)
@@ -125,10 +166,19 @@ func (socket *mongoSocket) Server() *mongoServer {
 	return server
 }
 
+// ServerInfo returns details for the server at the time the socket
+// was initially acquired.
+func (socket *mongoSocket) ServerInfo() *mongoServerInfo {
+	socket.Lock()
+	serverInfo := socket.serverInfo
+	socket.Unlock()
+	return serverInfo
+}
+
 // InitialAcquire obtains the first reference to the socket, either
 // right after the connection is made or once a recycled socket is
 // being put back in use.
-func (socket *mongoSocket) InitialAcquire() error {
+func (socket *mongoSocket) InitialAcquire(serverInfo *mongoServerInfo) error {
 	socket.Lock()
 	if socket.references > 0 {
 		panic("Socket acquired out of cache with references")
@@ -138,6 +188,7 @@ func (socket *mongoSocket) InitialAcquire() error {
 		return socket.dead
 	}
 	socket.references++
+	socket.serverInfo = serverInfo
 	stats.socketsInUse(+1)
 	stats.socketRefs(+1)
 	socket.Unlock()
@@ -147,20 +198,18 @@ func (socket *mongoSocket) InitialAcquire() error {
 // Acquire obtains an additional reference to the socket.
 // The socket will only be recycled when it's released as many
 // times as it's been acquired.
-func (socket *mongoSocket) Acquire() (isMaster bool) {
+func (socket *mongoSocket) Acquire() (info *mongoServerInfo) {
 	socket.Lock()
 	if socket.references == 0 {
 		panic("Socket got non-initial acquire with references == 0")
 	}
-	socket.references++
-	stats.socketRefs(+1)
 	// We'll track references to dead sockets as well.
 	// Caller is still supposed to release the socket.
-	if socket.dead == nil {
-		isMaster = socket.server.IsMaster()
-	}
+	socket.references++
+	stats.socketRefs(+1)
+	serverInfo := socket.serverInfo
 	socket.Unlock()
-	return isMaster
+	return serverInfo
 }
 
 // Release decrements a socket reference. The socket will be
@@ -292,7 +341,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 			buf = addCString(buf, op.collection)
 			buf = addInt32(buf, op.skip)
 			buf = addInt32(buf, op.limit)
-			buf, err = addBSON(buf, op.query)
+			buf, err = addBSON(buf, op.finalQuery(socket))
 			if err != nil {
 				return err
 			}

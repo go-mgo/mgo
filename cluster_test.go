@@ -1312,3 +1312,108 @@ func (s *S) TestConnectCloseConcurrency(c *C) {
 	}
 	wg.Wait()
 }
+
+func (s *S) TestSelectServers(c *C) {
+	session, err := mgo.Dial("localhost:40011")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	session.SetMode(mgo.Eventual, true)
+
+	var result struct{ Host string }
+
+	session.Refresh()
+	session.SelectServers(bson.D{{"rs1", "b"}})
+	err = session.Run("serverStatus", &result)
+	c.Assert(err, IsNil)
+	c.Assert(hostPort(result.Host), Equals, "40012")
+
+	session.Refresh()
+	session.SelectServers(bson.D{{"rs1", "c"}})
+	err = session.Run("serverStatus", &result)
+	c.Assert(err, IsNil)
+	c.Assert(hostPort(result.Host), Equals, "40013")
+}
+
+func (s *S) TestSelectServersWithMongos(c *C) {
+	session, err := mgo.Dial("localhost:40021")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	ssresult := &struct{ Host string }{}
+	imresult := &struct{ IsMaster bool }{}
+
+	// Figure the master while still using the strong session.
+	err = session.Run("serverStatus", ssresult)
+	c.Assert(err, IsNil)
+	err = session.Run("isMaster", imresult)
+	c.Assert(err, IsNil)
+	master := ssresult.Host
+	c.Assert(imresult.IsMaster, Equals, true, Commentf("%s is not the master", master))
+
+	var slave1, slave2 string
+	switch hostPort(master) {
+	case "40021":
+		slave1, slave2 = "b", "c"
+	case "40022":
+		slave1, slave2 = "a", "c"
+	case "40023":
+		slave1, slave2 = "a", "b"
+	}
+
+	// Collect op counters for everyone.
+	opc21a, err := getOpCounters("localhost:40021")
+	c.Assert(err, IsNil)
+	opc22a, err := getOpCounters("localhost:40022")
+	c.Assert(err, IsNil)
+	opc23a, err := getOpCounters("localhost:40023")
+	c.Assert(err, IsNil)
+
+	// Do a SlaveOk query through MongoS
+	mongos, err := mgo.Dial("localhost:40202")
+	c.Assert(err, IsNil)
+	defer mongos.Close()
+
+	mongos.SetMode(mgo.Monotonic, true)
+
+	mongos.SelectServers(bson.D{{"rs2", slave1}})
+	coll := mongos.DB("mydb").C("mycoll")
+	result := &struct{}{}
+	for i := 0; i != 5; i++ {
+		err := coll.Find(nil).One(result)
+		c.Assert(err, Equals, mgo.ErrNotFound)
+	}
+
+	mongos.Refresh()
+	mongos.SelectServers(bson.D{{"rs2", slave2}})
+	coll = mongos.DB("mydb").C("mycoll")
+	for i := 0; i != 7; i++ {
+		err := coll.Find(nil).One(result)
+		c.Assert(err, Equals, mgo.ErrNotFound)
+	}
+
+	// Collect op counters for everyone again.
+	opc21b, err := getOpCounters("localhost:40021")
+	c.Assert(err, IsNil)
+	opc22b, err := getOpCounters("localhost:40022")
+	c.Assert(err, IsNil)
+	opc23b, err := getOpCounters("localhost:40023")
+	c.Assert(err, IsNil)
+
+	switch hostPort(master) {
+	case "40021":
+		c.Assert(opc21b.Query - opc21a.Query, Equals, 0)
+		c.Assert(opc22b.Query - opc22a.Query, Equals, 5)
+		c.Assert(opc23b.Query - opc23a.Query, Equals, 7)
+	case "40022":
+		c.Assert(opc21b.Query - opc21a.Query, Equals, 5)
+		c.Assert(opc22b.Query - opc22a.Query, Equals, 0)
+		c.Assert(opc23b.Query - opc23a.Query, Equals, 7)
+	case "40023":
+		c.Assert(opc21b.Query - opc21a.Query, Equals, 5)
+		c.Assert(opc22b.Query - opc22a.Query, Equals, 7)
+		c.Assert(opc23b.Query - opc23a.Query, Equals, 0)
+	default:
+		c.Fatal("Uh?")
+	}
+}
