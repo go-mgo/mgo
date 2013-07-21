@@ -27,9 +27,11 @@
 package mgo_test
 
 import (
+	"fmt"
 	"labix.org/v2/mgo"
 	. "launchpad.net/gocheck"
 	"sync"
+	"time"
 )
 
 func (s *S) TestAuthLogin(c *C) {
@@ -736,5 +738,41 @@ func (s *S) TestDefaultDatabase(c *C) {
 		scopy := session.Copy()
 		c.Check(scopy.DB("").Name, Equals, test.db)
 		scopy.Close()
+	}
+}
+
+func (s *S) TestAuthDirect(c *C) {
+	// Direct connections must work to the master and slaves.
+	for _, port := range []string{"40031", "40032", "40033"} {
+		url := fmt.Sprintf("mongodb://reader:rapadura@localhost:%s/?connect=direct", port)
+		session, err := mgo.Dial(url)
+		c.Assert(err, IsNil)
+		defer session.Close()
+
+		session.SetMode(mgo.Monotonic, true)
+
+		var result struct{}
+		err = session.DB("mydb").C("mycoll").Find(nil).One(&result)
+		c.Assert(err, Equals, mgo.ErrNotFound)
+	}
+}
+
+func (s *S) TestAuthDirectWithLogin(c *C) {
+	// Direct connections must work to the master and slaves.
+	for _, port := range []string{"40031", "40032", "40033"} {
+		url := fmt.Sprintf("mongodb://localhost:%s/?connect=direct", port)
+		session, err := mgo.Dial(url)
+		c.Assert(err, IsNil)
+		defer session.Close()
+
+		session.SetMode(mgo.Monotonic, true)
+		session.SetSyncTimeout(3 * time.Second)
+
+		err = session.DB("admin").Login("root", "rapadura")
+		c.Assert(err, IsNil)
+
+		var result struct{}
+		err = session.DB("mydb").C("mycoll").Find(nil).One(&result)
+		c.Assert(err, Equals, mgo.ErrNotFound)
 	}
 }

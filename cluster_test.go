@@ -1193,7 +1193,7 @@ func (s *S) TestPrimaryShutdownOnAuthShard(c *C) {
 	c.Assert(err, IsNil)
 
 	// Dial the replica set to figure the master out.
-	rs, err := mgo.Dial("localhost:40031")
+	rs, err := mgo.Dial("root:rapadura@localhost:40031")
 	c.Assert(err, IsNil)
 	defer rs.Close()
 
@@ -1376,6 +1376,7 @@ func (s *S) TestSelectServersWithMongos(c *C) {
 
 	mongos.SetMode(mgo.Monotonic, true)
 
+	mongos.Refresh()
 	mongos.SelectServers(bson.D{{"rs2", slave1}})
 	coll := mongos.DB("mydb").C("mycoll")
 	result := &struct{}{}
@@ -1402,17 +1403,17 @@ func (s *S) TestSelectServersWithMongos(c *C) {
 
 	switch hostPort(master) {
 	case "40021":
-		c.Assert(opc21b.Query - opc21a.Query, Equals, 0)
-		c.Assert(opc22b.Query - opc22a.Query, Equals, 5)
-		c.Assert(opc23b.Query - opc23a.Query, Equals, 7)
+		c.Check(opc21b.Query - opc21a.Query, Equals, 0)
+		c.Check(opc22b.Query - opc22a.Query, Equals, 5)
+		c.Check(opc23b.Query - opc23a.Query, Equals, 7)
 	case "40022":
-		c.Assert(opc21b.Query - opc21a.Query, Equals, 5)
-		c.Assert(opc22b.Query - opc22a.Query, Equals, 0)
-		c.Assert(opc23b.Query - opc23a.Query, Equals, 7)
+		c.Check(opc21b.Query - opc21a.Query, Equals, 5)
+		c.Check(opc22b.Query - opc22a.Query, Equals, 0)
+		c.Check(opc23b.Query - opc23a.Query, Equals, 7)
 	case "40023":
-		c.Assert(opc21b.Query - opc21a.Query, Equals, 5)
-		c.Assert(opc22b.Query - opc22a.Query, Equals, 7)
-		c.Assert(opc23b.Query - opc23a.Query, Equals, 0)
+		c.Check(opc21b.Query - opc21a.Query, Equals, 5)
+		c.Check(opc22b.Query - opc22a.Query, Equals, 7)
+		c.Check(opc23b.Query - opc23a.Query, Equals, 0)
 	default:
 		c.Fatal("Uh?")
 	}

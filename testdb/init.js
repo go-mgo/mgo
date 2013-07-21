@@ -49,7 +49,7 @@ function configShards() {
 }
 
 function configAuth() {
-    var addrs = ["127.0.0.1:40002", "127.0.0.1:40203"]
+    var addrs = ["127.0.0.1:40002", "127.0.0.1:40203", "127.0.0.1:40031"]
     var ports = [40002, 40203] 
     for (var i in addrs) {
         db = new Mongo(addrs[i]).getDB("admin")

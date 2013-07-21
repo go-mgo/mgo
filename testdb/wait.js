@@ -19,6 +19,7 @@ for (var i = 0; i != 60; i++) {
 		rs1a = new Mongo("127.0.0.1:40011").getDB("admin")
 		rs2a = new Mongo("127.0.0.1:40021").getDB("admin")
 		rs3a = new Mongo("127.0.0.1:40031").getDB("admin")
+		rs3a.auth("root", "rapadura")
 		db1 = new Mongo("127.0.0.1:40001").getDB("admin")
 		db2 = new Mongo("127.0.0.1:40002").getDB("admin")
 		break

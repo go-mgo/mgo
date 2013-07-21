@@ -470,7 +470,7 @@ func (db *Database) Login(user, pass string) (err error) {
 	session := db.Session
 	dbname := db.Name
 
-	socket, err := session.acquireSocket(false)
+	socket, err := session.acquireSocket(true)
 	if err != nil {
 		return err
 	}
