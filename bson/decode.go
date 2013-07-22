@@ -675,7 +675,7 @@ func (d *decoder) readBinary() Binary {
 	b := Binary{}
 	b.Kind = d.readByte()
 	b.Data = d.readBytes(l)
-	if b.Kind == 0x02 {
+	if b.Kind == 0x02 && len(b.Data) >= 4 {
 		// Weird obsolete format with redundant length.
 		b.Data = b.Data[4:]
 	}

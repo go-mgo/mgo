@@ -527,6 +527,10 @@ var unmarshalItems = []testItemType{
 	// Decode old binary.
 	{bson.M{"_": []byte("old")},
 		"\x05_\x00\x07\x00\x00\x00\x02\x03\x00\x00\x00old"},
+
+	// Decode old binary without length. According to the spec, this shouldn't happen.
+	{bson.M{"_": []byte("old")},
+		"\x05_\x00\x03\x00\x00\x00\x02old"},
 }
 
 func (s *S) TestUnmarshalOneWayItems(c *C) {
