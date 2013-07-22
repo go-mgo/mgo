@@ -281,7 +281,7 @@ func (gfs *GridFS) OpenNext(iter *Iter, file **GridFile) bool {
 		// Ignoring the error here shouldn't be a big deal
 		// as we're reading the file and the loop iteration
 		// for this file is finished.
-		_ = file.Close()
+		_ = (*file).Close()
 	}
 	var doc gfsFile
 	if !iter.Next(&doc) {
