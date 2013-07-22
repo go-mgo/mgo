@@ -744,7 +744,7 @@ func (s *S) TestDefaultDatabase(c *C) {
 func (s *S) TestAuthDirect(c *C) {
 	// Direct connections must work to the master and slaves.
 	for _, port := range []string{"40031", "40032", "40033"} {
-		url := fmt.Sprintf("mongodb://reader:rapadura@localhost:%s/?connect=direct", port)
+		url := fmt.Sprintf("mongodb://root:rapadura@localhost:%s/?connect=direct", port)
 		session, err := mgo.Dial(url)
 		c.Assert(err, IsNil)
 		defer session.Close()

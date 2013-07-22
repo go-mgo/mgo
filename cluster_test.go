@@ -538,6 +538,9 @@ func (s *S) TestPrimaryShutdownMonotonic(c *C) {
 	err = coll.Insert(M{"a": 1})
 	c.Assert(err, IsNil)
 
+	// Wait a bit for this to be synchronized to slaves.
+	time.Sleep(3 * time.Second)
+
 	result := &struct{ Host string }{}
 	err = session.Run("serverStatus", result)
 	c.Assert(err, IsNil)
@@ -661,6 +664,9 @@ func (s *S) TestPrimaryShutdownEventual(c *C) {
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"a": 1})
 	c.Assert(err, IsNil)
+
+	// Wait a bit for this to be synchronized to slaves.
+	time.Sleep(3 * time.Second)
 
 	// Kill the master.
 	s.Stop(master)
@@ -1314,6 +1320,10 @@ func (s *S) TestConnectCloseConcurrency(c *C) {
 }
 
 func (s *S) TestSelectServers(c *C) {
+	if !s.versionAtLeast(2, 2) {
+		c.Skip("read preferences introduced in 2.2")
+	}
+
 	session, err := mgo.Dial("localhost:40011")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -1336,6 +1346,10 @@ func (s *S) TestSelectServers(c *C) {
 }
 
 func (s *S) TestSelectServersWithMongos(c *C) {
+	if !s.versionAtLeast(2, 2) {
+		c.Skip("read preferences introduced in 2.2")
+	}
+
 	session, err := mgo.Dial("localhost:40021")
 	c.Assert(err, IsNil)
 	defer session.Close()

@@ -50,12 +50,15 @@ function configShards() {
 
 function configAuth() {
     var addrs = ["127.0.0.1:40002", "127.0.0.1:40203", "127.0.0.1:40031"]
-    var ports = [40002, 40203] 
     for (var i in addrs) {
         db = new Mongo(addrs[i]).getDB("admin")
         db.addUser("root", "rapadura")
         db.auth("root", "rapadura")
-        db.addUser("reader", "rapadura", true)
+        if (db.serverBuildInfo().versionArray >= [2, 4]) {
+            db.addUser({user: "reader", pwd: "rapadura", roles: ["readAnyDatabase"]})
+        } else {
+            db.addUser("reader", "rapadura", true)
+        }
     }
 }
 
