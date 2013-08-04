@@ -201,8 +201,12 @@ func (d *decoder) readDocTo(out reflect.Value) {
 			}
 		}
 	case reflect.Slice:
-		if outt.Elem() == typeDocElem {
+		switch outt.Elem() {
+		case typeDocElem:
 			origout.Set(d.readDocElems(outt))
+			return
+		case typeRawDocElem:
+			origout.Set(d.readRawDocElems(outt))
 			return
 		}
 		fallthrough
@@ -359,6 +363,23 @@ func (d *decoder) readDocElems(typ reflect.Type) reflect.Value {
 	return slicev
 }
 
+func (d *decoder) readRawDocElems(typ reflect.Type) reflect.Value {
+	docType := d.docType
+	d.docType = typ
+	slice := make([]RawDocElem, 0, 8)
+	d.readDocWith(func(kind byte, name string) {
+		e := RawDocElem{Name: name}
+		v := reflect.ValueOf(&e.Value)
+		if d.readElemTo(v.Elem(), kind) {
+			slice = append(slice, e)
+		}
+	})
+	slicev := reflect.New(typ).Elem()
+	slicev.Set(reflect.ValueOf(slice))
+	d.docType = docType
+	return slicev
+}
+
 func (d *decoder) readDocWith(f func(kind byte, name string)) {
 	end := d.i - 4 + int(d.readInt32())
 	if end <= d.i || end > len(d.in) || d.in[end-1] != '\x00' {
@@ -403,9 +424,12 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 		case reflect.Interface, reflect.Ptr, reflect.Struct, reflect.Map:
 			d.readDocTo(out)
 		default:
-			if _, ok := out.Interface().(D); ok {
+			switch out.Interface().(type) {
+			case D:
 				out.Set(d.readDocElems(out.Type()))
-			} else {
+			case RawD:
+				out.Set(d.readRawDocElems(out.Type()))
+			default:
 				d.readDocTo(blackHole)
 			}
 		}

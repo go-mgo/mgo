@@ -1,18 +1,18 @@
 // BSON library for Go
-// 
+//
 // Copyright (c) 2010-2012 - Gustavo Niemeyer <gustavo@niemeyer.net>
-// 
+//
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met: 
-// 
+// modification, are permitted provided that the following conditions are met:
+//
 // 1. Redistributions of source code must retain the above copyright notice, this
-//    list of conditions and the following disclaimer. 
+//    list of conditions and the following disclaimer.
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
-//    and/or other materials provided with the distribution. 
-// 
+//    and/or other materials provided with the distribution.
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 // ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 // WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -102,21 +102,28 @@ var SetZero = errors.New("set to zero")
 // undefined ordered. See also the bson.D type for an ordered alternative.
 type M map[string]interface{}
 
-// D is a type for dealing with documents containing ordered elements in a
-// native fashion. For instance:
+// D represents a BSON document containing ordered elements. For example:
 //
 //     bson.D{{"a", 1}, {"b", true}}
 //
 // In some situations, such as when creating indexes for MongoDB, the order in
 // which the elements are defined is important.  If the order is not important,
-// using a map is generally more comfortable. See the bson.M type and the
-// Map() method for D.
+// using a map is generally more comfortable. See bson.M and bson.RawD.
 type D []DocElem
 
-// See the bson.D type.
+// See the D type.
 type DocElem struct {
 	Name  string
 	Value interface{}
+}
+
+// Map returns a map out of the ordered element name/value pairs in d.
+func (d D) Map() (m M) {
+	m = make(M, len(d))
+	for _, item := range d {
+		m[item.Name] = item.Value
+	}
+	return m
 }
 
 // The Raw type represents raw unprocessed BSON documents and elements.
@@ -133,13 +140,16 @@ type Raw struct {
 	Data []byte
 }
 
-// Map returns a map out of the ordered element name/value pairs in d.
-func (d D) Map() (m M) {
-	m = make(M, len(d))
-	for _, item := range d {
-		m[item.Name] = item.Value
-	}
-	return m
+// RawD represents a BSON document containing raw unprocessed elements.
+// This low-level representation may be useful when lazily processing
+// documents of uncertain content, or when manipulating the raw content
+// documents in general.
+type RawD []RawDocElem
+
+// See the RawD type.
+type RawDocElem struct {
+	Name  string
+	Value Raw
 }
 
 // ObjectId is a unique ID identifying a BSON value. It must be exactly 12 bytes
@@ -425,7 +435,7 @@ func handleErr(err *error) {
 //         E int64  ",minsize"
 //         F int64  "myf,omitempty,minsize"
 //     }
-//           
+//
 func Marshal(in interface{}) (out []byte, err error) {
 	defer handleErr(&err)
 	e := &encoder{make([]byte, 0, initialBufferSize)}
