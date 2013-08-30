@@ -290,6 +290,8 @@ NextDoc:
 			if info.Revno == 0 {
 				// Missing revno in the stash only happens when it
 				// has been upserted, in which case it defaults to -1.
+				// Txn-inserted documents get revno -1 while in the stash
+				// for the first time, and -revno-1 == 2 when they go live.
 				info.Revno = -1
 			}
 		} else if err != mgo.ErrNotFound {
@@ -352,8 +354,14 @@ NextDoc:
 	for _, op := range t.Ops {
 		dkey := op.docKey()
 		revnos = append(revnos, revno[dkey])
-		if op.isChange() {
-			revno[dkey] += 1
+		drevno := revno[dkey]
+		switch {
+		case op.Insert != nil && drevno < 0:
+			revno[dkey] = -drevno+1
+		case op.Update != nil && drevno >= 0:
+			revno[dkey] = drevno+1
+		case op.Remove && drevno >= 0:
+			revno[dkey] = -drevno-1
 		}
 	}
 	if !prereqs {
@@ -708,18 +716,20 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 		}
 
 		c := f.tc.Database.C(op.C)
-		var revnoq, idq interface{}
-		if revno == 0 || op.Insert != nil && revno == -1 {
-			revnoq = bson.D{{"$exists", false}}
-		} else {
-			revnoq = revno
-		}
+
+		qdoc := bson.D{{"_id", dkey.Id}, {"txn-revno", revno}, {"txn-queue", tt}}
 		if op.Insert != nil {
-			idq = dkey
-		} else {
-			idq = dkey.Id
+			qdoc[0].Value = dkey
+			if revno == -1 {
+				qdoc[1].Value = bson.D{{"$exists", false}}
+			}
+		} else if revno == 0 {
+			// There's no document with revno 0. The only way to see it is
+			// when an existent document participates in a transaction the
+			// first time. Txn-inserted documents get revno -1 while in the
+			// stash for the first time, and -revno-1 == 2 when they go live.
+			qdoc[1].Value = bson.D{{"$exists", false}}
 		}
-		qdoc := bson.D{{"_id", idq}, {"txn-revno", revnoq}, {"txn-queue", tt}}
 
 		dontPull := tt
 		isPullOp := pullOp[dkey] == i
@@ -735,6 +745,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 		case op.Update != nil:
 			if revno < 0 {
 				err = mgo.ErrNotFound
+				f.debugf("Won't try to apply update op; negative revision means the document is missing or stashed");
 			} else {
 				newRevno := revno + 1
 				logRevnos[i] = newRevno

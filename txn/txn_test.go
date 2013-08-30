@@ -39,8 +39,8 @@ func (s *S) SetUpTest(c *C) {
 }
 
 type Account struct {
-	Id      int `bson:"_id"`
-	Balance int
+	Id       int `bson:"_id"`
+	Balance  int
 }
 
 func (s *S) TestDocExists(c *C) {
@@ -117,6 +117,112 @@ func (s *S) TestRemove(c *C) {
 
 	err = s.runner.Run(ops, "", nil)
 	c.Assert(err, IsNil)
+}
+
+func (s *S) TestUpdate(c *C) {
+	var err error
+	err = s.accounts.Insert(M{"_id": 0, "balance": 200})
+	c.Assert(err, IsNil)
+	err = s.accounts.Insert(M{"_id": 1, "balance": 200})
+	c.Assert(err, IsNil)
+
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Update: M{"$inc": M{"balance": 100}},
+	}}
+
+	err = s.runner.Run(ops, "", nil)
+	c.Assert(err, IsNil)
+
+	var account Account
+	err = s.accounts.FindId(0).One(&account)
+	c.Assert(err, IsNil)
+	c.Assert(account.Balance, Equals, 300)
+
+	ops[0].Id = 1
+
+	err = s.accounts.FindId(1).One(&account)
+	c.Assert(err, IsNil)
+	c.Assert(account.Balance, Equals, 200)
+}
+
+func (s *S) TestInsertUpdate(c *C) {
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Insert: M{"_id": 0, "balance": 200},
+	}, {
+		C:      "accounts",
+		Id:     0,
+		Update: M{"$inc": M{"balance": 100}},
+	}}
+
+	err := s.runner.Run(ops, "", nil)
+	c.Assert(err, IsNil)
+
+	var account Account
+	err = s.accounts.FindId(0).One(&account)
+	c.Assert(err, IsNil)
+	c.Assert(account.Balance, Equals, 300)
+
+	err = s.runner.Run(ops, "", nil)
+	c.Assert(err, IsNil)
+
+	err = s.accounts.FindId(0).One(&account)
+	c.Assert(err, IsNil)
+	c.Assert(account.Balance, Equals, 400)
+}
+
+func (s *S) TestUpdateInsert(c *C) {
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Update: M{"$inc": M{"balance": 100}},
+	}, {
+		C:      "accounts",
+		Id:     0,
+		Insert: M{"_id": 0, "balance": 200},
+	}}
+
+	err := s.runner.Run(ops, "", nil)
+	c.Assert(err, IsNil)
+
+	var account Account
+	err = s.accounts.FindId(0).One(&account)
+	c.Assert(err, IsNil)
+	c.Assert(account.Balance, Equals, 200)
+
+	err = s.runner.Run(ops, "", nil)
+	c.Assert(err, IsNil)
+
+	err = s.accounts.FindId(0).One(&account)
+	c.Assert(err, IsNil)
+	c.Assert(account.Balance, Equals, 300)
+}
+
+func (s *S) TestInsertRemoveInsert(c *C) {
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Insert: M{"_id": 0, "balance": 200},
+	}, {
+		C:      "accounts",
+		Id:     0,
+		Remove: true,
+	}, {
+		C:      "accounts",
+		Id:     0,
+		Insert: M{"_id": 0, "balance": 300},
+	}}
+
+	err := s.runner.Run(ops, "", nil)
+	c.Assert(err, IsNil)
+
+	var account Account
+	err = s.accounts.FindId(0).One(&account)
+	c.Assert(err, IsNil)
+	c.Assert(account.Balance, Equals, 300)
 }
 
 func (s *S) TestQueueStashing(c *C) {
@@ -266,8 +372,8 @@ func (s *S) TestChangeLog(c *C) {
 	s.runner.ChangeLog(chglog)
 
 	ops := []txn.Op{{
-		C:	"debts",
-		Id:	0,
+		C:      "debts",
+		Id:     0,
 		Assert: txn.DocMissing,
 	}, {
 		C:      "accounts",
@@ -278,8 +384,8 @@ func (s *S) TestChangeLog(c *C) {
 		Id:     1,
 		Insert: M{"balance": 300},
 	}, {
-		C:	"people",
-		Id:	"joe",
+		C:      "people",
+		Id:     "joe",
 		Insert: M{"accounts": []int64{0, 1}},
 	}}
 	id := bson.NewObjectId()
@@ -287,7 +393,10 @@ func (s *S) TestChangeLog(c *C) {
 	c.Assert(err, IsNil)
 
 	type IdList []interface{}
-	type Log struct { Docs IdList "d"; Revnos []int64 "r" }
+	type Log struct {
+		Docs   IdList  "d"
+		Revnos []int64 "r"
+	}
 	var m map[string]*Log
 	err = chglog.FindId(id).One(&m)
 	c.Assert(err, IsNil)
