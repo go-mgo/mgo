@@ -956,6 +956,9 @@ type namedCondStr struct {
 type condTime struct {
 	V time.Time ",omitempty"
 }
+type condStruct struct {
+	V struct { A int } ",omitempty"
+}
 
 type shortInt struct {
 	V int64 ",minsize"
@@ -1153,6 +1156,9 @@ var twoWayCrossItems = []crossTypeItem{
 
 	{&condTime{time.Unix(123456789, 123e6)}, map[string]time.Time{"v": time.Unix(123456789, 123e6)}},
 	{&condTime{}, map[string]string{}},
+
+	{&condStruct{struct{A int}{1}}, bson.M{"v": bson.M{"a": 1}}},
+	{&condStruct{struct{A int}{}}, bson.M{}},
 
 	{&namedCondStr{"yo"}, map[string]string{"myv": "yo"}},
 	{&namedCondStr{}, map[string]string{}},

@@ -415,7 +415,6 @@ func handleErr(err *error) {
 //
 //     omitempty  Only include the field if it's not set to the zero
 //                value for the type or to empty slices or maps.
-//                Does not apply to zero valued structs.
 //
 //     minsize    Marshal an int64 value as an int32, if that's feasible
 //                while preserving the numeric value.
