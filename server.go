@@ -91,7 +91,7 @@ var errServerClosed = errors.New("server was closed")
 // the same number of times as AcquireSocket + Acquire were called for it.
 // If the limit argument is not zero, a socket will only be returned if the
 // number of sockets in use for this server is under the provided limit.
-func (server *mongoServer) AcquireSocket(limit int) (socket *mongoSocket, abended bool, err error) {
+func (server *mongoServer) AcquireSocket(limit int, timeout time.Duration) (socket *mongoSocket, abended bool, err error) {
 	for {
 		server.Lock()
 		abended = server.abended
@@ -110,13 +110,13 @@ func (server *mongoServer) AcquireSocket(limit int) (socket *mongoSocket, abende
 			server.unusedSockets = server.unusedSockets[:n-1]
 			info := server.info
 			server.Unlock()
-			err = socket.InitialAcquire(info)
+			err = socket.InitialAcquire(info, timeout)
 			if err != nil {
 				continue
 			}
 		} else {
 			server.Unlock()
-			socket, err = server.Connect()
+			socket, err = server.Connect(timeout)
 			if err == nil {
 				server.Lock()
 				// We've waited for the Connect, see if we got
@@ -138,7 +138,7 @@ func (server *mongoServer) AcquireSocket(limit int) (socket *mongoSocket, abende
 
 // Connect establishes a new connection to the server. This should
 // generally be done through server.AcquireSocket().
-func (server *mongoServer) Connect() (*mongoSocket, error) {
+func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) {
 	server.RLock()
 	master := server.info.Master
 	dial := server.dial
@@ -148,7 +148,9 @@ func (server *mongoServer) Connect() (*mongoSocket, error) {
 	var conn net.Conn
 	var err error
 	if dial == nil {
-		conn, err = net.DialTCP("tcp", nil, server.tcpaddr)
+		// Cannot do this because it lacks timeout support. :-(
+		//conn, err = net.DialTCP("tcp", nil, server.tcpaddr)
+		conn, err = net.DialTimeout("tcp", server.ResolvedAddr, timeout)
 	} else {
 		conn, err = dial(server.tcpaddr)
 	}
@@ -159,7 +161,7 @@ func (server *mongoServer) Connect() (*mongoSocket, error) {
 	log("Connection to ", server.Addr, " established.")
 
 	stats.conn(+1, master)
-	return newSocket(server, conn), nil
+	return newSocket(server, conn, timeout), nil
 }
 
 // Close forces closing all sockets that are alive, whether
@@ -256,7 +258,7 @@ NextTagSet:
 	return false
 }
 
-var pingDelay = 10 * time.Second
+var pingDelay = 5 * time.Second
 
 func (server *mongoServer) pinger(loop bool) {
 	op := queryOp{
@@ -270,7 +272,7 @@ func (server *mongoServer) pinger(loop bool) {
 			time.Sleep(pingDelay)
 		}
 		op := op
-		socket, _, err := server.AcquireSocket(0)
+		socket, _, err := server.AcquireSocket(0, pingDelay)
 		if err == nil {
 			start := time.Now()
 			_, _ = socket.SimpleQuery(&op)

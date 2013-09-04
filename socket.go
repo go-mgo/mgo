@@ -31,6 +31,7 @@ import (
 	"labix.org/v2/mgo/bson"
 	"net"
 	"sync"
+	"time"
 )
 
 type replyFunc func(err error, reply *replyOp, docNum int, docData []byte)
@@ -39,6 +40,7 @@ type mongoSocket struct {
 	sync.Mutex
 	server        *mongoServer // nil when cached
 	conn          net.Conn
+	timeout       time.Duration
 	addr          string // For debugging only.
 	nextRequestId uint32
 	replyFuncs    map[uint32]replyFunc
@@ -142,12 +144,15 @@ type requestInfo struct {
 	replyFunc replyFunc
 }
 
-func newSocket(server *mongoServer, conn net.Conn) *mongoSocket {
-	socket := &mongoSocket{conn: conn, addr: server.Addr}
+func newSocket(server *mongoServer, conn net.Conn, timeout time.Duration) *mongoSocket {
+	socket := &mongoSocket{
+		conn:       conn,
+		addr:       server.Addr,
+		server:     server,
+		replyFuncs: make(map[uint32]replyFunc),
+	}
 	socket.gotNonce.L = &socket.Mutex
-	socket.replyFuncs = make(map[uint32]replyFunc)
-	socket.server = server
-	if err := socket.InitialAcquire(server.Info()); err != nil {
+	if err := socket.InitialAcquire(server.Info(), timeout); err != nil {
 		panic("newSocket: InitialAcquire returned error: " + err.Error())
 	}
 	stats.socketsAlive(+1)
@@ -178,7 +183,7 @@ func (socket *mongoSocket) ServerInfo() *mongoServerInfo {
 // InitialAcquire obtains the first reference to the socket, either
 // right after the connection is made or once a recycled socket is
 // being put back in use.
-func (socket *mongoSocket) InitialAcquire(serverInfo *mongoServerInfo) error {
+func (socket *mongoSocket) InitialAcquire(serverInfo *mongoServerInfo, timeout time.Duration) error {
 	socket.Lock()
 	if socket.references > 0 {
 		panic("Socket acquired out of cache with references")
@@ -189,6 +194,8 @@ func (socket *mongoSocket) InitialAcquire(serverInfo *mongoServerInfo) error {
 	}
 	socket.references++
 	socket.serverInfo = serverInfo
+	socket.timeout = timeout
+	socket.updateDeadline(readDeadline)
 	stats.socketsInUse(+1)
 	stats.socketRefs(+1)
 	socket.Unlock()
@@ -232,6 +239,37 @@ func (socket *mongoSocket) Release() {
 		}
 	} else {
 		socket.Unlock()
+	}
+}
+
+// SetTimeout changes the timeout used on socket operations.
+func (socket *mongoSocket) SetTimeout(d time.Duration) {
+	socket.Lock()
+	socket.timeout = d
+	socket.updateDeadline(readDeadline | writeDeadline)
+	socket.Unlock()
+}
+
+type deadlineType int
+
+const (
+	readDeadline  deadlineType = 1
+	writeDeadline deadlineType = 2
+)
+
+func (socket *mongoSocket) updateDeadline(which deadlineType) {
+	var when time.Time
+	if socket.timeout > 0 {
+		when = time.Now().Add(socket.timeout)
+	}
+	debugf("Socket %p to %s: updating deadline (%d) to %s", socket, socket.addr, which, when)
+	switch which {
+	case readDeadline | writeDeadline:
+		socket.conn.SetDeadline(when)
+	case readDeadline:
+		socket.conn.SetReadDeadline(when)
+	case writeDeadline:
+		socket.conn.SetWriteDeadline(when)
 	}
 }
 
@@ -427,6 +465,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 	debugf("Socket %p to %s: sending %d op(s) (%d bytes)", socket, socket.addr, len(ops), len(buf))
 	stats.sentOps(len(ops))
 
+	socket.updateDeadline(readDeadline | writeDeadline)
 	_, err = socket.conn.Write(buf)
 	socket.Unlock()
 	return err
@@ -530,6 +569,7 @@ func (socket *mongoSocket) readLoop() {
 		if replyFuncFound {
 			delete(socket.replyFuncs, uint32(responseTo))
 		}
+		socket.updateDeadline(readDeadline)
 		socket.Unlock()
 
 		// XXX Do bound checking against totalLen.

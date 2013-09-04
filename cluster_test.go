@@ -830,6 +830,49 @@ func (s *S) TestDialWithTimeout(c *C) {
 	c.Assert(started.After(time.Now().Add(-timeout*2)), Equals, true)
 }
 
+func (s *S) TestSocketTimeout(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	s.Freeze("localhost:40001")
+
+	timeout := 3 * time.Second
+	session.SetSocketTimeout(timeout)
+	started := time.Now()
+
+	// Do something.
+	result := struct{ Ok bool }{}
+	err = session.Run("getLastError", &result)
+	c.Assert(err, ErrorMatches, ".*: i/o timeout")
+	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
+	c.Assert(started.After(time.Now().Add(-timeout*2)), Equals, true)
+}
+
+func (s *S) TestSocketTimeoutOnDial(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
+	defer mgo.HackSyncSocketTimeout(2 * time.Second)()
+
+	s.Freeze("localhost:40001")
+
+	timeout := 5 * time.Second
+	started := time.Now()
+
+	session, err := mgo.DialWithTimeout("localhost:40001", timeout)
+	c.Assert(err, ErrorMatches, "no reachable servers")
+	c.Assert(session, IsNil)
+
+	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
+	c.Assert(started.After(time.Now().Add(-timeout*2)), Equals, true)
+}
+
 func (s *S) TestDirect(c *C) {
 	session, err := mgo.Dial("localhost:40012?connect=direct")
 	c.Assert(err, IsNil)

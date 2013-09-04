@@ -21,3 +21,12 @@ func HackPingDelay(newDelay time.Duration) (restore func()) {
 	pingDelay = newDelay
 	return
 }
+
+func HackSyncSocketTimeout(newTimeout time.Duration) (restore func()) {
+	oldTimeout := syncSocketTimeout
+	restore = func() {
+		syncSocketTimeout = oldTimeout
+	}
+	syncSocketTimeout = newTimeout
+	return
+}

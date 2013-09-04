@@ -130,7 +130,7 @@ type isMasterResult struct {
 }
 
 func (cluster *mongoCluster) isMaster(socket *mongoSocket, result *isMasterResult) error {
-	// Monotonic will let us talk to a slave and still hold the socket.
+	// Monotonic let's it talk to a slave and still hold the socket.
 	session := newSession(Monotonic, cluster, 10*time.Second)
 	session.setSocket(socket)
 	err := session.Run("ismaster", result)
@@ -138,24 +138,35 @@ func (cluster *mongoCluster) isMaster(socket *mongoSocket, result *isMasterResul
 	return err
 }
 
+type possibleTimeout interface {
+	Timeout() bool
+}
+
+var syncSocketTimeout = 5 * time.Second
+
 func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerInfo, hosts []string, err error) {
 	addr := server.Addr
 	log("SYNC Processing ", addr, "...")
 
+	// Retry a few times to avoid knocking a server down for a hiccup.
 	var result isMasterResult
 	var tryerr error
 	for retry := 0; ; retry++ {
-		// Retry a few times as there is a small chance that a pre-existing
-		// socket times out exactly when an attempt is made to use it.
-		switch retry {
-		case 1, 2:
-			// Don't abuse the server needlessly if there's something actually wrong.
-			time.Sleep(500 * time.Millisecond)
-		case 3:
+		if retry == 3 {
 			return nil, nil, tryerr
 		}
+		if retry > 0 {
+			// Don't abuse the server needlessly if there's something actually wrong.
+			if err, ok := tryerr.(possibleTimeout); ok && err.Timeout() {
+				// Give a chance for waiters to timeout as well.
+				cluster.serverSynced.Broadcast()
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
 
-		socket, _, err := server.AcquireSocket(0)
+		// It's not clear what would be a good timeout here. Is it
+		// better to wait longer or to retry?
+		socket, _, err := server.AcquireSocket(0, syncSocketTimeout)
 		if err != nil {
 			tryerr = err
 			logf("SYNC Failed to get socket to %s: %v", addr, err)
@@ -487,7 +498,7 @@ var socketsPerServer = 4096
 // AcquireSocket returns a socket to a server in the cluster.  If slaveOk is
 // true, it will attempt to return a socket to a slave server.  If it is
 // false, the socket will necessarily be to a master server.
-func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Duration, serverTags []bson.D) (s *mongoSocket, err error) {
+func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Duration, socketTimeout time.Duration, serverTags []bson.D) (s *mongoSocket, err error) {
 	var started time.Time
 	warnedLimit := false
 	for {
@@ -526,7 +537,7 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Durati
 			continue
 		}
 
-		s, abended, err := server.AcquireSocket(socketsPerServer)
+		s, abended, err := server.AcquireSocket(socketsPerServer, socketTimeout)
 		if err == errSocketLimit {
 			if !warnedLimit {
 				log("WARNING: Per-server connection limit reached.")

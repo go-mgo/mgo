@@ -63,6 +63,7 @@ type Session struct {
 	queryConfig  query
 	safeOp       *queryOp
 	syncTimeout  time.Duration
+	sockTimeout  time.Duration
 	defaultdb    string
 	dialAuth     *authInfo
 	auth         []authInfo
@@ -126,8 +127,8 @@ const defaultPrefetch = 0.25
 //
 // Dial will timeout after 10 seconds if a server isn't reached. The returned
 // session will timeout operations after one minute by default if servers
-// aren't available. To customize the timeout, see DialWithTimeout
-// and SetSyncTimeout.
+// aren't available. To customize the timeout, see DialWithTimeout,
+// SetSyncTimeout, and SetSocketTimeout.
 //
 // This method is generally called just once for a given cluster.  Further
 // sessions to the same cluster are then established using the New or Copy
@@ -172,9 +173,10 @@ const defaultPrefetch = 0.25
 //     http://www.mongodb.org/display/DOCS/Connections
 //
 func Dial(url string) (*Session, error) {
-	session, err := DialWithTimeout(url, 10*time.Second)
+	session, err := DialWithTimeout(url, 10 * time.Second)
 	if err == nil {
-		session.SetSyncTimeout(time.Minute)
+		session.SetSyncTimeout(1 * time.Minute)
+		session.SetSocketTimeout(1 * time.Minute)
 	}
 	return session, err
 }
@@ -334,9 +336,9 @@ func parseURL(url string) (*urlInfo, error) {
 	return info, nil
 }
 
-func newSession(consistency mode, cluster *mongoCluster, syncTimeout time.Duration) (session *Session) {
+func newSession(consistency mode, cluster *mongoCluster, timeout time.Duration) (session *Session) {
 	cluster.Acquire()
-	session = &Session{cluster_: cluster, syncTimeout: syncTimeout}
+	session = &Session{cluster_: cluster, syncTimeout: timeout, sockTimeout: timeout}
 	debugf("New session %p on cluster %p", session, cluster)
 	session.SetMode(consistency, true)
 	session.SetSafe(&Safe{})
@@ -1116,6 +1118,20 @@ func (s *Session) Mode() mode {
 func (s *Session) SetSyncTimeout(d time.Duration) {
 	s.m.Lock()
 	s.syncTimeout = d
+	s.m.Unlock()
+}
+
+// SetSocketTimeout sets the amount of time to wait for a non-responding
+// socket to the database before it is forcefully closed.
+func (s *Session) SetSocketTimeout(d time.Duration) {
+	s.m.Lock()
+	s.sockTimeout = d
+	if s.masterSocket != nil {
+		s.masterSocket.SetTimeout(d)
+	}
+	if s.slaveSocket != nil {
+		s.slaveSocket.SetTimeout(d)
+	}
 	s.m.Unlock()
 }
 
@@ -2586,8 +2602,11 @@ func (iter *Iter) acquireSocket() (*mongoSocket, error) {
 		// with Eventual sessions, if a Refresh is done, or if a
 		// monotonic session gets a write and shifts from secondary
 		// to primary. Our cursor is in a specific server, though.
+		iter.session.m.Lock()
+		sockTimeout := iter.session.sockTimeout
+		iter.session.m.Unlock()
 		socket.Release()
-		socket, _, err = iter.server.AcquireSocket(0)
+		socket, _, err = iter.server.AcquireSocket(0, sockTimeout)
 		if err != nil {
 			return nil, err
 		}
@@ -3047,7 +3066,7 @@ func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 	}
 
 	// Still not good.  We need a new socket.
-	sock, err := s.cluster().AcquireSocket(slaveOk && s.slaveOk, s.syncTimeout, s.queryConfig.op.serverTags)
+	sock, err := s.cluster().AcquireSocket(slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags)
 	if err != nil {
 		return nil, err
 	}
