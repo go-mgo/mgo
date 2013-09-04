@@ -2850,6 +2850,29 @@ func (s *S) TestMapReduceToOtherDb(c *C) {
 	c.Assert(iter.Close(), IsNil)
 }
 
+func (s *S) TestMapReduceOutOfOrder(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	for _, i := range []int{1, 4, 6, 2, 2, 3, 4} {
+		coll.Insert(M{"n": i})
+	}
+
+	job := &mgo.MapReduce{
+		Map:    "function() { emit(this.n, 1); }",
+		Reduce: "function(key, values) { return Array.sum(values); }",
+		Out:    bson.M{"a": "a", "z": "z", "replace": "mr", "db": "otherdb", "b": "b", "y": "y"},
+	}
+
+	info, err := coll.Find(nil).MapReduce(job, nil)
+	c.Assert(err, IsNil)
+	c.Assert(info.Collection, Equals, "mr")
+	c.Assert(info.Database, Equals, "otherdb")
+}
+
 func (s *S) TestMapReduceScope(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)

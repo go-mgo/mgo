@@ -2841,7 +2841,7 @@ func (q *Query) MapReduce(job *MapReduce, result interface{}) (info *MapReduceIn
 		Map:        job.Map,
 		Reduce:     job.Reduce,
 		Finalize:   job.Finalize,
-		Out:        job.Out,
+		Out:        fixMROut(job.Out),
 		Scope:      job.Scope,
 		Verbose:    job.Verbose,
 		Query:      op.query,
@@ -2893,6 +2893,36 @@ func (q *Query) MapReduce(job *MapReduce, result interface{}) (info *MapReduceIn
 		return info, doc.Results.Unmarshal(result)
 	}
 	return info, nil
+}
+
+// The "out" option in the MapReduce command must be ordered. This was
+// found after the implementation was accepting maps for a long time,
+// so rather than breaking the API, we'll fix the order if necessary.
+// Details about the order requirement may be seen in MongoDB's code:
+//
+//     http://goo.gl/L8jwJX
+//
+func fixMROut(out interface{}) interface{} {
+	outv := reflect.ValueOf(out)
+	if outv.Kind() != reflect.Map || outv.Type().Key() != reflect.TypeOf("") {
+		return out
+	}
+	outs := make(bson.D, outv.Len())
+
+	outTypeIndex := -1
+	for i, k := range outv.MapKeys() {
+		ks := k.String()
+		outs[i].Name = ks
+		outs[i].Value = outv.MapIndex(k).Interface()
+		switch ks {
+		case "normal", "replace", "merge", "reduce", "inline":
+			outTypeIndex = i
+		}
+	}
+	if outTypeIndex > 0 {
+		outs[0], outs[outTypeIndex] = outs[outTypeIndex], outs[0]
+	}
+	return outs
 }
 
 type Change struct {
