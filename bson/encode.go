@@ -179,11 +179,12 @@ func isZero(v reflect.Value) bool {
 		if v.Type() == typeTime {
 			return v.Interface().(time.Time).IsZero()
 		}
-		info, err := getStructInfo(v.Type())
-		if err != nil {
-			panic("should never happen here: " + err.Error())
+		for i := v.NumField()-1; i >= 0; i-- {
+			if !isZero(v.Field(i)) {
+				return false
+			}
 		}
-		return info.Zero.Interface() == v.Interface()
+		return true
 	}
 	return false
 }
