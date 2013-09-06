@@ -272,7 +272,7 @@ func (server *mongoServer) pinger(loop bool) {
 			time.Sleep(pingDelay)
 		}
 		op := op
-		socket, _, err := server.AcquireSocket(0, pingDelay)
+		socket, _, err := server.AcquireSocket(0, 3 * pingDelay)
 		if err == nil {
 			start := time.Now()
 			_, _ = socket.SimpleQuery(&op)
