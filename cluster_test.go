@@ -858,11 +858,12 @@ func (s *S) TestSocketTimeoutOnDial(c *C) {
 		c.Skip("-fast")
 	}
 
-	defer mgo.HackSyncSocketTimeout(2 * time.Second)()
+	timeout := 1 * time.Second
+
+	defer mgo.HackSyncSocketTimeout(timeout)()
 
 	s.Freeze("localhost:40001")
 
-	timeout := 5 * time.Second
 	started := time.Now()
 
 	session, err := mgo.DialWithTimeout("localhost:40001", timeout)
@@ -870,7 +871,32 @@ func (s *S) TestSocketTimeoutOnDial(c *C) {
 	c.Assert(session, IsNil)
 
 	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
-	c.Assert(started.After(time.Now().Add(-timeout*2)), Equals, true)
+	c.Assert(started.After(time.Now().Add(-20 * time.Second)), Equals, true)
+}
+
+func (s *S) TestSocketTimeoutOnInactiveSocket(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	timeout := 2 * time.Second
+	session.SetSocketTimeout(timeout)
+
+	// Do something that relies on the timeout and works.
+	c.Assert(session.Ping(), IsNil)
+
+	// Freeze and wait for the timeout to go by.
+	s.Freeze("localhost:40001")
+	time.Sleep(timeout + 500 * time.Millisecond)
+	s.Thaw("localhost:40001")
+
+	// Do something again. The timeout above should not have killed
+	// the socket as there was nothing to be done.
+	c.Assert(session.Ping(), IsNil)
 }
 
 func (s *S) TestDirect(c *C) {
@@ -1343,7 +1369,7 @@ func (s *S) TestNearestSecondary(c *C) {
 }
 
 func (s *S) TestConnectCloseConcurrency(c *C) {
-	restore := mgo.HackPingDelay(1)
+	restore := mgo.HackPingDelay(500 * time.Millisecond)
 	defer restore()
 	var wg sync.WaitGroup
 	const n = 500

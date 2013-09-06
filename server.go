@@ -144,7 +144,7 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 	dial := server.dial
 	server.RUnlock()
 
-	log("Establishing new connection to ", server.Addr, "...")
+	logf("Establishing new connection to %s (timeout=%s)...", server.Addr, timeout)
 	var conn net.Conn
 	var err error
 	if dial == nil {
@@ -155,10 +155,10 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 		conn, err = dial(server.tcpaddr)
 	}
 	if err != nil {
-		log("Connection to ", server.Addr, " failed: ", err.Error())
+		logf("Connection to %s failed: %v", server.Addr, err.Error())
 		return nil, err
 	}
-	log("Connection to ", server.Addr, " established.")
+	logf("Connection to %s established.", server.Addr)
 
 	stats.conn(+1, master)
 	return newSocket(server, conn, timeout), nil

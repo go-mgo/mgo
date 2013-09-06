@@ -195,7 +195,6 @@ func (socket *mongoSocket) InitialAcquire(serverInfo *mongoServerInfo, timeout t
 	socket.references++
 	socket.serverInfo = serverInfo
 	socket.timeout = timeout
-	socket.updateDeadline(readDeadline)
 	stats.socketsInUse(+1)
 	stats.socketRefs(+1)
 	socket.Unlock()
@@ -246,7 +245,6 @@ func (socket *mongoSocket) Release() {
 func (socket *mongoSocket) SetTimeout(d time.Duration) {
 	socket.Lock()
 	socket.timeout = d
-	socket.updateDeadline(readDeadline | writeDeadline)
 	socket.Unlock()
 }
 
@@ -262,15 +260,21 @@ func (socket *mongoSocket) updateDeadline(which deadlineType) {
 	if socket.timeout > 0 {
 		when = time.Now().Add(socket.timeout)
 	}
-	debugf("Socket %p to %s: updating deadline (%d) to %s", socket, socket.addr, which, when)
+	whichstr := ""
 	switch which {
 	case readDeadline | writeDeadline:
+		whichstr = "read/write"
 		socket.conn.SetDeadline(when)
 	case readDeadline:
+		whichstr = "read"
 		socket.conn.SetReadDeadline(when)
 	case writeDeadline:
+		whichstr = "write"
 		socket.conn.SetWriteDeadline(when)
+	default:
+		panic("invalid parameter to updateDeadline")
 	}
+	debugf("Socket %p to %s: updated %s deadline to %s ahead (%s)", socket, socket.addr, whichstr, socket.timeout, when)
 }
 
 // Close terminates the socket use.
@@ -449,6 +453,8 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 		return socket.dead
 	}
 
+	wasWaiting := len(socket.replyFuncs) > 0
+
 	// Reserve id 0 for requests which should have no responses.
 	requestId := socket.nextRequestId + 1
 	if requestId == 0 {
@@ -465,8 +471,11 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 	debugf("Socket %p to %s: sending %d op(s) (%d bytes)", socket, socket.addr, len(ops), len(buf))
 	stats.sentOps(len(ops))
 
-	socket.updateDeadline(readDeadline | writeDeadline)
+	socket.updateDeadline(writeDeadline)
 	_, err = socket.conn.Write(buf)
+	if !wasWaiting && requestCount > 0 {
+		socket.updateDeadline(readDeadline)
+	}
 	socket.Unlock()
 	return err
 }
@@ -569,7 +578,12 @@ func (socket *mongoSocket) readLoop() {
 		if replyFuncFound {
 			delete(socket.replyFuncs, uint32(responseTo))
 		}
-		socket.updateDeadline(readDeadline)
+		if len(socket.replyFuncs) == 0 {
+			// Nothing else to read for now. Disable deadline. 
+			socket.conn.SetReadDeadline(time.Time{})
+		} else {
+			socket.updateDeadline(readDeadline)
+		}
 		socket.Unlock()
 
 		// XXX Do bound checking against totalLen.
