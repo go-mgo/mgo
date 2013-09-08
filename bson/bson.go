@@ -24,6 +24,12 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+// Package bson is an implementation of the BSON specification for Go:
+//
+//     http://bsonspec.org
+//
+// It was created as part of the mgo MongoDB driver for Go, but is standalone
+// and may be used on its own without the driver.
 package bson
 
 import (
