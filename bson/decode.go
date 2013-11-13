@@ -214,7 +214,8 @@ func (d *decoder) readDocTo(out reflect.Value) {
 		panic("Unsupported document type for unmarshalling: " + out.Type().String())
 	}
 
-	end := d.i - 4 + int(d.readInt32())
+	end := int(d.readInt32())
+	end += d.i - 4
 	if end <= d.i || end > len(d.in) || d.in[end-1] != '\x00' {
 		corrupted()
 	}
@@ -272,7 +273,8 @@ func (d *decoder) readDocTo(out reflect.Value) {
 }
 
 func (d *decoder) readArrayDocTo(out reflect.Value) {
-	end := d.i - 4 + int(d.readInt32())
+	end := int(d.readInt32())
+	end += d.i - 4
 	if end <= d.i || end > len(d.in) || d.in[end-1] != '\x00' {
 		corrupted()
 	}
@@ -309,7 +311,8 @@ func (d *decoder) readSliceDoc(t reflect.Type) interface{} {
 	tmp := make([]reflect.Value, 0, 8)
 	elemType := t.Elem()
 
-	end := d.i - 4 + int(d.readInt32())
+	end := int(d.readInt32())
+	end += d.i - 4
 	if end <= d.i || end > len(d.in) || d.in[end-1] != '\x00' {
 		corrupted()
 	}
@@ -381,7 +384,8 @@ func (d *decoder) readRawDocElems(typ reflect.Type) reflect.Value {
 }
 
 func (d *decoder) readDocWith(f func(kind byte, name string)) {
-	end := d.i - 4 + int(d.readInt32())
+	end := int(d.readInt32())
+	end += d.i - 4
 	if end <= d.i || end > len(d.in) || d.in[end-1] != '\x00' {
 		corrupted()
 	}
