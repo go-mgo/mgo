@@ -50,6 +50,7 @@ var (
 	typeRaw            = reflect.TypeOf(Raw{})
 	typeURL            = reflect.TypeOf(url.URL{})
 	typeTime           = reflect.TypeOf(time.Time{})
+	typeString         = reflect.TypeOf("")
 )
 
 const itoaCacheSize = 32
