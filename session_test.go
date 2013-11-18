@@ -3166,7 +3166,8 @@ func (s *S) TestFindIterCloseKillsCursor(c *C) {
 	coll := session.DB("mydb").C("mycoll")
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
-		coll.Insert(M{"n": n})
+		err = coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
 	}
 
 	iter := coll.Find(nil).Batch(2).Iter()
@@ -3183,10 +3184,27 @@ func (s *S) TestLogReplay(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	for i := 0; i < 5; i++ {
-		coll.Insert(M{"ts": time.Now()})
+		err = coll.Insert(M{"ts": time.Now()})
+		c.Assert(err, IsNil)
 	}
 
 	iter := coll.Find(nil).LogReplay().Iter()
 	c.Assert(iter.Next(bson.M{}), Equals, false)
 	c.Assert(iter.Err(), ErrorMatches, "no ts field in query")
+}
+
+func (s *S) TestDisableCursorTimeout(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	err = coll.Insert(M{"n": 42})
+
+	// Just a smoke test. Won't wait 10 minutes for an actual test.
+	var result struct{ N int }
+	iter := coll.Find(nil).DisableCursorTimeout().Iter()
+	c.Assert(iter.Next(&result), Equals, true)
+	c.Assert(result.N, Equals, 42)
+	c.Assert(iter.Next(&result), Equals, false)
 }

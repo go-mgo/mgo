@@ -2037,6 +2037,16 @@ func (q *Query) LogReplay() *Query {
 	return q
 }
 
+// DisableCursorTimeout disables the standard timeout period that the server
+// enforces on created cursors. This period defaults to 10 minutes on a
+// standard MongoDB server.
+func (q *Query) DisableCursorTimeout() *Query {
+	q.m.Lock()
+	q.op.flags |= flagNoCursorTimeout
+	q.m.Unlock()
+	return q
+}
+
 func checkQueryError(fullname string, d []byte) error {
 	l := len(d)
 	if l < 16 {

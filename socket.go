@@ -56,10 +56,12 @@ type mongoSocket struct {
 type queryOpFlags uint32
 
 const (
-	flagTailable  queryOpFlags = 1 << 1
-	flagSlaveOk   queryOpFlags = 1 << 2
-	flagLogReplay queryOpFlags = 1 << 3
-	flagAwaitData queryOpFlags = 1 << 5
+	_ queryOpFlags = 1 << iota
+	flagTailable
+	flagSlaveOk
+	flagLogReplay
+	flagNoCursorTimeout
+	flagAwaitData
 )
 
 type queryOp struct {
@@ -579,7 +581,7 @@ func (socket *mongoSocket) readLoop() {
 			delete(socket.replyFuncs, uint32(responseTo))
 		}
 		if len(socket.replyFuncs) == 0 {
-			// Nothing else to read for now. Disable deadline. 
+			// Nothing else to read for now. Disable deadline.
 			socket.conn.SetReadDeadline(time.Time{})
 		} else {
 			socket.updateDeadline(readDeadline)
