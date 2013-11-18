@@ -2972,6 +2972,8 @@ type valueResult struct {
 //     info, err = col.Find(M{"_id": id}).Apply(change, &doc)
 //     fmt.Println(doc.N)
 //
+// This method depends on MongoDB >= 2.0 to work properly.
+//
 // Relevant documentation:
 //
 //     http://www.mongodb.org/display/DOCS/findAndModify+Command
