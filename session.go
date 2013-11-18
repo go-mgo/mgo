@@ -978,7 +978,7 @@ func (s *Session) ResetIndexCache() {
 
 // New creates a new session with the same parameters as the original
 // session, including consistency, batch size, prefetching, safety mode,
-// etc. The returned session will use sockets from the poll, so there's
+// etc. The returned session will use sockets from the pool, so there's
 // a chance that writes just performed in another session may not yet
 // be visible.
 //
