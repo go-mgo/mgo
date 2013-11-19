@@ -3193,7 +3193,7 @@ func (s *S) TestLogReplay(c *C) {
 	c.Assert(iter.Err(), ErrorMatches, "no ts field in query")
 }
 
-func (s *S) TestDisableCursorTimeout(c *C) {
+func (s *S) TestSetCursorTimeout(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -3201,9 +3201,12 @@ func (s *S) TestDisableCursorTimeout(c *C) {
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"n": 42})
 
-	// Just a smoke test. Won't wait 10 minutes for an actual test.
+	// This is just a smoke test. Won't wait 10 minutes for an actual timeout.
+
+	session.SetCursorTimeout(0)
+
 	var result struct{ N int }
-	iter := coll.Find(nil).DisableCursorTimeout().Iter()
+	iter := coll.Find(nil).Iter()
 	c.Assert(iter.Next(&result), Equals, true)
 	c.Assert(result.N, Equals, 42)
 	c.Assert(iter.Next(&result), Equals, false)

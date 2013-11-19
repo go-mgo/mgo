@@ -1135,6 +1135,19 @@ func (s *Session) SetSocketTimeout(d time.Duration) {
 	s.m.Unlock()
 }
 
+// SetCursorTimeout changes the standard timeout period that the server
+// enforces on created cursors. The only supported value right now is
+// 0, which disables the timeout. The standard server timeout is 10 minutes.
+func (s *Session) SetCursorTimeout(d time.Duration) {
+	s.m.Lock()
+	if d == 0 {
+		s.queryConfig.op.flags |= flagNoCursorTimeout
+	} else {
+		panic("SetCursorTimeout: only 0 (disable timeout) supported for now")
+	}
+	s.m.Unlock()
+}
+
 // SetBatch sets the default batch size used when fetching documents from the
 // database. It's possible to change this setting on a per-query basis as
 // well, using the Query.Batch method.
@@ -2033,16 +2046,6 @@ func (q *Query) Snapshot() *Query {
 func (q *Query) LogReplay() *Query {
 	q.m.Lock()
 	q.op.flags |= flagLogReplay
-	q.m.Unlock()
-	return q
-}
-
-// DisableCursorTimeout disables the standard timeout period that the server
-// enforces on created cursors. This period defaults to 10 minutes on a
-// standard MongoDB server.
-func (q *Query) DisableCursorTimeout() *Query {
-	q.m.Lock()
-	q.op.flags |= flagNoCursorTimeout
 	q.m.Unlock()
 	return q
 }
