@@ -56,7 +56,14 @@ type mongoServer struct {
 	info          *mongoServerInfo
 }
 
-type dialer func(addr net.Addr) (net.Conn, error)
+type dialer struct {
+	old func(addr net.Addr) (net.Conn, error)
+	new func(addr *ServerAddr) (net.Conn, error)
+}
+
+func (dial dialer) isSet() bool {
+	return dial.old != nil || dial.new != nil
+}
 
 type mongoServerInfo struct {
 	Master bool
@@ -147,12 +154,17 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 	logf("Establishing new connection to %s (timeout=%s)...", server.Addr, timeout)
 	var conn net.Conn
 	var err error
-	if dial == nil {
+	switch {
+	case !dial.isSet():
 		// Cannot do this because it lacks timeout support. :-(
 		//conn, err = net.DialTCP("tcp", nil, server.tcpaddr)
 		conn, err = net.DialTimeout("tcp", server.ResolvedAddr, timeout)
-	} else {
-		conn, err = dial(server.tcpaddr)
+	case dial.old != nil:
+		conn, err = dial.old(server.tcpaddr)
+	case dial.new != nil:
+		conn, err = dial.new(&ServerAddr{server.Addr, server.tcpaddr})
+	default:
+		panic("dialer is set, but both dial.old and dial.new are nil")
 	}
 	if err != nil {
 		logf("Connection to %s failed: %v", server.Addr, err.Error())

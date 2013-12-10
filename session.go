@@ -247,10 +247,34 @@ type DialInfo struct {
 	Username string
 	Password string
 
-	// Dial optionally specifies the dial function for creating connections.
-	// At the moment addr will have type *net.TCPAddr, but other types may
-	// be provided in the future, so check and fail if necessary.
+	// Dial optionally specifies the dial function for establishing
+	// connections with the MongoDB servers.
 	Dial func(addr net.Addr) (net.Conn, error)
+
+	// DialServer optionally specifies the dial function for establishing
+	// connections with the MongoDB servers.
+	//
+	// WARNING: This interface is experimental and may change.
+	DialServer func(addr *ServerAddr) (net.Conn, error)
+}
+
+// ServerAddr represents the address for establishing a connection to an
+// individual MongoDB server.
+//
+// WARNING: This interface is experimental and may change.
+type ServerAddr struct {
+	str string
+	tcp *net.TCPAddr
+}
+
+// String returns the address that was provided for the server before resolution.
+func (addr *ServerAddr) String() string {
+	return addr.str
+}
+
+// TCPAddr returns the resolved TCP address for the server.
+func (addr *ServerAddr) TCPAddr() *net.TCPAddr {
+	return addr.tcp
 }
 
 // DialWithInfo establishes a new session to the cluster identified by info.
@@ -264,7 +288,7 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 		}
 		addrs[i] = addr
 	}
-	cluster := newCluster(addrs, info.Direct, info.Dial)
+	cluster := newCluster(addrs, info.Direct, dialer{info.Dial, info.DialServer})
 	session := newSession(Eventual, cluster, info.Timeout)
 	session.defaultdb = info.Database
 	if session.defaultdb == "" {
