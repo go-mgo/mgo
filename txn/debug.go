@@ -44,10 +44,19 @@ func debugPrefix() string {
 	return string(s)
 }
 
-func debugf(format string, args ...interface{}) {
-	if !debugEnabled || logger == nil {
-		return
+func logf(format string, args ...interface{}) {
+	if logger != nil {
+		logger.Output(2, fmt.Sprintf(format, argsForLog(args)...))
 	}
+}
+
+func debugf(format string, args ...interface{}) {
+	if debugEnabled && logger != nil {
+		logger.Output(2, fmt.Sprintf(format, argsForLog(args)...))
+	}
+}
+
+func argsForLog(args []interface{}) []interface{} {
 	for i, arg := range args {
 		switch v := arg.(type) {
 		case bson.ObjectId:
@@ -95,5 +104,5 @@ func debugf(format string, args ...interface{}) {
 			args[i] = buf.String()
 		}
 	}
-	logger.Output(2, fmt.Sprintf(format, args...))
+	return args
 }

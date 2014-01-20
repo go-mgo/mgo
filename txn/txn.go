@@ -27,7 +27,7 @@ const (
 	taborting  state = 3 // Assertions failed, cleaning up
 	tapplying  state = 4 // Changes are in progress
 	taborted   state = 5 // Pre-conditions failed, nothing done
-	tapplied   state = 6 // All changes applied 
+	tapplied   state = 6 // All changes applied
 )
 
 func (s state) String() string {
@@ -159,7 +159,7 @@ type Op struct {
 	// intended by the operation. At most one of them may be set
 	// per operation. If none are set, Assert must be set and the
 	// operation becomes a read-only test.
-	// 
+	//
 	// Insert holds the document to be inserted at the time the
 	// transaction is applied. The Id field will be inserted
 	// into the document automatically as its _id field. The
@@ -368,6 +368,80 @@ func (r *Runner) Resume(id bson.ObjectId) (err error) {
 // attempted when the document isn't present.
 func (r *Runner) ChangeLog(logc *mgo.Collection) {
 	r.lc = logc
+}
+
+// PurgeMissing removes from collections any state that refers to transaction
+// documents that for whatever reason have been lost from the system (removed
+// by accident or lost in a hard crash, for example).
+//
+// This method should very rarely be needed, if at all, and should never be
+// used during the normal operation of an application. Its purpose is to put
+// a system that has seen unavoidable corruption back in a working state.
+func (r *Runner) PurgeMissing(collections ...string) error {
+	type M map[string]interface{}
+	type S []interface{}
+	pipeline := []M{
+		{"$project": M{"_id": 1, "txn-queue": 1}},
+		{"$unwind": "$txn-queue"},
+		{"$sort": M{"_id": 1, "txn-queue": 1}},
+		//{"$group": M{"_id": M{"$substr": S{"$txn-queue", 0, 24}}, "docids": M{"$push": "$_id"}}},
+	}
+
+	type TRef struct {
+		DocId interface{} "_id"
+		TxnId string      "txn-queue"
+	}
+
+	found := make(map[bson.ObjectId]bool)
+	colls := make(map[string]bool)
+
+	sort.Strings(collections)
+	for _, collection := range collections {
+		c := r.tc.Database.C(collection)
+		iter := c.Pipe(pipeline).Iter()
+		var tref TRef
+		for iter.Next(&tref) {
+			txnId := bson.ObjectIdHex(tref.TxnId[:24])
+			if found[txnId] {
+				continue
+			}
+			if r.tc.FindId(txnId).One(nil) == nil {
+				found[txnId] = true
+				continue
+			}
+			logf("WARNING: purging from document %s/%v the missing transaction id %s", collection, tref.DocId, txnId)
+			err := c.UpdateId(tref.DocId, M{"$pull": M{"txn-queue": M{"$regex": "^" + txnId.Hex() + "_*"}}})
+			if err != nil {
+				return fmt.Errorf("error purging missing transaction %s: %v", txnId.Hex(), err)
+			}
+		}
+		colls[collection] = true
+	}
+
+	type StashTRef struct {
+		Id    docKey "_id"
+		TxnId string "txn-queue"
+	}
+
+	iter := r.sc.Pipe(pipeline).Iter()
+	var stref StashTRef
+	for iter.Next(&stref) {
+		txnId := bson.ObjectIdHex(stref.TxnId[:24])
+		if found[txnId] {
+			continue
+		}
+		if r.tc.FindId(txnId).One(nil) == nil {
+			found[txnId] = true
+			continue
+		}
+		logf("WARNING: purging from stash document %s/%v the missing transaction id %s", stref.Id.C, stref.Id.Id, txnId)
+		err := r.sc.UpdateId(stref.Id, M{"$pull": M{"txn-queue": M{"$regex": "^" + txnId.Hex() + "_*"}}})
+		if err != nil {
+			return fmt.Errorf("error purging missing transaction %s: %v", txnId.Hex(), err)
+		}
+	}
+
+	return nil
 }
 
 func (r *Runner) load(id bson.ObjectId) (*transaction, error) {

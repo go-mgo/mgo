@@ -39,8 +39,8 @@ func (s *S) SetUpTest(c *C) {
 }
 
 type Account struct {
-	Id       int `bson:"_id"`
-	Balance  int
+	Id      int `bson:"_id"`
+	Balance int
 }
 
 func (s *S) TestDocExists(c *C) {
@@ -444,4 +444,78 @@ func (s *S) TestChangeLog(c *C) {
 
 	c.Assert(m["accounts"], DeepEquals, &Log{IdList{0}, []int64{-4}})
 	c.Assert(m["people"], DeepEquals, &Log{IdList{"joe"}, []int64{-3}})
+}
+
+func (s *S) TestPurgeMissing(c *C) {
+	txn.SetChaos(txn.Chaos{
+		KillChance: 1,
+		Breakpoint: "set-applying",
+	})
+
+	err := s.accounts.Insert(M{"_id": 0, "balance": 100})
+	c.Assert(err, IsNil)
+	err = s.accounts.Insert(M{"_id": 1, "balance": 100})
+	c.Assert(err, IsNil)
+
+	ops1 := []txn.Op{{
+		C:      "accounts",
+		Id:     3,
+		Insert: M{"balance": 100},
+	}}
+
+	ops2 := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Remove: true,
+	}, {
+		C:      "accounts",
+		Id:     1,
+		Update: M{"$inc": M{"balance": 100}},
+	}, {
+		C:      "accounts",
+		Id:     2,
+		Insert: M{"balance": 100},
+	}}
+
+	err = s.runner.Run(ops1, "", nil)
+	c.Assert(err, Equals, txn.ErrChaos)
+
+	last := bson.NewObjectId()
+	err = s.runner.Run(ops2, last, nil)
+	c.Assert(err, Equals, txn.ErrChaos)
+	err = s.tc.RemoveId(last)
+	c.Assert(err, IsNil)
+
+	txn.SetChaos(txn.Chaos{})
+	err = s.runner.ResumeAll()
+	c.Assert(err, IsNil)
+
+	err = s.runner.Run(ops2, "", nil)
+	c.Assert(err, ErrorMatches, "cannot find transaction .*")
+
+	err = s.runner.PurgeMissing("accounts")
+	c.Assert(err, IsNil)
+
+	err = s.runner.Run(ops2, "", nil)
+	c.Assert(err, IsNil)
+
+	expect := []struct{ Id, Balance int }{
+		{0, -1},
+		{1, 200},
+		{2, 100},
+		{3, 100},
+	}
+	var got Account
+	for _, want := range expect {
+		err = s.accounts.FindId(want.Id).One(&got)
+		if want.Balance == -1 {
+			if err != mgo.ErrNotFound {
+				c.Errorf("Account %d should not exist, find got err=%#v", err)
+			}
+		} else if err != nil {
+			c.Errorf("Account %d should have balance of %d, but wasn't found", want.Id, want.Balance)
+		} else if got.Balance != want.Balance {
+			c.Errorf("Account %d should have balance of %d, got %d", want.Id, want.Balance, got.Balance)
+		}
+	}
 }
