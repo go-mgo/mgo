@@ -2901,7 +2901,10 @@ func (s *S) TestMapReduceVerbose(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
-	coll.Insert(M{"n": 1})
+	for i := 0; i < 100; i++ {
+		err = coll.Insert(M{"n": i})
+		c.Assert(err, IsNil)
+	}
 
 	job := &mgo.MapReduce{
 		Map:     "function() { emit(this.n, 1); }",
