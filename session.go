@@ -1639,7 +1639,7 @@ func (c *Collection) Insert(docs ...interface{}) error {
 }
 
 // Update finds a single document matching the provided selector document
-// and modifies it according to the change document.
+// and modifies it according to the update document.
 // If the session is in safe mode (see SetSafe) a ErrNotFound error is
 // returned if a document isn't found, or a value of type *LastError
 // when some other error is detected.
@@ -1649,8 +1649,8 @@ func (c *Collection) Insert(docs ...interface{}) error {
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (c *Collection) Update(selector interface{}, change interface{}) error {
-	lerr, err := c.writeQuery(&updateOp{c.FullName, selector, change, 0})
+func (c *Collection) Update(selector interface{}, update interface{}) error {
+	lerr, err := c.writeQuery(&updateOp{c.FullName, selector, update, 0})
 	if err == nil && lerr != nil && !lerr.UpdatedExisting {
 		return ErrNotFound
 	}
@@ -1659,14 +1659,14 @@ func (c *Collection) Update(selector interface{}, change interface{}) error {
 
 // UpdateId is a convenience helper equivalent to:
 //
-//     err := collection.Update(bson.M{"_id": id}, change)
+//     err := collection.Update(bson.M{"_id": id}, update)
 //
 // See the Update method for more details.
-func (c *Collection) UpdateId(id interface{}, change interface{}) error {
-	return c.Update(bson.D{{"_id", id}}, change)
+func (c *Collection) UpdateId(id interface{}, update interface{}) error {
+	return c.Update(bson.D{{"_id", id}}, update)
 }
 
-// ChangeInfo holds details about the outcome of a change operation.
+// ChangeInfo holds details about the outcome of an update operation.
 type ChangeInfo struct {
 	Updated    int         // Number of existing documents updated
 	Removed    int         // Number of documents removed
@@ -1674,7 +1674,7 @@ type ChangeInfo struct {
 }
 
 // UpdateAll finds all documents matching the provided selector document
-// and modifies them according to the change document.
+// and modifies them according to the update document.
 // If the session is in safe mode (see SetSafe) details of the executed
 // operation are returned in info or an error of type *LastError when
 // some problem is detected. It is not an error for the update to not be
@@ -1685,8 +1685,8 @@ type ChangeInfo struct {
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (c *Collection) UpdateAll(selector interface{}, change interface{}) (info *ChangeInfo, err error) {
-	lerr, err := c.writeQuery(&updateOp{c.FullName, selector, change, 2})
+func (c *Collection) UpdateAll(selector interface{}, update interface{}) (info *ChangeInfo, err error) {
+	lerr, err := c.writeQuery(&updateOp{c.FullName, selector, update, 2})
 	if err == nil && lerr != nil {
 		info = &ChangeInfo{Updated: lerr.N}
 	}
@@ -1694,8 +1694,8 @@ func (c *Collection) UpdateAll(selector interface{}, change interface{}) (info *
 }
 
 // Upsert finds a single document matching the provided selector document
-// and modifies it according to the change document.  If no document matching
-// the selector is found, the change document is applied to the selector
+// and modifies it according to the update document.  If no document matching
+// the selector is found, the update document is applied to the selector
 // document and the result is inserted in the collection.
 // If the session is in safe mode (see SetSafe) details of the executed
 // operation are returned in info, or an error of type *LastError when
@@ -1706,13 +1706,13 @@ func (c *Collection) UpdateAll(selector interface{}, change interface{}) (info *
 //     http://www.mongodb.org/display/DOCS/Updating
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
-func (c *Collection) Upsert(selector interface{}, change interface{}) (info *ChangeInfo, err error) {
-	data, err := bson.Marshal(change)
+func (c *Collection) Upsert(selector interface{}, update interface{}) (info *ChangeInfo, err error) {
+	data, err := bson.Marshal(update)
 	if err != nil {
 		return nil, err
 	}
-	change = bson.Raw{0x03, data}
-	lerr, err := c.writeQuery(&updateOp{c.FullName, selector, change, 1})
+	update = bson.Raw{0x03, data}
+	lerr, err := c.writeQuery(&updateOp{c.FullName, selector, update, 1})
 	if err == nil && lerr != nil {
 		info = &ChangeInfo{}
 		if lerr.UpdatedExisting {
@@ -1726,11 +1726,11 @@ func (c *Collection) Upsert(selector interface{}, change interface{}) (info *Cha
 
 // UpsertId is a convenience helper equivalent to:
 //
-//     info, err := collection.Upsert(bson.M{"_id": id}, change)
+//     info, err := collection.Upsert(bson.M{"_id": id}, update)
 //
 // See the Upsert method for more details.
-func (c *Collection) UpsertId(id interface{}, change interface{}) (info *ChangeInfo, err error) {
-	return c.Upsert(bson.D{{"_id", id}}, change)
+func (c *Collection) UpsertId(id interface{}, update interface{}) (info *ChangeInfo, err error) {
+	return c.Upsert(bson.D{{"_id", id}}, update)
 }
 
 // Remove finds a single document matching the provided selector document
@@ -2962,8 +2962,10 @@ func fixMROut(out interface{}) interface{} {
 	return outs
 }
 
+// Change holds fields for running a findAndModify MongoDB command via
+// the Query.Apply method.
 type Change struct {
-	Update    interface{} // The change document
+	Update    interface{} // The update document
 	Upsert    bool        // Whether to insert in case the document isn't found
 	Remove    bool        // Whether to remove the document found rather than updating
 	ReturnNew bool        // Should the modified document be returned rather than the old one
@@ -2980,10 +2982,10 @@ type valueResult struct {
 	LastError LastError "lastErrorObject"
 }
 
-// Apply allows updating, upserting or removing a document matching a query
-// and atomically returning either the old version (the default) or the new
-// version of the document (when ReturnNew is true). If no objects are
-// found Apply returns ErrNotFound.
+// Apply runs the findAndModify MongoDB command, which allows updating, upserting
+// or removing a document matching a query and atomically returning either the old
+// version (the default) or the new version of the document (when ReturnNew is true).
+// If no objects are found Apply returns ErrNotFound.
 //
 // The Sort and Select query methods affect the result of Apply.  In case
 // multiple documents match the query, Sort enables selecting which document to
