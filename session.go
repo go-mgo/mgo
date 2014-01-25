@@ -626,7 +626,7 @@ const (
 	RoleDBAdmin      Role = "dbAdmin"
 	RoleDBAdminAny   Role = "dbAdminAnyDatabase"
 	RoleUserAdmin    Role = "userAdmin"
-	RoleUserAdminAny Role = "UserAdminAnyDatabase"
+	RoleUserAdminAny Role = "userAdminAnyDatabase"
 	RoleClusterAdmin Role = "clusterAdmin"
 )
 
