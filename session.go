@@ -254,21 +254,16 @@ type DialInfo struct {
 	Username string
 	Password string
 
-	// Dial optionally specifies the dial function for establishing
-	// connections with the MongoDB servers.
-	Dial func(addr net.Addr) (net.Conn, error)
-
 	// DialServer optionally specifies the dial function for establishing
 	// connections with the MongoDB servers.
-	//
-	// WARNING: This interface is experimental and may change.
 	DialServer func(addr *ServerAddr) (net.Conn, error)
+
+	// WARNING: This field is obsolete. See DialServer above.
+	Dial func(addr net.Addr) (net.Conn, error)
 }
 
 // ServerAddr represents the address for establishing a connection to an
 // individual MongoDB server.
-//
-// WARNING: This interface is experimental and may change.
 type ServerAddr struct {
 	str string
 	tcp *net.TCPAddr
