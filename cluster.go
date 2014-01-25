@@ -51,16 +51,19 @@ type mongoCluster struct {
 	references   int
 	syncing      bool
 	direct       bool
+	failFast     bool
+	syncCount    uint
 	cachedIndex  map[string]bool
 	sync         chan bool
 	dial         dialer
 }
 
-func newCluster(userSeeds []string, direct bool, dial dialer) *mongoCluster {
+func newCluster(userSeeds []string, direct, failFast bool, dial dialer) *mongoCluster {
 	cluster := &mongoCluster{
 		userSeeds:  userSeeds,
 		references: 1,
 		direct:     direct,
+		failFast:   failFast,
 		dial:       dial,
 	}
 	cluster.serverSynced.L = cluster.RWMutex.RLocker()
@@ -152,7 +155,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerI
 	var result isMasterResult
 	var tryerr error
 	for retry := 0; ; retry++ {
-		if retry == 3 {
+		if retry == 3 || retry == 1 && cluster.failFast {
 			return nil, nil, tryerr
 		}
 		if retry > 0 {
@@ -334,13 +337,16 @@ func (cluster *mongoCluster) syncServersLoop() {
 
 		// Hold off before allowing another sync. No point in
 		// burning CPU looking for down servers.
-		time.Sleep(500 * time.Millisecond)
+		if !cluster.failFast {
+			time.Sleep(500 * time.Millisecond)
+		}
 
 		cluster.Lock()
 		if cluster.references == 0 {
 			cluster.Unlock()
 			break
 		}
+		cluster.syncCount++
 		// Poke all waiters so they have a chance to timeout or
 		// restart syncing if they wish to.
 		cluster.serverSynced.Broadcast()
@@ -500,6 +506,7 @@ var socketsPerServer = 4096
 // false, the socket will necessarily be to a master server.
 func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Duration, socketTimeout time.Duration, serverTags []bson.D) (s *mongoSocket, err error) {
 	var started time.Time
+	var syncCount uint
 	warnedLimit := false
 	for {
 		cluster.RLock()
@@ -511,8 +518,10 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Durati
 				break
 			}
 			if started.IsZero() {
-				started = time.Now() // Initialize after fast path above.
-			} else if syncTimeout != 0 && started.Before(time.Now().Add(-syncTimeout)) {
+				// Initialize after fast path above.
+				started = time.Now()
+				syncCount = cluster.syncCount
+			} else if syncTimeout != 0 && started.Before(time.Now().Add(-syncTimeout)) || cluster.failFast && cluster.syncCount != syncCount {
 				cluster.RUnlock()
 				return nil, errors.New("no reachable servers")
 			}

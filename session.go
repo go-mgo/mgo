@@ -236,6 +236,13 @@ type DialInfo struct {
 	// to be established.
 	Timeout time.Duration
 
+	// FailFast will cause connection and query attempts to fail faster when
+	// the server is unavailable, instead of retrying until the configured
+	// timeout period. Note that an unavailable server may silently drop
+	// packets instead of rejecting them, in which case it's impossible to
+	// distinguish it from a slow server, so the timeout stays relevant.
+	FailFast bool
+
 	// Database is the database name used during the initial authentication.
 	// If set, the value is also returned as the default result from the
 	// Session.DB method, in place of "test".
@@ -288,7 +295,7 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 		}
 		addrs[i] = addr
 	}
-	cluster := newCluster(addrs, info.Direct, dialer{info.Dial, info.DialServer})
+	cluster := newCluster(addrs, info.Direct, info.FailFast, dialer{info.Dial, info.DialServer})
 	session := newSession(Eventual, cluster, info.Timeout)
 	session.defaultdb = info.Database
 	if session.defaultdb == "" {

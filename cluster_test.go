@@ -969,6 +969,21 @@ func (s *S) TestDirectToUnknownStateMember(c *C) {
 	c.Assert(strings.HasSuffix(result.Host, ":40041"), Equals, true)
 }
 
+func (s *S) TestFailFast(c *C) {
+	info := mgo.DialInfo{
+		Addrs:    []string{"localhost:99999"},
+		Timeout:  5 * time.Second,
+		FailFast: true,
+	}
+
+	started := time.Now()
+
+	_, err := mgo.DialWithInfo(&info)
+	c.Assert(err, ErrorMatches, "no reachable servers")
+
+	c.Assert(started.After(time.Now().Add(-time.Second)), Equals, true)
+}
+
 type OpCounters struct {
 	Insert  int
 	Query   int
