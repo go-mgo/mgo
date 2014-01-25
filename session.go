@@ -2289,8 +2289,14 @@ func (q *Query) Iter() *Iter {
 	if err != nil {
 		iter.err = err
 	} else {
-		iter.err = socket.Query(&op)
 		iter.server = socket.Server()
+		err = socket.Query(&op)
+		if err != nil {
+			// Must lock as the query above may call replyFunc.
+			iter.m.Lock()
+			iter.err = err
+			iter.m.Unlock()
+		}
 		socket.Release()
 	}
 	return iter
@@ -2363,8 +2369,14 @@ func (q *Query) Tail(timeout time.Duration) *Iter {
 	if err != nil {
 		iter.err = err
 	} else {
-		iter.err = socket.Query(&op)
 		iter.server = socket.Server()
+		err = socket.Query(&op)
+		if err != nil {
+			// Must lock as the query above may call replyFunc.
+			iter.m.Lock()
+			iter.err = err
+			iter.m.Unlock()
+		}
 		socket.Release()
 	}
 	return iter
@@ -2514,7 +2526,11 @@ func (iter *Iter) Next(result interface{}) bool {
 		err := bson.Unmarshal(docData, result)
 		if err != nil {
 			debugf("Iter %p document unmarshaling failed: %#v", iter, err)
-			iter.err = err
+			iter.m.Lock()
+			if iter.err == nil {
+				iter.err = err
+			}
+			iter.m.Unlock()
 			return false
 		}
 		debugf("Iter %p document unmarshaled: %#v", iter, result)
