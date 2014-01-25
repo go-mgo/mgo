@@ -1625,11 +1625,11 @@ func (err *QueryError) Error() string {
 // a primary key index or a secondary unique index already has an entry
 // with the given value.
 func IsDup(err error) bool {
-	// Besides being handy, helps with https://jira.mongodb.org/browse/SERVER-7164
+	// Besides being handy, helps with MongoDB bugs SERVER-7164 and SERVER-11493.
 	// What follows makes me sad. Hopefully conventions will be more clear over time.
 	switch e := err.(type) {
 	case *LastError:
-		return e.Code == 11000 || e.Code == 11001 || e.Code == 12582
+		return e.Code == 11000 || e.Code == 11001 || e.Code == 12582 || e.Code == 16460 && strings.Contains(e.Err, " E11000 ")
 	case *QueryError:
 		return e.Code == 11000 || e.Code == 11001 || e.Code == 12582
 	}
