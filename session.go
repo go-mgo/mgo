@@ -2508,10 +2508,12 @@ func (iter *Iter) Next(result interface{}) bool {
 			iter.limit--
 			if iter.limit == 0 {
 				if iter.docData.Len() > 0 {
+					iter.m.Unlock()
 					panic(fmt.Errorf("data remains after limit exhausted: %d", iter.docData.Len()))
 				}
 				iter.err = ErrNotFound
 				if iter.killCursor() != nil {
+					iter.m.Unlock()
 					return false
 				}
 			}
