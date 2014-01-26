@@ -191,8 +191,9 @@ func (socket *mongoSocket) InitialAcquire(serverInfo *mongoServerInfo, timeout t
 		panic("Socket acquired out of cache with references")
 	}
 	if socket.dead != nil {
+		dead := socket.dead
 		socket.Unlock()
-		return socket.dead
+		return dead
 	}
 	socket.references++
 	socket.serverInfo = serverInfo
@@ -442,6 +443,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 
 	socket.Lock()
 	if socket.dead != nil {
+		dead := socket.dead
 		socket.Unlock()
 		debugf("Socket %p to %s: failing query, already closed: %s", socket, socket.addr, socket.dead.Error())
 		// XXX This seems necessary in case the session is closed concurrently
@@ -449,10 +451,10 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 		for i := 0; i != requestCount; i++ {
 			request := &requests[i]
 			if request.replyFunc != nil {
-				request.replyFunc(socket.dead, nil, -1, nil)
+				request.replyFunc(dead, nil, -1, nil)
 			}
 		}
-		return socket.dead
+		return dead
 	}
 
 	wasWaiting := len(socket.replyFuncs) > 0
