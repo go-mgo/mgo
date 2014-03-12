@@ -1167,7 +1167,7 @@ func (s *Session) Refresh() {
 // SetMode changes the consistency mode for the session.
 //
 // In the Strong consistency mode reads and writes will always be made to
-// the master server using a unique connection so that reads and writes are
+// the primary server using a unique connection so that reads and writes are
 // fully consistent, ordered, and observing the most up-to-date data.
 // This offers the least benefits in terms of distributing load, but the
 // most guarantees.  See also Monotonic and Eventual.
@@ -1179,15 +1179,15 @@ func (s *Session) Refresh() {
 // queries (read-your-writes).
 //
 // In practice, the Monotonic mode is obtained by performing initial reads
-// against a unique connection to an arbitrary slave, if one is available,
+// against a unique connection to an arbitrary secondary, if one is available,
 // and once the first write happens, the session connection is switched over
-// to the master server.  This manages to distribute some of the reading
-// load with slaves, while maintaining some useful guarantees.
+// to the primary server.  This manages to distribute some of the reading
+// load with secondaries, while maintaining some useful guarantees.
 //
-// In the Eventual consistency mode reads will be made to any slave in the
+// In the Eventual consistency mode reads will be made to any secondary in the
 // cluster, if one is available, and sequential reads will not necessarily
 // be made with the same connection.  This means that data may be observed
-// out of order.  Writes will of course be issued to the master, but
+// out of order.  Writes will of course be issued to the primary, but
 // independent writes in the same Eventual session may also be made with
 // independent connections, so there are also no guarantees in terms of
 // write ordering (no read-your-writes guarantees either).
@@ -1198,12 +1198,12 @@ func (s *Session) Refresh() {
 //
 // If refresh is true, in addition to ensuring the session is in the given
 // consistency mode, the consistency guarantees will also be reset (e.g.
-// a Monotonic session will be allowed to read from slaves again).  This is
-// equivalent to calling the Refresh function.
+// a Monotonic session will be allowed to read from secondaries again).
+// This is equivalent to calling the Refresh function.
 //
 // Shifting between Monotonic and Strong modes will keep a previously
 // reserved connection for the session unless refresh is true or the
-// connection is unsuitable (to a slave server in a Strong session).
+// connection is unsuitable (to a secondary server in a Strong session).
 func (s *Session) SetMode(consistency mode, refresh bool) {
 	s.m.Lock()
 	debugf("Session %p: setting mode %d with refresh=%v (master=%p, slave=%p)", s, consistency, refresh, s.masterSocket, s.slaveSocket)
@@ -1338,7 +1338,7 @@ func (s *Session) Safe() (safe *Safe) {
 //
 // The safe.W parameter determines how many servers should confirm a write
 // before the operation is considered successful.  If set to 0 or 1, the
-// command will return as soon as the master is done with the request.
+// command will return as soon as the primary is done with the request.
 // If safe.WTimeout is greater than zero, it determines how many milliseconds
 // to wait for the safe.W servers to respond before returning an error.
 //
@@ -1536,10 +1536,10 @@ func (s *Session) Fsync(async bool) error {
 // after it is successfully locked will block until FsyncUnlock is
 // called for the same server.
 //
-// This method works on slaves as well, preventing the oplog from being
-// flushed while the server is locked, but since only the server
-// connected to is locked, for locking specific slaves it may be
-// necessary to establish a connection directly to the slave (see
+// This method works on secondaries as well, preventing the oplog from
+// being flushed while the server is locked, but since only the server
+// connected to is locked, for locking specific secondaries it may be
+// necessary to establish a connection directly to the secondary (see
 // Dial's connect=direct option).
 //
 // As an important caveat, note that once a write is attempted and
