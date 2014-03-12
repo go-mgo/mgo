@@ -1,8 +1,7 @@
-// The mgo ("mango") rich MongoDB driver for Go.
+// Package mgo offers a rich MongoDB driver for Go.
 //
-// The mgo project (pronounced as "mango") is a rich MongoDB driver for
-// the Go language.  High-level details about the project may be found
-// at its web page:
+// Details about the mgo project (pronounced as "mango") are found
+// in its web page:
 //
 //     http://labix.org/mgo
 //
@@ -19,11 +18,13 @@
 //     c := session.DB(database).C(collection)
 //     err := c.Find(query).One(&result)
 //
-// New sessions may be created by calling New, Copy, or Clone on an
-// initial session.  These spawned sessions will share the same cluster
-// information and connection cache, and may be easily handed into other
-// methods and functions for organizing logic.  Every session created
-// must have its Close method called at the end of its use.
+// New sessions are typically created by calling session.Copy on the
+// initial session obtained at dial time. These new sessions will share
+// the same cluster information and connection cache, and may be easily
+// handed into other methods and functions for organizing logic.
+// Every session created must have its Close method called at the end
+// of its life time, so its resources may be put back in the pool or
+// collected, depending on the case.
 //
 // For more details, see the documentation for the types and methods.
 //
