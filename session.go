@@ -163,16 +163,34 @@ const defaultPrefetch = 0.25
 //
 //     connect=direct
 //
-//         This option will disable the automatic replica set server
-//         discovery logic, and will only use the servers provided.
-//         This enables forcing the communication with a specific
-//         server or set of servers (even if they are slaves).  Note
-//         that to talk to a slave you'll need to relax the consistency
-//         requirements using a Monotonic or Eventual mode via SetMode.
+//         Disables the automatic replica set server discovery logic, and
+//         forces the use of servers provided only (even if secondaries).
+//         Note that to talk to a secondary the consistency requirements
+//         must be relaxed to Monotonic or Eventual via SetMode.
+//
+//
+//     authSource=<db>
+//
+//         Informs the database used to establish credentials and privileges
+//         with a MongoDB server. Defaults to the database name provided via
+//         the URL path, and "admin" if that's unset.
+//
+//
+//     authMechanism=<mechanism>
+//
+//        Defines the protocol for credential negotiation. Defaults to "MONGODB-CR",
+//        which is the default username/password challenge-response mechanism.
+//
+//
+//     gssapiServiceName=<name>
+//
+//           Defines the service name to use when authenticating with the GSSAPI
+//           mechanism. Defaults to "mongodb".
+//
 //
 // Relevant documentation:
 //
-//     http://www.mongodb.org/display/DOCS/Connections
+//     http://docs.mongodb.org/manual/reference/connection-string/
 //
 func Dial(url string) (*Session, error) {
 	session, err := DialWithTimeout(url, 10*time.Second)
