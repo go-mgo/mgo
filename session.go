@@ -294,7 +294,7 @@ type DialInfo struct {
 	Mechanism string
 
 	// Username and Password inform the credentials for the initial authentication
-	// done against the database defined by the Source field. See Session.Login.
+	// done on the database defined by the Source field. See Session.Login.
 	Username string
 	Password string
 
@@ -527,7 +527,7 @@ func (db *Database) GridFS(prefix string) *GridFS {
 	return newGridFS(db, prefix)
 }
 
-// Run issues the provided command against the database and unmarshals
+// Run issues the provided command on the db database and unmarshals
 // its result in the respective argument. The cmd argument may be either
 // a string with the command name itself, in which case an empty document of
 // the form bson.M{cmd: 1} will be used, or it may be a full command document.
@@ -539,7 +539,7 @@ func (db *Database) GridFS(prefix string) *GridFS {
 //
 //     db.Run(bson.D{{"create", "mycollection"}, {"size", 1024}})
 //
-// For privilleged commands typically run against the "admin" database, see
+// For privilleged commands typically run on the "admin" database, see
 // the Run method in the Session type.
 //
 // Relevant documentation:
@@ -575,7 +575,7 @@ type Credential struct {
 	Mechanism string
 }
 
-// Login authenticates against MongoDB with the provided credential.  The
+// Login authenticates with MongoDB using the provided credential.  The
 // authentication is valid for the whole session and will stay valid until
 // Logout is explicitly called for the same database, or the session is
 // closed.
@@ -583,7 +583,7 @@ func (db *Database) Login(user, pass string) error {
 	return db.Session.Login(&Credential{Username: user, Password: pass, Source: db.Name})
 }
 
-// Login authenticates against MongoDB with the provided credential.  The
+// Login authenticates with MongoDB using the provided credential.  The
 // authentication is valid for the whole session and will stay valid until
 // Logout is explicitly called for the same database, or the session is
 // closed.
@@ -1179,7 +1179,7 @@ func (s *Session) Refresh() {
 // queries (read-your-writes).
 //
 // In practice, the Monotonic mode is obtained by performing initial reads
-// against a unique connection to an arbitrary secondary, if one is available,
+// on a unique connection to an arbitrary secondary, if one is available,
 // and once the first write happens, the session connection is switched over
 // to the primary server.  This manages to distribute some of the reading
 // load with secondaries, while maintaining some useful guarantees.
@@ -1470,7 +1470,7 @@ func (s *Session) ensureSafe(safe *Safe) {
 	}
 }
 
-// Run issues the provided command against the "admin" database and
+// Run issues the provided command on the "admin" database and
 // and unmarshals its result in the respective argument. The cmd
 // argument may be either a string with the command name itself, in
 // which case an empty document of the form bson.M{cmd: 1} will be used,
@@ -1483,7 +1483,7 @@ func (s *Session) ensureSafe(safe *Safe) {
 //
 //     db.Run(bson.D{{"create", "mycollection"}, {"size", 1024}})
 //
-// For commands against arbitrary databases, see the Run method in
+// For commands on arbitrary databases, see the Run method in
 // the Database type.
 //
 // Relevant documentation:
@@ -2157,7 +2157,7 @@ func (q *Query) Snapshot() *Query {
 }
 
 // LogReplay enables an option that optimizes queries that are typically
-// made against the MongoDB oplog for replaying it. This is an internal
+// made on the MongoDB oplog for replaying it. This is an internal
 // implementation aspect and most likely uninteresting for other uses.
 // It has seen at least one use case, though, so it's exposed via the API.
 func (q *Query) LogReplay() *Query {
