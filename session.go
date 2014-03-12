@@ -504,7 +504,8 @@ func (db *Database) Login(user, pass string) (err error) {
 	}
 	defer socket.Release()
 
-	err = socket.Login(dbname, user, pass)
+	auth := authInfo{dbname, user, pass}
+	err = socket.Login(auth)
 	if err != nil {
 		return err
 	}
@@ -519,13 +520,13 @@ func (db *Database) Login(user, pass string) (err error) {
 			return nil
 		}
 	}
-	session.auth = append(session.auth, authInfo{dbname, user, pass})
+	session.auth = append(session.auth, auth)
 	return nil
 }
 
 func (s *Session) socketLogin(socket *mongoSocket) error {
-	for _, a := range s.auth {
-		if err := socket.Login(a.db, a.user, a.pass); err != nil {
+	for _, auth := range s.auth {
+		if err := socket.Login(auth); err != nil {
 			return err
 		}
 	}
@@ -1948,6 +1949,7 @@ func (q *Query) Select(selector interface{}) *Query {
 //     http://www.mongodb.org/display/DOCS/Sorting+and+Natural+Order
 //
 func (q *Query) Sort(fields ...string) *Query {
+	// TODO //     query4 := collection.Find(nil).Sort("score:{$meta:textScore}")
 	q.m.Lock()
 	var order bson.D
 	for _, field := range fields {

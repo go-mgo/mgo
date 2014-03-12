@@ -44,6 +44,10 @@ type authCmd struct {
 	Nonce, User, Key string
 }
 
+type startSaslCmd struct {
+	StartSASL int `bson:"startSasl"`
+}
+
 type authResult struct {
 	ErrMsg string
 	Ok     bool
@@ -129,25 +133,35 @@ func (socket *mongoSocket) resetNonce() {
 	}
 }
 
-func (socket *mongoSocket) Login(db string, user string, pass string) error {
+func (socket *mongoSocket) Login(auth authInfo) error {
 	socket.Lock()
 	for _, a := range socket.auth {
-		if a.db == db && a.user == user && a.pass == pass {
-			debugf("Socket %p to %s: login: db=%q user=%q (already logged in)", socket, socket.addr, db, user)
+		if a == auth {
+			debugf("Socket %p to %s: login: db=%q user=%q (already logged in)", socket, socket.addr, auth.db, auth.user)
 			socket.Unlock()
 			return nil
 		}
 	}
-	if auth, found := socket.dropLogout(db, user, pass); found {
-		debugf("Socket %p to %s: login: db=%q user=%q (cached)", socket, socket.addr, db, user)
+	if socket.dropLogout(auth) {
+		debugf("Socket %p to %s: login: db=%q user=%q (cached)", socket, socket.addr, auth.db, auth.user)
 		socket.auth = append(socket.auth, auth)
 		socket.Unlock()
 		return nil
 	}
 	socket.Unlock()
 
-	debugf("Socket %p to %s: login: db=%q user=%q", socket, socket.addr, db, user)
+	debugf("Socket %p to %s: login: db=%q user=%q", socket, socket.addr, auth.db, auth.user)
+	err := socket.loginClassic(auth)
 
+	if err != nil {
+		debugf("Socket %p to %s: login error: %s", socket, socket.addr, err)
+	} else {
+		debugf("Socket %p to %s: login successful", socket, socket.addr)
+	}
+	return err
+}
+
+func (socket *mongoSocket) loginClassic(auth authInfo) error {
 	// Note that this only works properly because this function is
 	// synchronous, which means the nonce won't get reset while we're
 	// using it and any other login requests will block waiting for a
@@ -159,22 +173,35 @@ func (socket *mongoSocket) Login(db string, user string, pass string) error {
 	defer socket.resetNonce()
 
 	psum := md5.New()
-	psum.Write([]byte(user + ":mongo:" + pass))
+	psum.Write([]byte(auth.user + ":mongo:" + auth.pass))
 
 	ksum := md5.New()
-	ksum.Write([]byte(nonce + user))
+	ksum.Write([]byte(nonce + auth.user))
 	ksum.Write([]byte(hex.EncodeToString(psum.Sum(nil))))
 
 	key := hex.EncodeToString(ksum.Sum(nil))
 
-	cmd := authCmd{Authenticate: 1, User: user, Nonce: nonce, Key: key}
+	cmd := authCmd{Authenticate: 1, User: auth.user, Nonce: nonce, Key: key}
+	res := authResult{}
+	return socket.loginRun(auth.db, &cmd, &res, func() error {
+		if !res.Ok {
+			return errors.New(res.ErrMsg)
+		}
+		socket.Lock()
+		socket.dropAuth(auth.db)
+		socket.auth = append(socket.auth, auth)
+		socket.Unlock()
+		return nil
+	})
+}
 
+func (socket *mongoSocket) loginRun(db string, query, result interface{}, f func() error) error {
 	var mutex sync.Mutex
 	var replyErr error
 	mutex.Lock()
 
 	op := queryOp{}
-	op.query = &cmd
+	op.query = query
 	op.collection = db + ".$cmd"
 	op.limit = -1
 	op.replyFunc = func(err error, reply *replyOp, docNum int, docData []byte) {
@@ -185,34 +212,21 @@ func (socket *mongoSocket) Login(db string, user string, pass string) error {
 			return
 		}
 
-		// Must handle this within the read loop for the socket, so
-		// that concurrent login requests are properly ordered.
-		result := &authResult{}
 		err = bson.Unmarshal(docData, result)
 		if err != nil {
 			replyErr = err
-			return
+		} else {
+			// Must handle this within the read loop for the socket, so
+			// that concurrent login requests are properly ordered.
+			replyErr = f()
 		}
-		if !result.Ok {
-			replyErr = errors.New(result.ErrMsg)
-		}
-
-		socket.Lock()
-		socket.dropAuth(db)
-		socket.auth = append(socket.auth, authInfo{db, user, pass})
-		socket.Unlock()
 	}
 
-	err = socket.Query(&op)
+	err := socket.Query(&op)
 	if err != nil {
 		return err
 	}
 	mutex.Lock() // Wait.
-	if replyErr != nil {
-		debugf("Socket %p to %s: login error: %s", socket, socket.addr, replyErr)
-	} else {
-		debugf("Socket %p to %s: login successful", socket, socket.addr)
-	}
 	return replyErr
 }
 
@@ -264,13 +278,13 @@ func (socket *mongoSocket) dropAuth(db string) (auth authInfo, found bool) {
 	return auth, false
 }
 
-func (socket *mongoSocket) dropLogout(db, user, pass string) (auth authInfo, found bool) {
+func (socket *mongoSocket) dropLogout(auth authInfo) (found bool) {
 	for i, a := range socket.logout {
-		if a.db == db && a.user == user && a.pass == pass {
+		if a == auth {
 			copy(socket.logout[i:], socket.logout[i+1:])
 			socket.logout = socket.logout[:len(socket.logout)-1]
-			return a, true
+			return true
 		}
 	}
-	return auth, false
+	return false
 }
