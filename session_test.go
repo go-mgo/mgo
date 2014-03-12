@@ -115,7 +115,7 @@ func (s *S) TestURLParsing(c *C) {
 		if session != nil {
 			session.Close()
 		}
-		c.Assert(err, ErrorMatches, "Unsupported connection URL option: (foo=1|bar=2)")
+		c.Assert(err, ErrorMatches, "unsupported connection URL option: (foo=1|bar=2)")
 	}
 }
 
@@ -2416,10 +2416,10 @@ func (s *S) TestEnsureIndexWithBadInfo(c *C) {
 	coll := session.DB("mydb").C("mycoll")
 
 	err = coll.EnsureIndex(mgo.Index{})
-	c.Assert(err, ErrorMatches, "Invalid index key:.*")
+	c.Assert(err, ErrorMatches, "invalid index key:.*")
 
 	err = coll.EnsureIndex(mgo.Index{Key: []string{""}})
-	c.Assert(err, ErrorMatches, "Invalid index key:.*")
+	c.Assert(err, ErrorMatches, "invalid index key:.*")
 }
 
 func (s *S) TestEnsureIndexWithUnsafeSession(c *C) {

@@ -378,7 +378,7 @@ func parseURL(s string) (*urlInfo, error) {
 		for _, pair := range strings.FieldsFunc(s[c+1:], isOptSep) {
 			l := strings.SplitN(pair, "=", 2)
 			if len(l) != 2 || l[0] == "" || l[1] == "" {
-				return nil, errors.New("Connection option must be key=value: " + pair)
+				return nil, errors.New("connection option must be key=value: " + pair)
 			}
 			info.options[l[0]] = l[1]
 		}
@@ -387,7 +387,7 @@ func parseURL(s string) (*urlInfo, error) {
 	if c := strings.Index(s, "@"); c != -1 {
 		pair := strings.SplitN(s[:c], ":", 2)
 		if len(pair) > 2 || pair[0] == "" {
-			return nil, errors.New("Credentials must be provided as user:pass@host")
+			return nil, errors.New("credentials must be provided as user:pass@host")
 		}
 		var err error
 		info.user, err = url.QueryUnescape(pair[0])
@@ -831,12 +831,12 @@ func parseIndexKey(key []string) (name string, realKey bson.D, err error) {
 			}
 		}
 		if field == "" || kind != "" && order != kind {
-			return "", nil, fmt.Errorf(`Invalid index key: want "[$<kind>:][-]<field name>", got %q`, raw)
+			return "", nil, fmt.Errorf(`invalid index key: want "[$<kind>:][-]<field name>", got %q`, raw)
 		}
 		realKey = append(realKey, bson.DocElem{field, order})
 	}
 	if name == "" {
-		return "", nil, errors.New("Invalid index key: no fields provided")
+		return "", nil, errors.New("invalid index key: no fields provided")
 	}
 	return
 }

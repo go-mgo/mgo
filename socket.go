@@ -426,7 +426,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 			}
 
 		default:
-			panic("Internal error: unknown operation type")
+			panic("internal error: unknown operation type")
 		}
 
 		setInt32(buf, start, int32(len(buf)-start))

@@ -475,7 +475,7 @@ func (s *S) TestGridFSSeek(c *C) {
 	// Try seeking past end of file.
 	file.Seek(3, os.SEEK_SET)
 	o, err = file.Seek(23, os.SEEK_SET)
-	c.Assert(err, ErrorMatches, "Seek past end of file")
+	c.Assert(err, ErrorMatches, "seek past end of file")
 	c.Assert(o, Equals, int64(3))
 }
 
