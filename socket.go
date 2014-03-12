@@ -45,8 +45,8 @@ type mongoSocket struct {
 	nextRequestId uint32
 	replyFuncs    map[uint32]replyFunc
 	references    int
-	auth          []authInfo
-	logout        []authInfo
+	creds         []Credential
+	logout        []Credential
 	cachedNonce   string
 	gotNonce      sync.Cond
 	dead          error
@@ -547,7 +547,9 @@ func (socket *mongoSocket) readLoop() {
 			for i := 0; i != int(reply.replyDocs); i++ {
 				err := fill(conn, s)
 				if err != nil {
-					replyFunc(err, nil, -1, nil)
+					if replyFunc != nil {
+						replyFunc(err, nil, -1, nil)
+					}
 					socket.kill(err, true)
 					return
 				}
@@ -562,7 +564,9 @@ func (socket *mongoSocket) readLoop() {
 
 				err = fill(conn, b[4:])
 				if err != nil {
-					replyFunc(err, nil, -1, nil)
+					if replyFunc != nil {
+						replyFunc(err, nil, -1, nil)
+					}
 					socket.kill(err, true)
 					return
 				}

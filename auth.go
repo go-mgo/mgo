@@ -35,13 +35,12 @@ import (
 	"sync"
 )
 
-type authInfo struct {
-	db, user, pass string
-}
-
 type authCmd struct {
-	Authenticate     int
-	Nonce, User, Key string
+	Authenticate int
+
+	Nonce string
+	User  string
+	Key   string
 }
 
 type startSaslCmd struct {
@@ -65,6 +64,29 @@ type getNonceResult struct {
 
 type logoutCmd struct {
 	Logout int
+}
+
+type saslCmd struct {
+	Start          int    `bson:"saslStart,omitempty"`
+	Continue       int    `bson:"saslContinue,omitempty"`
+	ConversationId int    `bson:"conversationId,omitempty"`
+	Mechanism      string `bson:"mechanism,omitempty"`
+	Payload        []byte
+}
+
+type saslResult struct {
+	Ok    bool `bson:"ok"`
+	NotOk bool `bson:"code"` // Server <= 2.3.2 returns ok=1 & code>0 on errors (WTF?)
+	Done  bool
+
+	ConversationId int `bson:"conversationId"`
+	Payload        []byte
+	ErrMsg         string
+}
+
+type saslStepper interface {
+	Step(serverData []byte) (clientData []byte, done bool, err error)
+	Close()
 }
 
 func (socket *mongoSocket) getNonce() (nonce string, err error) {
@@ -133,25 +155,35 @@ func (socket *mongoSocket) resetNonce() {
 	}
 }
 
-func (socket *mongoSocket) Login(auth authInfo) error {
+func (socket *mongoSocket) Login(cred Credential) error {
 	socket.Lock()
-	for _, a := range socket.auth {
-		if a == auth {
-			debugf("Socket %p to %s: login: db=%q user=%q (already logged in)", socket, socket.addr, auth.db, auth.user)
+	for _, sockCred := range socket.creds {
+		if sockCred == cred {
+			debugf("Socket %p to %s: login: db=%q user=%q (already logged in)", socket, socket.addr, cred.Source, cred.Username)
 			socket.Unlock()
 			return nil
 		}
 	}
-	if socket.dropLogout(auth) {
-		debugf("Socket %p to %s: login: db=%q user=%q (cached)", socket, socket.addr, auth.db, auth.user)
-		socket.auth = append(socket.auth, auth)
+	if socket.dropLogout(cred) {
+		debugf("Socket %p to %s: login: db=%q user=%q (cached)", socket, socket.addr, cred.Source, cred.Username)
+		socket.creds = append(socket.creds, cred)
 		socket.Unlock()
 		return nil
 	}
 	socket.Unlock()
 
-	debugf("Socket %p to %s: login: db=%q user=%q", socket, socket.addr, auth.db, auth.user)
-	err := socket.loginClassic(auth)
+	debugf("Socket %p to %s: login: db=%q user=%q", socket, socket.addr, cred.Source, cred.Username)
+
+	var err error
+	switch cred.Mechanism {
+	case "", "MONGO-CR":
+		err = socket.loginClassic(cred)
+	case "MONGO-X509":
+		err = fmt.Errorf("unsupported authentication mechanism: %s", cred.Mechanism)
+	default:
+		// Try SASL for everything else, if it is available.
+		err = socket.loginSASL(cred)
+	}
 
 	if err != nil {
 		debugf("Socket %p to %s: login error: %s", socket, socket.addr, err)
@@ -161,7 +193,7 @@ func (socket *mongoSocket) Login(auth authInfo) error {
 	return err
 }
 
-func (socket *mongoSocket) loginClassic(auth authInfo) error {
+func (socket *mongoSocket) loginClassic(cred Credential) error {
 	// Note that this only works properly because this function is
 	// synchronous, which means the nonce won't get reset while we're
 	// using it and any other login requests will block waiting for a
@@ -173,26 +205,99 @@ func (socket *mongoSocket) loginClassic(auth authInfo) error {
 	defer socket.resetNonce()
 
 	psum := md5.New()
-	psum.Write([]byte(auth.user + ":mongo:" + auth.pass))
+	psum.Write([]byte(cred.Username + ":mongo:" + cred.Password))
 
 	ksum := md5.New()
-	ksum.Write([]byte(nonce + auth.user))
+	ksum.Write([]byte(nonce + cred.Username))
 	ksum.Write([]byte(hex.EncodeToString(psum.Sum(nil))))
 
 	key := hex.EncodeToString(ksum.Sum(nil))
 
-	cmd := authCmd{Authenticate: 1, User: auth.user, Nonce: nonce, Key: key}
+	cmd := authCmd{Authenticate: 1, User: cred.Username, Nonce: nonce, Key: key}
 	res := authResult{}
-	return socket.loginRun(auth.db, &cmd, &res, func() error {
+	return socket.loginRun(cred.Source, &cmd, &res, func() error {
 		if !res.Ok {
 			return errors.New(res.ErrMsg)
 		}
 		socket.Lock()
-		socket.dropAuth(auth.db)
-		socket.auth = append(socket.auth, auth)
+		socket.dropAuth(cred.Source)
+		socket.creds = append(socket.creds, cred)
 		socket.Unlock()
 		return nil
 	})
+}
+
+func (socket *mongoSocket) loginSASL(cred Credential) error {
+	sasl, err := saslNew(cred, socket.Server().Addr)
+	if err != nil {
+		return err
+	}
+	defer sasl.Close()
+
+	// The goal of this logic is to carry a locked socket until the
+	// local SASL step confirms the auth is valid; the socket needs to be
+	// locked so that concurrent action doesn't leave the socket in an
+	// auth state that doesn't reflect the operations that took place.
+	// As a simple case, imagine inverting login=>logout to logout=>login.
+	//
+	// The logic below works because the lock func isn't called concurrently.
+	locked := false
+	lock := func(b bool) {
+		if locked != b {
+			locked = b
+			if b {
+				socket.Lock()
+			} else {
+				socket.Unlock()
+			}
+		}
+	}
+
+	lock(true)
+	defer lock(false)
+
+	start := 1
+	cmd := saslCmd{}
+	res := saslResult{}
+	for {
+		payload, done, err := sasl.Step(res.Payload)
+		if err != nil {
+			return err
+		}
+		if done && res.Done {
+			socket.dropAuth(cred.Source)
+			socket.creds = append(socket.creds, cred)
+			break
+		}
+		lock(false)
+
+		cmd = saslCmd{
+			Start:          start,
+			Continue:       1 - start,
+			ConversationId: res.ConversationId,
+			Mechanism:      cred.Mechanism,
+			Payload:        payload,
+		}
+		start = 0
+		err = socket.loginRun(cred.Source, &cmd, &res, func() error {
+			// See the comment on lock for why this is necessary.
+			lock(true)
+			if !res.Ok || res.NotOk {
+				return fmt.Errorf("server returned error on SASL authentication step: %s", res.ErrMsg)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		if done && res.Done {
+			socket.dropAuth(cred.Source)
+			socket.creds = append(socket.creds, cred)
+			break
+		}
+	}
+
+	return nil
 }
 
 func (socket *mongoSocket) loginRun(db string, query, result interface{}, f func() error) error {
@@ -232,20 +337,20 @@ func (socket *mongoSocket) loginRun(db string, query, result interface{}, f func
 
 func (socket *mongoSocket) Logout(db string) {
 	socket.Lock()
-	auth, found := socket.dropAuth(db)
+	cred, found := socket.dropAuth(db)
 	if found {
 		debugf("Socket %p to %s: logout: db=%q (flagged)", socket, socket.addr, db)
-		socket.logout = append(socket.logout, auth)
+		socket.logout = append(socket.logout, cred)
 	}
 	socket.Unlock()
 }
 
 func (socket *mongoSocket) LogoutAll() {
 	socket.Lock()
-	if l := len(socket.auth); l > 0 {
+	if l := len(socket.creds); l > 0 {
 		debugf("Socket %p to %s: logout all (flagged %d)", socket, socket.addr, l)
-		socket.logout = append(socket.logout, socket.auth...)
-		socket.auth = socket.auth[0:0]
+		socket.logout = append(socket.logout, socket.creds...)
+		socket.creds = socket.creds[0:0]
 	}
 	socket.Unlock()
 }
@@ -257,7 +362,7 @@ func (socket *mongoSocket) flushLogout() (ops []interface{}) {
 		for i := 0; i != l; i++ {
 			op := queryOp{}
 			op.query = &logoutCmd{1}
-			op.collection = socket.logout[i].db + ".$cmd"
+			op.collection = socket.logout[i].Source + ".$cmd"
 			op.limit = -1
 			ops = append(ops, &op)
 		}
@@ -267,20 +372,20 @@ func (socket *mongoSocket) flushLogout() (ops []interface{}) {
 	return
 }
 
-func (socket *mongoSocket) dropAuth(db string) (auth authInfo, found bool) {
-	for i, a := range socket.auth {
-		if a.db == db {
-			copy(socket.auth[i:], socket.auth[i+1:])
-			socket.auth = socket.auth[:len(socket.auth)-1]
-			return a, true
+func (socket *mongoSocket) dropAuth(db string) (cred Credential, found bool) {
+	for i, sockCred := range socket.creds {
+		if sockCred.Source == db {
+			copy(socket.creds[i:], socket.creds[i+1:])
+			socket.creds = socket.creds[:len(socket.creds)-1]
+			return sockCred, true
 		}
 	}
-	return auth, false
+	return cred, false
 }
 
-func (socket *mongoSocket) dropLogout(auth authInfo) (found bool) {
-	for i, a := range socket.logout {
-		if a == auth {
+func (socket *mongoSocket) dropLogout(cred Credential) (found bool) {
+	for i, sockCred := range socket.logout {
+		if sockCred == cred {
 			copy(socket.logout[i:], socket.logout[i+1:])
 			socket.logout = socket.logout[:len(socket.logout)-1]
 			return true

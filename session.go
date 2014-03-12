@@ -34,6 +34,7 @@ import (
 	"labix.org/v2/mgo/bson"
 	"math"
 	"net"
+	"net/url"
 	"reflect"
 	"sort"
 	"strconv"
@@ -65,8 +66,9 @@ type Session struct {
 	syncTimeout  time.Duration
 	sockTimeout  time.Duration
 	defaultdb    string
-	dialAuth     *authInfo
-	auth         []authInfo
+	sourcedb     string
+	dialCred     *Credential
+	creds        []Credential
 }
 
 type Database struct {
@@ -173,7 +175,7 @@ const defaultPrefetch = 0.25
 //     http://www.mongodb.org/display/DOCS/Connections
 //
 func Dial(url string) (*Session, error) {
-	session, err := DialWithTimeout(url, 10 * time.Second)
+	session, err := DialWithTimeout(url, 10*time.Second)
 	if err == nil {
 		session.SetSyncTimeout(1 * time.Minute)
 		session.SetSocketTimeout(1 * time.Minute)
@@ -193,8 +195,17 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 		return nil, err
 	}
 	direct := false
+	mechanism := ""
+	service := ""
+	source := ""
 	for k, v := range uinfo.options {
 		switch k {
+		case "authSource":
+			source = v
+		case "authMechanism":
+			mechanism = v
+		case "gssapiServiceName":
+			service = v
 		case "connect":
 			if v == "direct" {
 				direct = true
@@ -205,16 +216,19 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 			}
 			fallthrough
 		default:
-			return nil, errors.New("Unsupported connection URL option: " + k + "=" + v)
+			return nil, errors.New("unsupported connection URL option: " + k + "=" + v)
 		}
 	}
 	info := DialInfo{
-		Addrs:    uinfo.addrs,
-		Direct:   direct,
-		Timeout:  timeout,
-		Username: uinfo.user,
-		Password: uinfo.pass,
-		Database: uinfo.db,
+		Addrs:     uinfo.addrs,
+		Direct:    direct,
+		Timeout:   timeout,
+		Database:  uinfo.db,
+		Username:  uinfo.user,
+		Password:  uinfo.pass,
+		Mechanism: mechanism,
+		Service:   service,
+		Source:    source,
 	}
 	return DialWithInfo(&info)
 }
@@ -243,14 +257,26 @@ type DialInfo struct {
 	// distinguish it from a slow server, so the timeout stays relevant.
 	FailFast bool
 
-	// Database is the database name used during the initial authentication.
-	// If set, the value is also returned as the default result from the
-	// Session.DB method, in place of "test".
+	// Database is the default database name used when the Session.DB method
+	// is called with an empty name, and is also used during the intial
+	// authenticatoin if Source is unset.
 	Database string
 
-	// Username and Password inform the credentials for the initial
-	// authentication done against Database, if that is set,
-	// or the "admin" database otherwise. See the Session.Login method too.
+	// Source is the database used to establish credentials and privileges
+	// with a MongoDB server. Defaults to the value of Database, if that is
+	// set, or "admin" otherwise.
+	Source string
+
+	// Service defines the service name to use when authenticating with the GSSAPI
+	// mechanism. Defaults to "mongodb".
+	Service string
+
+	// Mechanism defines the protocol for credential negotiation.
+	// Defaults to "MONGODB-CR".
+	Mechanism string
+
+	// Username and Password inform the credentials for the initial authentication
+	// done against the database defined by the Source field. See Session.Login.
 	Username string
 	Password string
 
@@ -296,13 +322,26 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 	if session.defaultdb == "" {
 		session.defaultdb = "test"
 	}
-	if info.Username != "" {
-		db := info.Database
-		if db == "" {
-			db = "admin"
+	session.sourcedb = info.Source
+	if session.sourcedb == "" {
+		session.sourcedb = info.Database
+		if session.sourcedb == "" {
+			session.sourcedb = "admin"
 		}
-		session.dialAuth = &authInfo{db, info.Username, info.Password}
-		session.auth = []authInfo{*session.dialAuth}
+	}
+	if info.Username != "" {
+		source := session.sourcedb
+		if info.Source == "" && info.Mechanism == "GSSAPI" {
+			source = "$external"
+		}
+		session.dialCred = &Credential{
+			Username:  info.Username,
+			Password:  info.Password,
+			Mechanism: info.Mechanism,
+			Service:   info.Service,
+			Source:    source,
+		}
+		session.creds = []Credential{*session.dialCred}
 	}
 	cluster.Release()
 
@@ -330,35 +369,44 @@ type urlInfo struct {
 	options map[string]string
 }
 
-func parseURL(url string) (*urlInfo, error) {
-	if strings.HasPrefix(url, "mongodb://") {
-		url = url[10:]
+func parseURL(s string) (*urlInfo, error) {
+	if strings.HasPrefix(s, "mongodb://") {
+		s = s[10:]
 	}
 	info := &urlInfo{options: make(map[string]string)}
-	if c := strings.Index(url, "?"); c != -1 {
-		for _, pair := range strings.FieldsFunc(url[c+1:], isOptSep) {
+	if c := strings.Index(s, "?"); c != -1 {
+		for _, pair := range strings.FieldsFunc(s[c+1:], isOptSep) {
 			l := strings.SplitN(pair, "=", 2)
 			if len(l) != 2 || l[0] == "" || l[1] == "" {
 				return nil, errors.New("Connection option must be key=value: " + pair)
 			}
 			info.options[l[0]] = l[1]
 		}
-		url = url[:c]
+		s = s[:c]
 	}
-	if c := strings.Index(url, "@"); c != -1 {
-		pair := strings.SplitN(url[:c], ":", 2)
-		if len(pair) != 2 || pair[0] == "" {
+	if c := strings.Index(s, "@"); c != -1 {
+		pair := strings.SplitN(s[:c], ":", 2)
+		if len(pair) > 2 || pair[0] == "" {
 			return nil, errors.New("Credentials must be provided as user:pass@host")
 		}
-		info.user = pair[0]
-		info.pass = pair[1]
-		url = url[c+1:]
+		var err error
+		info.user, err = url.QueryUnescape(pair[0])
+		if err != nil {
+			return nil, fmt.Errorf("cannot unescape username in URL: %q", pair[0])
+		}
+		if len(pair) > 1 {
+			info.pass, err = url.QueryUnescape(pair[1])
+			if err != nil {
+				return nil, fmt.Errorf("cannot unescape password in URL")
+			}
+		}
+		s = s[c+1:]
 	}
-	if c := strings.Index(url, "/"); c != -1 {
-		info.db = url[c+1:]
-		url = url[:c]
+	if c := strings.Index(s, "/"); c != -1 {
+		info.db = s[c+1:]
+		s = s[:c]
 	}
-	info.addrs = strings.Split(url, ",")
+	info.addrs = strings.Split(s, ",")
 	return info, nil
 }
 
@@ -372,7 +420,7 @@ func newSession(consistency mode, cluster *mongoCluster, timeout time.Duration) 
 	return session
 }
 
-func copySession(session *Session, keepAuth bool) (s *Session) {
+func copySession(session *Session, keepCreds bool) (s *Session) {
 	cluster := session.cluster()
 	cluster.Acquire()
 	if session.masterSocket != nil {
@@ -381,16 +429,16 @@ func copySession(session *Session, keepAuth bool) (s *Session) {
 	if session.slaveSocket != nil {
 		session.slaveSocket.Acquire()
 	}
-	var auth []authInfo
-	if keepAuth {
-		auth = make([]authInfo, len(session.auth))
-		copy(auth, session.auth)
-	} else if session.dialAuth != nil {
-		auth = []authInfo{*session.dialAuth}
+	var creds []Credential
+	if keepCreds {
+		creds = make([]Credential, len(session.creds))
+		copy(creds, session.creds)
+	} else if session.dialCred != nil {
+		creds = []Credential{*session.dialCred}
 	}
 	scopy := *session
 	scopy.m = sync.RWMutex{}
-	scopy.auth = auth
+	scopy.creds = creds
 	s = &scopy
 	debugf("New session %p on cluster %p (copy from %p)", s, cluster, session)
 	return s
@@ -488,45 +536,68 @@ func (db *Database) Run(cmd interface{}, result interface{}) error {
 	return db.C("$cmd").Find(cmd).One(result)
 }
 
-// Login authenticates against MongoDB with the provided credentials.  The
+// Credential holds details to authenticate with a MongoDB server.
+type Credential struct {
+	// Username and Password hold the basic details for authentication.
+	// Password is optional with some authentication mechanisms.
+	Username string
+	Password string
+
+	// Source is the database used to establish credentials and privileges
+	// with a MongoDB server. Defaults to the default database provided
+	// during dial, or "admin" if that was unset.
+	Source string
+
+	// Service defines the service name to use when authenticating with the GSSAPI
+	// mechanism. Defaults to "mongodb".
+	Service string
+
+	// Mechanism defines the protocol for credential negotiation.
+	// Defaults to "MONGODB-CR".
+	Mechanism string
+}
+
+// Login authenticates against MongoDB with the provided credential.  The
 // authentication is valid for the whole session and will stay valid until
 // Logout is explicitly called for the same database, or the session is
 // closed.
-//
-// Concurrent Login calls will work correctly.
-func (db *Database) Login(user, pass string) (err error) {
-	session := db.Session
-	dbname := db.Name
+func (db *Database) Login(user, pass string) error {
+	return db.Session.Login(&Credential{Username: user, Password: pass, Source: db.Name})
+}
 
-	socket, err := session.acquireSocket(true)
+// Login authenticates against MongoDB with the provided credential.  The
+// authentication is valid for the whole session and will stay valid until
+// Logout is explicitly called for the same database, or the session is
+// closed.
+func (s *Session) Login(cred *Credential) error {
+	socket, err := s.acquireSocket(true)
 	if err != nil {
 		return err
 	}
 	defer socket.Release()
 
-	auth := authInfo{dbname, user, pass}
-	err = socket.Login(auth)
+	credCopy := *cred
+	if cred.Source == "" {
+		if cred.Mechanism == "GSSAPI" {
+			credCopy.Source = "$external"
+		} else {
+			credCopy.Source = s.sourcedb
+		}
+	}
+	err = socket.Login(credCopy)
 	if err != nil {
 		return err
 	}
 
-	session.m.Lock()
-	defer session.m.Unlock()
-
-	for _, a := range session.auth {
-		if a.db == dbname {
-			a.user = user
-			a.pass = pass
-			return nil
-		}
-	}
-	session.auth = append(session.auth, auth)
+	s.m.Lock()
+	s.creds = append(s.creds, credCopy)
+	s.m.Unlock()
 	return nil
 }
 
 func (s *Session) socketLogin(socket *mongoSocket) error {
-	for _, auth := range s.auth {
-		if err := socket.Login(auth); err != nil {
+	for _, cred := range s.creds {
+		if err := socket.Login(cred); err != nil {
 			return err
 		}
 	}
@@ -539,10 +610,10 @@ func (db *Database) Logout() {
 	dbname := db.Name
 	session.m.Lock()
 	found := false
-	for i, a := range session.auth {
-		if a.db == dbname {
-			copy(session.auth[i:], session.auth[i+1:])
-			session.auth = session.auth[:len(session.auth)-1]
+	for i, cred := range session.creds {
+		if cred.Source == dbname {
+			copy(session.creds[i:], session.creds[i+1:])
+			session.creds = session.creds[:len(session.creds)-1]
 			found = true
 			break
 		}
@@ -561,15 +632,15 @@ func (db *Database) Logout() {
 // LogoutAll removes all established authentication credentials for the session.
 func (s *Session) LogoutAll() {
 	s.m.Lock()
-	for _, a := range s.auth {
+	for _, cred := range s.creds {
 		if s.masterSocket != nil {
-			s.masterSocket.Logout(a.db)
+			s.masterSocket.Logout(cred.Source)
 		}
 		if s.slaveSocket != nil {
-			s.slaveSocket.Logout(a.db)
+			s.slaveSocket.Logout(cred.Source)
 		}
 	}
-	s.auth = s.auth[0:0]
+	s.creds = s.creds[0:0]
 	s.m.Unlock()
 }
 
