@@ -301,9 +301,9 @@ func (socket *mongoSocket) kill(err error, abend bool) {
 	server := socket.server
 	socket.server = nil
 	socket.Unlock()
-	for _, f := range replyFuncs {
+	for _, replyFunc := range replyFuncs {
 		logf("Socket %p to %s: notifying replyFunc of closed socket: %s", socket, socket.addr, err.Error())
-		f(err, nil, -1, nil)
+		replyFunc(err, nil, -1, nil)
 	}
 	if abend {
 		server.AbendSocket(socket)
@@ -535,7 +535,10 @@ func (socket *mongoSocket) readLoop() {
 		stats.receivedDocs(int(reply.replyDocs))
 
 		socket.Lock()
-		replyFunc, replyFuncFound := socket.replyFuncs[uint32(responseTo)]
+		replyFunc, ok := socket.replyFuncs[uint32(responseTo)]
+		if ok {
+			delete(socket.replyFuncs, uint32(responseTo))
+		}
 		socket.Unlock()
 
 		if replyFunc != nil && reply.replyDocs == 0 {
@@ -544,6 +547,7 @@ func (socket *mongoSocket) readLoop() {
 			for i := 0; i != int(reply.replyDocs); i++ {
 				err := fill(conn, s)
 				if err != nil {
+					replyFunc(err, nil, -1, nil)
 					socket.kill(err, true)
 					return
 				}
@@ -558,6 +562,7 @@ func (socket *mongoSocket) readLoop() {
 
 				err = fill(conn, b[4:])
 				if err != nil {
+					replyFunc(err, nil, -1, nil)
 					socket.kill(err, true)
 					return
 				}
@@ -577,11 +582,7 @@ func (socket *mongoSocket) readLoop() {
 			}
 		}
 
-		// Only remove replyFunc after iteration, so that kill() will see it.
 		socket.Lock()
-		if replyFuncFound {
-			delete(socket.replyFuncs, uint32(responseTo))
-		}
 		if len(socket.replyFuncs) == 0 {
 			// Nothing else to read for now. Disable deadline.
 			socket.conn.SetReadDeadline(time.Time{})
