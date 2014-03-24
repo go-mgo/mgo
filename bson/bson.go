@@ -194,7 +194,7 @@ var objectIdCounter uint32 = 0
 // to NewObjectId function.
 var machineId = readMachineId()
 
-// initMachineId generates machine id and puts it into the machineId global
+// readMachineId generates machine id and puts it into the machineId global
 // variable. If this function fails to get the hostname, it will cause
 // a runtime error.
 func readMachineId() []byte {
@@ -215,8 +215,6 @@ func readMachineId() []byte {
 }
 
 // NewObjectId returns a new unique ObjectId.
-// This function causes a runtime error if it fails to get the hostname
-// of the current machine.
 func NewObjectId() ObjectId {
 	var b [12]byte
 	// Timestamp, 4 bytes, big endian

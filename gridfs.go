@@ -375,7 +375,7 @@ func (file *GridFile) Id() interface{} {
 	return file.doc.Id
 }
 
-// SetId changes the current file Id.  It is a runtime
+// SetId changes the current file Id.
 //
 // It is a runtime error to call this function once the file has started
 // being written to, or when the file is not open for writing.
