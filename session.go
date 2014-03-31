@@ -2589,6 +2589,9 @@ func (iter *Iter) Next(result interface{}) bool {
 				}
 			}
 			iter.getMore()
+			if iter.err != nil {
+				break
+			}
 		}
 		iter.gotReply.Wait()
 	}
