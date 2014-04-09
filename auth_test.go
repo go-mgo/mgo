@@ -50,7 +50,7 @@ func (s *S) TestAuthLoginDatabase(c *C) {
 		admindb := session.DB("admin")
 
 		err = admindb.Login("root", "wrong")
-		c.Assert(err, ErrorMatches, "auth fails")
+		c.Assert(err, ErrorMatches, "auth fail(s|ed)")
 
 		err = admindb.Login("root", "rapadura")
 		c.Assert(err, IsNil)
@@ -76,7 +76,7 @@ func (s *S) TestAuthLoginSession(c *C) {
 			Password: "wrong",
 		}
 		err = session.Login(&cred)
-		c.Assert(err, ErrorMatches, "auth fails")
+		c.Assert(err, ErrorMatches, "auth fail(s|ed)")
 
 		cred.Password = "rapadura"
 
@@ -225,7 +225,7 @@ func (s *S) TestAuthUpsertUser(c *C) {
 
 	// Can't login directly into the database using UserSource, though.
 	err = myotherdb.Login("myrwuser", "mypass")
-	c.Assert(err, ErrorMatches, "auth fails")
+	c.Assert(err, ErrorMatches, "auth fail(s|ed)")
 }
 
 func (s *S) TestAuthUpserUserOtherDBRoles(c *C) {
@@ -362,7 +362,7 @@ func (s *S) TestAuthAddUserReplaces(c *C) {
 	admindb.Logout()
 
 	err = mydb.Login("myuser", "myoldpass")
-	c.Assert(err, ErrorMatches, "auth fails")
+	c.Assert(err, ErrorMatches, "auth fail(s|ed)")
 	err = mydb.Login("myuser", "mynewpass")
 	c.Assert(err, IsNil)
 
@@ -387,7 +387,7 @@ func (s *S) TestAuthRemoveUser(c *C) {
 	c.Assert(err, IsNil)
 
 	err = mydb.Login("myuser", "mypass")
-	c.Assert(err, ErrorMatches, "auth fails")
+	c.Assert(err, ErrorMatches, "auth fail(s|ed)")
 }
 
 func (s *S) TestAuthLoginTwiceDoesNothing(c *C) {
@@ -705,7 +705,7 @@ func (s *S) TestAuthURLWrongCredentials(c *C) {
 	if session != nil {
 		session.Close()
 	}
-	c.Assert(err, ErrorMatches, "auth fails")
+	c.Assert(err, ErrorMatches, "auth fail(s|ed)")
 	c.Assert(session, IsNil)
 }
 
