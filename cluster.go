@@ -164,7 +164,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerI
 				// Give a chance for waiters to timeout as well.
 				cluster.serverSynced.Broadcast()
 			}
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(syncShortDelay)
 		}
 
 		// It's not clear what would be a good timeout here. Is it
@@ -303,6 +303,7 @@ func (cluster *mongoCluster) syncServers() {
 // How long to wait for a checkup of the cluster topology if nothing
 // else kicks a synchronization before that.
 const syncServersDelay = 30 * time.Second
+const syncShortDelay = 500 * time.Millisecond
 
 // syncServersLoop loops while the cluster is alive to keep its idea of
 // the server topology up-to-date. It must be called just once from
@@ -338,7 +339,7 @@ func (cluster *mongoCluster) syncServersLoop() {
 		// Hold off before allowing another sync. No point in
 		// burning CPU looking for down servers.
 		if !cluster.failFast {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(syncShortDelay)
 		}
 
 		cluster.Lock()
@@ -356,6 +357,7 @@ func (cluster *mongoCluster) syncServersLoop() {
 
 		if restart {
 			log("SYNC No masters found. Will synchronize again.")
+			time.Sleep(syncShortDelay)
 			continue
 		}
 
