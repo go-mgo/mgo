@@ -123,7 +123,7 @@ func finalizeFile(file *GridFile) {
 //
 // A simple example inserting a new file:
 //
-//     func check(err os.Error) {
+//     func check(err error) {
 //         if err != nil {
 //             panic(err.String())
 //         }
@@ -166,7 +166,7 @@ func (gfs *GridFS) Create(name string) (file *GridFile, err error) {
 //
 // The following example will print the first 8192 bytes from the file:
 //
-//     func check(err os.Error) {
+//     func check(err error) {
 //         if err != nil {
 //             panic(err.String())
 //         }
@@ -618,7 +618,7 @@ func (file *GridFile) insertFile() {
 // offset, interpreted according to whence: 0 means relative to
 // the origin of the file, 1 means relative to the current offset,
 // and 2 means relative to the end. It returns the new offset and
-// an Error, if any.
+// an error, if any.
 func (file *GridFile) Seek(offset int64, whence int) (pos int64, err error) {
 	file.m.Lock()
 	debugf("GridFile %p: seeking for %s (whence=%d)", file, offset, whence)

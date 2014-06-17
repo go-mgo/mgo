@@ -51,10 +51,17 @@ function configShards() {
 function configAuth() {
     var addrs = ["127.0.0.1:40002", "127.0.0.1:40203", "127.0.0.1:40031"]
     for (var i in addrs) {
-        db = new Mongo(addrs[i]).getDB("admin")
-        db.addUser("root", "rapadura")
+        var db = new Mongo(addrs[i]).getDB("admin")
+        var v = db.serverBuildInfo().versionArray
+        if (v < [2, 5]) {
+            db.addUser("root", "rapadura")
+        } else {
+            db.createUser({user: "root", pwd: "rapadura", roles: ["root"]})
+        }
         db.auth("root", "rapadura")
-        if (db.serverBuildInfo().versionArray >= [2, 4]) {
+        if (v >= [2, 6]) {
+            db.createUser({user: "reader", pwd: "rapadura", roles: ["readAnyDatabase"]})
+        } else if (v >= [2, 4]) {
             db.addUser({user: "reader", pwd: "rapadura", roles: ["readAnyDatabase"]})
         } else {
             db.addUser("reader", "rapadura", true)

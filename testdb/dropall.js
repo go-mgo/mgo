@@ -11,6 +11,16 @@ for (var i in ports) {
     for (var j in auth) {
         if (auth[j] == port) {
             admin.auth("root", "rapadura")
+            admin.system.users.find().forEach(function(u) {
+                if (u.user == "root" || u.user == "reader") {
+                        return;
+                }
+                if (typeof admin.dropUser == "function") {
+                    mongo.getDB(u.db).dropUser(u.user);
+                } else {
+                    admin.removeUser(u.user);
+                }
+            })
             break
         }
     }

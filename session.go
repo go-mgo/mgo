@@ -681,11 +681,9 @@ type User struct {
 	// PasswordHash is the MD5 hash of Username+":mongo:"+Password.
 	PasswordHash string `bson:"pwd,omitempty"`
 
-	// UserSource indicates where to look for this user's credentials.
-	// It may be set to a database name, or to "$external" for
-	// consulting an external resource such as Kerberos. UserSource
-	// must not be set if Password or PasswordHash are present.
-	UserSource string `bson:"userSource,omitempty"`
+	// CustomData holds arbitrary data admins decide to associate
+	// with this user, such as the full name or employee id.
+	CustomData interface{} `bson:"customData,omitempty"`
 
 	// Roles indicates the set of roles the user will be provided.
 	// See the Role constants.
@@ -695,6 +693,15 @@ type User struct {
 	// user documents inserted in the admin database. This field
 	// only works in the admin database.
 	OtherDBRoles map[string][]Role `bson:"otherDBRoles,omitempty"`
+
+	// UserSource indicates where to look for this user's credentials.
+	// It may be set to a database name, or to "$external" for
+	// consulting an external resource such as Kerberos. UserSource
+	// must not be set if Password or PasswordHash are present.
+	//
+	// WARNING: This setting was only ever supported in MongoDB 2.4,
+	// and is now obsolete.
+	UserSource string `bson:"userSource,omitempty"`
 }
 
 type Role string
@@ -704,6 +711,7 @@ const (
 	//
 	//     http://docs.mongodb.org/manual/reference/user-privileges/
 	//
+	RoleRoot         Role = "root"
 	RoleRead         Role = "read"
 	RoleReadAny      Role = "readAnyDatabase"
 	RoleReadWrite    Role = "readWrite"
@@ -731,53 +739,140 @@ func (db *Database) UpsertUser(user *User) error {
 	if user.Username == "" {
 		return fmt.Errorf("user has no Username")
 	}
-	if user.Password != "" {
-		psum := md5.New()
-		psum.Write([]byte(user.Username + ":mongo:" + user.Password))
-		user.PasswordHash = hex.EncodeToString(psum.Sum(nil))
-		user.Password = ""
-	}
-	if user.PasswordHash != "" && user.UserSource != "" {
+	if (user.Password != "" || user.PasswordHash != "") && user.UserSource != "" {
 		return fmt.Errorf("user has both Password/PasswordHash and UserSource set")
 	}
 	if len(user.OtherDBRoles) > 0 && db.Name != "admin" {
 		return fmt.Errorf("user with OtherDBRoles is only supported in admin database")
 	}
-	var unset bson.D
-	if user.PasswordHash == "" {
-		unset = append(unset, bson.DocElem{"pwd", 1})
+
+	// Attempt to run this using 2.6+ commands.
+	rundb := db
+	if user.UserSource != "" {
+		// Compatibility logic for the userSource field of MongoDB <= 2.4.X
+		rundb = db.Session.DB(user.UserSource)
 	}
-	if user.UserSource == "" {
+	err := rundb.runUserCmd("updateUser", user)
+	if e, ok := err.(*QueryError); ok && e.Code == 11 {
+		return rundb.runUserCmd("createUser", user)
+	}
+	if !isNoCmd(err) {
+		return err
+	}
+
+	// Command does not exist. Fallback to pre-2.6 behavior.
+	var set, unset bson.D
+	if user.Password != "" {
+		psum := md5.New()
+		psum.Write([]byte(user.Username + ":mongo:" + user.Password))
+		set = append(set, bson.DocElem{"pwd", hex.EncodeToString(psum.Sum(nil))})
+		unset = append(unset, bson.DocElem{"userSource", 1})
+	} else if user.PasswordHash != "" {
+		set = append(set, bson.DocElem{"pwd", user.PasswordHash})
 		unset = append(unset, bson.DocElem{"userSource", 1})
 	}
-	// user.Roles is always sent, as it's the way MongoDB distinguishes
-	// old-style documents from new-style documents.
-	if len(user.OtherDBRoles) == 0 {
-		unset = append(unset, bson.DocElem{"otherDBRoles", 1})
+	if user.UserSource != "" {
+		set = append(set, bson.DocElem{"userSource", user.UserSource})
+		unset = append(unset, bson.DocElem{"pwd", 1})
 	}
-	c := db.C("system.users")
-	_, err := c.Upsert(bson.D{{"user", user.Username}}, bson.D{{"$unset", unset}, {"$set", user}})
+	if user.Roles != nil || user.OtherDBRoles != nil {
+		set = append(set, bson.DocElem{"roles", user.Roles})
+		if len(user.OtherDBRoles) > 0 {
+			set = append(set, bson.DocElem{"otherDBRoles", user.OtherDBRoles})
+		} else {
+			unset = append(unset, bson.DocElem{"otherDBRoles", 1})
+		}
+	}
+	users := db.C("system.users")
+	err = users.Update(bson.D{{"user", user.Username}}, bson.D{{"$unset", unset}, {"$set", set}})
+	if err == ErrNotFound {
+		set = append(set, bson.DocElem{"user", user.Username})
+		if user.Roles == nil && user.OtherDBRoles == nil {
+			// Roles must be sent, as it's the way MongoDB distinguishes
+			// old-style documents from new-style documents in pre-2.6.
+			set = append(set, bson.DocElem{"roles", user.Roles})
+		}
+		err = users.Insert(set)
+	}
 	return err
+}
+
+func isNoCmd(err error) bool {
+	e, ok := err.(*QueryError)
+	return ok && strings.HasPrefix(e.Message, "no such cmd:")
+}
+
+func (db *Database) runUserCmd(cmdName string, user *User) error {
+	//if user.UserSource != "" && (user.UserSource != "$external" || db.Name != "$external") {
+	//	return fmt.Errorf("MongoDB 2.6+ does not support the UserSource setting")
+	//}
+
+	cmd := make(bson.D, 0, 16)
+	cmd = append(cmd, bson.DocElem{cmdName, user.Username})
+	if user.Password != "" {
+		cmd = append(cmd, bson.DocElem{"pwd", user.Password})
+	}
+	var roles []interface{}
+	for _, role := range user.Roles {
+		roles = append(roles, role)
+	}
+	for db, dbroles := range user.OtherDBRoles {
+		for _, role := range dbroles {
+			roles = append(roles, bson.D{{"role", role}, {"db", db}})
+		}
+	}
+	if roles != nil || user.Roles != nil || cmdName == "createUser" {
+		cmd = append(cmd, bson.DocElem{"roles", roles})
+	}
+	return db.Run(cmd, nil)
 }
 
 // AddUser creates or updates the authentication credentials of user within
 // the db database.
 //
-// This method is obsolete and should only be used with MongoDB 2.2 or
-// earlier. For MongoDB 2.4 and on, use UpsertUser instead.
-func (db *Database) AddUser(user, pass string, readOnly bool) error {
+// WARNING: This method is obsolete and should only be used with MongoDB 2.2
+// or earlier. For MongoDB 2.4 and on, use UpsertUser instead.
+func (db *Database) AddUser(username, password string, readOnly bool) error {
+	// Try to emulate the old behavior on 2.6+
+	user := &User{Username: username, Password: password}
+	if db.Name == "admin" {
+		if readOnly {
+			user.Roles = []Role{RoleReadAny}
+		} else {
+			user.Roles = []Role{RoleReadWriteAny}
+		}
+	} else {
+		if readOnly {
+			user.Roles = []Role{RoleRead}
+		} else {
+			user.Roles = []Role{RoleReadWrite}
+		}
+	}
+	err := db.runUserCmd("updateUser", user)
+	if e, ok := err.(*QueryError); ok && e.Code == 11 {
+		return db.runUserCmd("createUser", user)
+	}
+	if !isNoCmd(err) {
+		return err
+	}
+
+	// Command doesn't exist. Fallback to pre-2.6 behavior.
 	psum := md5.New()
-	psum.Write([]byte(user + ":mongo:" + pass))
+	psum.Write([]byte(username + ":mongo:" + password))
 	digest := hex.EncodeToString(psum.Sum(nil))
 	c := db.C("system.users")
-	_, err := c.Upsert(bson.M{"user": user}, bson.M{"$set": bson.M{"user": user, "pwd": digest, "readOnly": readOnly}})
+	_, err = c.Upsert(bson.M{"user": username}, bson.M{"$set": bson.M{"user": username, "pwd": digest, "readOnly": readOnly}})
 	return err
 }
 
 // RemoveUser removes the authentication credentials of user from the database.
 func (db *Database) RemoveUser(user string) error {
-	c := db.C("system.users")
-	return c.Remove(bson.M{"user": user})
+	err := db.Run(bson.D{{"dropUser", user}}, nil)
+	if isNoCmd(err) {
+		users := db.C("system.users")
+		return users.Remove(bson.M{"user": user})
+	}
+	return err
 }
 
 type indexSpec struct {
@@ -2423,8 +2518,8 @@ func (q *Query) Iter() *Iter {
 //             fmt.Println(result.Id)
 //             lastId = result.Id
 //         }
-//         if err := iter.Close(); err != nil {
-//             return err
+//         if iter.Err() != nil {
+//             return iter.Close()
 //         }
 //         if iter.Timeout() {
 //             continue
@@ -2432,6 +2527,7 @@ func (q *Query) Iter() *Iter {
 //         query := collection.Find(bson.M{"_id": bson.M{"$gt": lastId}})
 //         iter = query.Sort("$natural").Tail(5 * time.Second)
 //    }
+//    iter.Close()
 //
 // Relevant documentation:
 //
@@ -3194,6 +3290,21 @@ type BuildInfo struct {
 	Bits          int
 	Debug         bool
 	MaxObjectSize int `bson:"maxBsonObjectSize"`
+}
+
+// VersionAtLeast returns whether the BuildInfo version is greater than or
+// equal to the provided version number. If more than one number is
+// provided, numbers will be considered as major, minor, and so on.
+func (bi *BuildInfo) VersionAtLeast(version ...int) bool {
+	for i := range version {
+		if i == len(bi.VersionArray) {
+			return false
+		}
+		if bi.VersionArray[i] < version[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // BuildInfo retrieves the version and other details about the

@@ -173,7 +173,6 @@ func (s *S) TestAuthUpsertUser(c *C) {
 	c.Assert(err, IsNil)
 
 	mydb := session.DB("mydb")
-	myotherdb := session.DB("myotherdb")
 
 	ruser := &mgo.User{
 		Username: "myruser",
@@ -185,17 +184,10 @@ func (s *S) TestAuthUpsertUser(c *C) {
 		Password: "mypass",
 		Roles:    []mgo.Role{mgo.RoleReadWrite},
 	}
-	rwuserother := &mgo.User{
-		Username:   "myrwuser",
-		UserSource: "mydb",
-		Roles:      []mgo.Role{mgo.RoleRead},
-	}
 
 	err = mydb.UpsertUser(ruser)
 	c.Assert(err, IsNil)
 	err = mydb.UpsertUser(rwuser)
-	c.Assert(err, IsNil)
-	err = myotherdb.UpsertUser(rwuserother)
 	c.Assert(err, IsNil)
 
 	err = mydb.Login("myruser", "mypass")
@@ -213,6 +205,27 @@ func (s *S) TestAuthUpsertUser(c *C) {
 	err = coll.Insert(M{"n": 1})
 	c.Assert(err, IsNil)
 
+	myotherdb := session.DB("myotherdb")
+
+	err = admindb.Login("root", "rapadura")
+	c.Assert(err, IsNil)
+
+	// Test UserSource.
+	rwuserother := &mgo.User{
+		Username:   "myrwuser",
+		UserSource: "mydb",
+		Roles:      []mgo.Role{mgo.RoleRead},
+	}
+
+	err = myotherdb.UpsertUser(rwuserother)
+	if s.versionAtLeast(2, 6) {
+		c.Assert(err, ErrorMatches, `MongoDB 2.6\+ does not support the UserSource setting`)
+		return
+	}
+	c.Assert(err, IsNil)
+
+	admindb.Logout()
+
 	// Test indirection via UserSource: we can't write to it, because
 	// the roles for myrwuser are different there.
 	othercoll := myotherdb.C("myothercoll")
@@ -228,7 +241,7 @@ func (s *S) TestAuthUpsertUser(c *C) {
 	c.Assert(err, ErrorMatches, "auth fail(s|ed)")
 }
 
-func (s *S) TestAuthUpserUserOtherDBRoles(c *C) {
+func (s *S) TestAuthUpsertUserOtherDBRoles(c *C) {
 	if !s.versionAtLeast(2, 4) {
 		c.Skip("UpsertUser only works on 2.4+")
 	}
@@ -261,7 +274,7 @@ func (s *S) TestAuthUpserUserOtherDBRoles(c *C) {
 	c.Assert(err, Equals, mgo.ErrNotFound)
 }
 
-func (s *S) TestAuthUpserUserUnsetFields(c *C) {
+func (s *S) TestAuthUpsertUserUpdates(c *C) {
 	if !s.versionAtLeast(2, 4) {
 		c.Skip("UpsertUser only works on 2.4+")
 	}
@@ -273,44 +286,52 @@ func (s *S) TestAuthUpserUserUnsetFields(c *C) {
 	err = admindb.Login("root", "rapadura")
 	c.Assert(err, IsNil)
 
-	// Insert a user with most fields set.
+	mydb := session.DB("mydb")
+
+	// Insert a user that can read.
 	user := &mgo.User{
-		Username:     "myruser",
-		Password:     "mypass",
-		Roles:        []mgo.Role{mgo.RoleRead},
-		OtherDBRoles: map[string][]mgo.Role{"mydb": []mgo.Role{mgo.RoleRead}},
-	}
-	err = admindb.UpsertUser(user)
-	c.Assert(err, IsNil)
-	defer admindb.RemoveUser("myruser")
-
-	// Now update the user with few things set.
-	user = &mgo.User{
-		Username:   "myruser",
-		UserSource: "mydb",
-	}
-	err = admindb.UpsertUser(user)
-	c.Assert(err, IsNil)
-
-	// Everything that was unset must have been dropped.
-	var userm M
-	err = admindb.C("system.users").Find(M{"user": "myruser"}).One(&userm)
-	c.Assert(err, IsNil)
-	delete(userm, "_id")
-	c.Assert(userm, DeepEquals, M{"user": "myruser", "userSource": "mydb", "roles": []interface{}{}})
-
-	// Now set password again...
-	user = &mgo.User{
 		Username: "myruser",
 		Password: "mypass",
+		Roles:    []mgo.Role{mgo.RoleRead},
 	}
-	err = admindb.UpsertUser(user)
+	err = mydb.UpsertUser(user)
 	c.Assert(err, IsNil)
 
-	// ... and assert that userSource has been dropped.
-	err = admindb.C("system.users").Find(M{"user": "myruser"}).One(&userm)
-	_, found := userm["userSource"]
-	c.Assert(found, Equals, false)
+	// Now update the user password.
+	user = &mgo.User{
+		Username: "myruser",
+		Password: "mynewpass",
+	}
+	err = mydb.UpsertUser(user)
+	c.Assert(err, IsNil)
+
+	// Login with the new user.
+	usession, err := mgo.Dial("myruser:mynewpass@localhost:40002/mydb")
+	c.Assert(err, IsNil)
+	defer usession.Close()
+
+	// Can read, but not write.
+	err = usession.DB("mydb").C("mycoll").Find(nil).One(nil)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+	err = usession.DB("mydb").C("mycoll").Insert(M{"ok": 1})
+	c.Assert(err, ErrorMatches, "unauthorized|not authorized .*")
+
+	// Update the user role.
+	user = &mgo.User{
+		Username: "myruser",
+		Roles:    []mgo.Role{mgo.RoleReadWrite},
+	}
+	err = mydb.UpsertUser(user)
+	c.Assert(err, IsNil)
+
+	// Dial again to ensure the password hasn't changed.
+	usession, err = mgo.Dial("myruser:mynewpass@localhost:40002/mydb")
+	c.Assert(err, IsNil)
+	defer usession.Close()
+
+	// Now it can write.
+	err = usession.DB("mydb").C("mycoll").Insert(M{"ok": 1})
+	c.Assert(err, IsNil)
 }
 
 func (s *S) TestAuthAddUser(c *C) {
