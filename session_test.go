@@ -1215,6 +1215,10 @@ func (s *S) TestFindIterLimit(c *C) {
 }
 
 func (s *S) TestTooManyItemsLimitBug(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -2749,8 +2753,6 @@ func (s *S) TestMapReduce(c *C) {
 	c.Assert(info.InputCount, Equals, 4)
 	c.Assert(info.EmitCount, Equals, 4)
 	c.Assert(info.OutputCount, Equals, 3)
-	c.Assert(info.Time > 1e6, Equals, true)
-	c.Assert(info.Time < 1e9, Equals, true)
 	c.Assert(info.VerboseTime, IsNil)
 
 	expected := map[int]int{3: 1, 4: 2, 6: 1}
@@ -2819,8 +2821,6 @@ func (s *S) TestMapReduceToCollection(c *C) {
 	c.Assert(info.InputCount, Equals, 7)
 	c.Assert(info.EmitCount, Equals, 7)
 	c.Assert(info.OutputCount, Equals, 5)
-	c.Assert(info.Time > 1e6, Equals, true)
-	c.Assert(info.Time < 1e9, Equals, true)
 	c.Assert(info.Collection, Equals, "mr")
 	c.Assert(info.Database, Equals, "mydb")
 
@@ -2861,8 +2861,6 @@ func (s *S) TestMapReduceToOtherDb(c *C) {
 	c.Assert(info.InputCount, Equals, 7)
 	c.Assert(info.EmitCount, Equals, 7)
 	c.Assert(info.OutputCount, Equals, 5)
-	c.Assert(info.Time > 1e6, Equals, true)
-	c.Assert(info.Time < 2e9, Equals, true)
 	c.Assert(info.Collection, Equals, "mr")
 	c.Assert(info.Database, Equals, "otherdb")
 
@@ -2946,8 +2944,6 @@ func (s *S) TestMapReduceVerbose(c *C) {
 	info, err := coll.Find(nil).MapReduce(job, nil)
 	c.Assert(err, IsNil)
 	c.Assert(info.VerboseTime, NotNil)
-	c.Assert(info.VerboseTime.Total > 1e6, Equals, true)
-	c.Assert(info.VerboseTime.Total < 1e9, Equals, true)
 }
 
 func (s *S) TestMapReduceLimit(c *C) {
