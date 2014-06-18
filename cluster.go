@@ -148,6 +148,16 @@ type possibleTimeout interface {
 var syncSocketTimeout = 5 * time.Second
 
 func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerInfo, hosts []string, err error) {
+	var syncTimeout time.Duration
+	if raceDetector {
+		// This variable is only ever touched by tests.
+		globalMutex.Lock()
+		syncTimeout = syncSocketTimeout
+		globalMutex.Unlock()
+	} else {
+		syncTimeout = syncSocketTimeout
+	}
+
 	addr := server.Addr
 	log("SYNC Processing ", addr, "...")
 
@@ -169,7 +179,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerI
 
 		// It's not clear what would be a good timeout here. Is it
 		// better to wait longer or to retry?
-		socket, _, err := server.AcquireSocket(0, syncSocketTimeout)
+		socket, _, err := server.AcquireSocket(0, syncTimeout)
 		if err != nil {
 			tryerr = err
 			logf("SYNC Failed to get socket to %s: %v", addr, err)

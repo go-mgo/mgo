@@ -703,9 +703,16 @@ func (s *S) TestPreserveSocketCountOnSync(c *C) {
 	s.Stop("localhost:40011")
 
 	// Wait for the logic to run for a bit and bring it back.
+	startedAll := make(chan bool)
 	go func() {
 		time.Sleep(5e9)
 		s.StartAll()
+		startedAll <- true
+	}()
+
+	// Do not allow the test to return before the goroutine above is done.
+	defer func() {
+		<-startedAll
 	}()
 
 	// Do an action to kick the resync logic in, and also to
