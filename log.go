@@ -26,7 +26,10 @@
 
 package mgo
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 // ---------------------------------------------------------------------------
 // Logging integration.
@@ -38,51 +41,92 @@ type log_Logger interface {
 	Output(calldepth int, s string) error
 }
 
-var globalLogger log_Logger
-var globalDebug bool
+var (
+	globalLogger   log_Logger
+	globalDebug    bool
+	globalMutex sync.Mutex
+)
+
+// RACE WARNING: There are known data races when logging, which are manually
+// silenced when the race detector is in use. These data races won't be
+// observed in typical use, because logging is supposed to be set up once when
+// the application starts. Having raceDetector as a constant, the compiler
+// should elide the locks altogether in actual use.
 
 // Specify the *log.Logger object where log messages should be sent to.
 func SetLogger(logger log_Logger) {
+	if raceDetector {
+		globalMutex.Lock()
+		defer globalMutex.Unlock()
+	}
 	globalLogger = logger
 }
 
 // Enable the delivery of debug messages to the logger.  Only meaningful
 // if a logger is also set.
 func SetDebug(debug bool) {
+	if raceDetector {
+		globalMutex.Lock()
+		defer globalMutex.Unlock()
+	}
 	globalDebug = debug
 }
 
 func log(v ...interface{}) {
+	if raceDetector {
+		globalMutex.Lock()
+		defer globalMutex.Unlock()
+	}
 	if globalLogger != nil {
 		globalLogger.Output(2, fmt.Sprint(v...))
 	}
 }
 
 func logln(v ...interface{}) {
+	if raceDetector {
+		globalMutex.Lock()
+		defer globalMutex.Unlock()
+	}
 	if globalLogger != nil {
 		globalLogger.Output(2, fmt.Sprintln(v...))
 	}
 }
 
 func logf(format string, v ...interface{}) {
+	if raceDetector {
+		globalMutex.Lock()
+		defer globalMutex.Unlock()
+	}
 	if globalLogger != nil {
 		globalLogger.Output(2, fmt.Sprintf(format, v...))
 	}
 }
 
 func debug(v ...interface{}) {
+	if raceDetector {
+		globalMutex.Lock()
+		defer globalMutex.Unlock()
+	}
 	if globalDebug && globalLogger != nil {
 		globalLogger.Output(2, fmt.Sprint(v...))
 	}
 }
 
 func debugln(v ...interface{}) {
+	if raceDetector {
+		globalMutex.Lock()
+		defer globalMutex.Unlock()
+	}
 	if globalDebug && globalLogger != nil {
 		globalLogger.Output(2, fmt.Sprintln(v...))
 	}
 }
 
 func debugf(format string, v ...interface{}) {
+	if raceDetector {
+		globalMutex.Lock()
+		defer globalMutex.Unlock()
+	}
 	if globalDebug && globalLogger != nil {
 		globalLogger.Output(2, fmt.Sprintf(format, v...))
 	}

@@ -14,6 +14,9 @@ func HackSocketsPerServer(newLimit int) (restore func()) {
 }
 
 func HackPingDelay(newDelay time.Duration) (restore func()) {
+	globalMutex.Lock()
+	defer globalMutex.Unlock()
+
 	oldDelay := pingDelay
 	restore = func() {
 		pingDelay = oldDelay
