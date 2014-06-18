@@ -300,6 +300,7 @@ func (socket *mongoSocket) kill(err error, abend bool) {
 	socket.replyFuncs = make(map[uint32]replyFunc)
 	server := socket.server
 	socket.server = nil
+	socket.gotNonce.Broadcast()
 	socket.Unlock()
 	for _, replyFunc := range replyFuncs {
 		logf("Socket %p to %s: notifying replyFunc of closed socket: %s", socket, socket.addr, err.Error())
