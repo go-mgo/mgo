@@ -1821,7 +1821,7 @@ func IsDup(err error) bool {
 // happens while inserting the provided documents, the returned error will
 // be of type *LastError.
 func (c *Collection) Insert(docs ...interface{}) error {
-	_, err := c.writeQuery(&insertOp{c.FullName, docs})
+	_, err := c.writeQuery(&insertOp{c.FullName, docs, 0})
 	return err
 }
 

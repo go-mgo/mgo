@@ -122,6 +122,7 @@ type replyOp struct {
 type insertOp struct {
 	collection string        // "database.collection"
 	documents  []interface{} // One or more documents to insert
+	flags      uint32
 }
 
 type updateOp struct {
@@ -371,7 +372,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 
 		case *insertOp:
 			buf = addHeader(buf, 2002)
-			buf = addInt32(buf, 0) // Reserved
+			buf = addInt32(buf, int32(op.flags))
 			buf = addCString(buf, op.collection)
 			for _, doc := range op.documents {
 				debugf("Socket %p to %s: serializing document for insertion: %#v", socket, socket.addr, doc)
