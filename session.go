@@ -349,7 +349,7 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 	}
 	if info.Username != "" {
 		source := session.sourcedb
-		if info.Source == "" && info.Mechanism == "GSSAPI" {
+		if info.Source == "" && (info.Mechanism == "GSSAPI" || info.Mechanism == "PLAIN") {
 			source = "$external"
 		}
 		session.dialCred = &Credential{

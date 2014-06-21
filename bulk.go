@@ -31,7 +31,7 @@ type BulkResult struct {
 	private bool
 }
 
-func (e *BulkError) Error() string {
+func (e *bulkError) Error() string {
 	return e.err.Error()
 }
 
@@ -65,7 +65,7 @@ func (b *Bulk) Run() (*BulkResult, error) {
 	}
 	_, err := b.c.writeQuery(op)
 	if err != nil {
-		return nil, &BulkError{err}
+		return nil, &bulkError{err}
 	}
 	return &BulkResult{}, nil
 }

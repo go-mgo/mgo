@@ -838,6 +838,57 @@ func (s *S) TestAuthDirectWithLogin(c *C) {
 }
 
 var (
+	plainFlag = flag.String("plain", "", "Host to test PLAIN authentication against (depends on custom environment)")
+	plainUser = "einstein"
+	plainPass = "password"
+)
+
+func (s *S) TestAuthPlainCred(c *C) {
+	if *plainFlag == "" {
+		c.Skip("no -plain")
+	}
+	cred := &mgo.Credential{
+		Username: plainUser,
+		Password: plainPass,
+		Source:   "$external",
+		Mechanism: "PLAIN",
+	}
+	c.Logf("Connecting to %s...", *plainFlag)
+	session, err := mgo.Dial(*plainFlag)
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	records := session.DB("records").C("records")
+
+	c.Logf("Connected! Testing the need for authentication...")
+	err = records.Find(nil).One(nil)
+	c.Assert(err, ErrorMatches, "unauthorized|not authorized .*")
+
+	c.Logf("Authenticating...")
+	err = session.Login(cred)
+	c.Assert(err, IsNil)
+	c.Logf("Authenticated!")
+
+	c.Logf("Connected! Testing the need for authentication...")
+	err = records.Find(nil).One(nil)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+}
+
+func (s *S) TestAuthPlainURL(c *C) {
+	if *plainFlag == "" {
+		c.Skip("no -plain")
+	}
+	c.Logf("Connecting to %s...", *plainFlag)
+	session, err := mgo.Dial(fmt.Sprintf("%s:%s@%s?authMechanism=PLAIN", url.QueryEscape(plainUser), url.QueryEscape(plainPass), *plainFlag))
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	c.Logf("Connected! Testing the need for authentication...")
+	err = session.DB("records").C("records").Find(nil).One(nil)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+}
+
+var (
 	kerberosFlag = flag.Bool("kerberos", false, "Test Kerberos authentication (depends on custom environment)")
 	kerberosHost = "mmscustmongo.10gen.me"
 	kerberosUser = "mmsagent/mmscustagent.10gen.me@10GEN.ME"
@@ -853,10 +904,10 @@ func (s *S) TestAuthKerberosCred(c *C) {
 	}
 	c.Logf("Connecting to %s...", kerberosHost)
 	session, err := mgo.Dial(kerberosHost)
+	c.Assert(err, IsNil)
 	defer session.Close()
 
 	c.Logf("Connected! Testing the need for authentication...")
-	c.Assert(err, IsNil)
 	names, err := session.DatabaseNames()
 	c.Assert(err, ErrorMatches, "unauthorized")
 

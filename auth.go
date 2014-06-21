@@ -178,6 +178,8 @@ func (socket *mongoSocket) Login(cred Credential) error {
 	switch cred.Mechanism {
 	case "", "MONGO-CR":
 		err = socket.loginClassic(cred)
+	case "PLAIN":
+		err = socket.loginPlain(cred)
 	case "MONGO-X509":
 		err = fmt.Errorf("unsupported authentication mechanism: %s", cred.Mechanism)
 	default:
@@ -214,6 +216,21 @@ func (socket *mongoSocket) loginClassic(cred Credential) error {
 	key := hex.EncodeToString(ksum.Sum(nil))
 
 	cmd := authCmd{Authenticate: 1, User: cred.Username, Nonce: nonce, Key: key}
+	res := authResult{}
+	return socket.loginRun(cred.Source, &cmd, &res, func() error {
+		if !res.Ok {
+			return errors.New(res.ErrMsg)
+		}
+		socket.Lock()
+		socket.dropAuth(cred.Source)
+		socket.creds = append(socket.creds, cred)
+		socket.Unlock()
+		return nil
+	})
+}
+
+func (socket *mongoSocket) loginPlain(cred Credential) error {
+	cmd := saslCmd{Start: 1, Mechanism: "PLAIN", Payload: []byte("\x00" + cred.Username + "\x00" + cred.Password)}
 	res := authResult{}
 	return socket.loginRun(cred.Source, &cmd, &res, func() error {
 		if !res.Ok {
