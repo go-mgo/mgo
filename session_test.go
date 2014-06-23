@@ -125,11 +125,14 @@ func (s *S) TestInsertFindOne(c *C) {
 	defer session.Close()
 
 	coll := session.DB("mydb").C("mycoll")
-	coll.Insert(M{"a": 1, "b": 2})
+	err = coll.Insert(M{"a": 1, "b": 2})
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{"a": 1, "b": 3})
+	c.Assert(err, IsNil)
 
 	result := struct{ A, B int }{}
 
-	err = coll.Find(M{"a": 1}).One(&result)
+	err = coll.Find(M{"a": 1}).Sort("b").One(&result)
 	c.Assert(err, IsNil)
 	c.Assert(result.A, Equals, 1)
 	c.Assert(result.B, Equals, 2)
@@ -151,7 +154,8 @@ func (s *S) TestInsertFindOneMap(c *C) {
 	defer session.Close()
 
 	coll := session.DB("mydb").C("mycoll")
-	coll.Insert(M{"a": 1, "b": 2})
+	err = coll.Insert(M{"a": 1, "b": 2})
+	c.Assert(err, IsNil)
 	result := make(M)
 	err = coll.Find(M{"a": 1}).One(result)
 	c.Assert(err, IsNil)
@@ -165,8 +169,10 @@ func (s *S) TestInsertFindAll(c *C) {
 	defer session.Close()
 
 	coll := session.DB("mydb").C("mycoll")
-	coll.Insert(M{"a": 1, "b": 2})
-	coll.Insert(M{"a": 3, "b": 4})
+	err = coll.Insert(M{"a": 1, "b": 2})
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{"a": 3, "b": 4})
+	c.Assert(err, IsNil)
 
 	type R struct{ A, B int }
 	var result []R
@@ -214,9 +220,12 @@ func (s *S) TestFindRef(c *C) {
 	db2 := session.DB("db2")
 	db2col1 := db2.C("col1")
 
-	db1col1.Insert(M{"_id": 1, "n": 1})
-	db1col1.Insert(M{"_id": 2, "n": 2})
-	db2col1.Insert(M{"_id": 2, "n": 3})
+	err = db1col1.Insert(M{"_id": 1, "n": 1})
+	c.Assert(err, IsNil)
+	err = db1col1.Insert(M{"_id": 2, "n": 2})
+	c.Assert(err, IsNil)
+	err = db2col1.Insert(M{"_id": 2, "n": 3})
+	c.Assert(err, IsNil)
 
 	result := struct{ N int }{}
 
@@ -258,9 +267,12 @@ func (s *S) TestDatabaseAndCollectionNames(c *C) {
 	db2 := session.DB("db2")
 	db2col1 := db2.C("col3")
 
-	db1col1.Insert(M{"_id": 1})
-	db1col2.Insert(M{"_id": 1})
-	db2col1.Insert(M{"_id": 1})
+	err = db1col1.Insert(M{"_id": 1})
+	c.Assert(err, IsNil)
+	err = db1col2.Insert(M{"_id": 1})
+	c.Assert(err, IsNil)
+	err = db2col1.Insert(M{"_id": 1})
+	c.Assert(err, IsNil)
 
 	names, err := session.DatabaseNames()
 	c.Assert(err, IsNil)

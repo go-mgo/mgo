@@ -313,24 +313,33 @@ func (socket *mongoSocket) kill(err error, abend bool) {
 }
 
 func (socket *mongoSocket) SimpleQuery(op *queryOp) (data []byte, err error) {
-	var mutex sync.Mutex
+	var wait, change sync.Mutex
+	var replyDone bool
 	var replyData []byte
 	var replyErr error
-	mutex.Lock()
+	wait.Lock()
 	op.replyFunc = func(err error, reply *replyOp, docNum int, docData []byte) {
-		replyData = docData
-		replyErr = err
-		mutex.Unlock()
+		change.Lock()
+		if !replyDone {
+			replyDone = true
+			replyErr = err
+			if err == nil {
+				replyData = docData
+			}
+		}
+		change.Unlock()
+		wait.Unlock()
 	}
 	err = socket.Query(op)
 	if err != nil {
 		return nil, err
 	}
-	mutex.Lock() // Wait.
-	if replyErr != nil {
-		return nil, replyErr
-	}
-	return replyData, nil
+	wait.Lock()
+	change.Lock()
+	data = replyData
+	err = replyErr
+	change.Unlock()
+	return data, err
 }
 
 func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
