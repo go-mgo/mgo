@@ -853,6 +853,9 @@ type typeWithGetter struct {
 }
 
 func (t *typeWithGetter) GetBSON() (interface{}, error) {
+	if t == nil {
+		return "<value is nil>", nil
+	}
 	return t.result, t.err
 }
 
@@ -912,7 +915,18 @@ func (s *S) TestMarshalShortWithGetter(c *C) {
 	c.Assert(err, IsNil)
 	m := bson.M{}
 	err = bson.Unmarshal(data, m)
+	c.Assert(err, IsNil)
 	c.Assert(m["v"], Equals, 42)
+}
+
+func (s *S) TestMarshalWithGetterNil(c *C) {
+	obj := docWithGetterField{}
+	data, err := bson.Marshal(obj)
+	c.Assert(err, IsNil)
+	m := bson.M{}
+	err = bson.Unmarshal(data, m)
+	c.Assert(err, IsNil)
+	c.Assert(m, DeepEquals, bson.M{"_": "<value is nil>"})
 }
 
 // --------------------------------------------------------------------------
