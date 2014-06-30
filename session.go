@@ -1894,11 +1894,6 @@ func (c *Collection) UpdateAll(selector interface{}, update interface{}) (info *
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
 func (c *Collection) Upsert(selector interface{}, update interface{}) (info *ChangeInfo, err error) {
-	data, err := bson.Marshal(update)
-	if err != nil {
-		return nil, err
-	}
-	update = bson.Raw{0x03, data}
 	lerr, err := c.writeQuery(&updateOp{c.FullName, selector, update, 1})
 	if err == nil && lerr != nil {
 		info = &ChangeInfo{}
