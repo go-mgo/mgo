@@ -318,7 +318,7 @@ func (gfs *GridFS) RemoveId(id interface{}) error {
 	if err != nil {
 		return err
 	}
-	_, err = gfs.Chunks.RemoveAll(bson.M{"files_id": id})
+	_, err = gfs.Chunks.RemoveAll(bson.D{{"files_id", id}})
 	return err
 }
 
@@ -490,11 +490,11 @@ func (file *GridFile) Close() (err error) {
 	file.m.Lock()
 	defer file.m.Unlock()
 	if file.mode == gfsWriting {
-		if len(file.wbuf) > 0 {
+		if len(file.wbuf) > 0 && file.err == nil {
 			file.insertChunk(file.wbuf)
 			file.wbuf = file.wbuf[0:0]
 		}
-		file.insertFile()
+		file.completeWrite()
 	} else if file.mode == gfsReading && file.rcache != nil {
 		file.rcache.wait.Lock()
 		file.rcache = nil
@@ -502,6 +502,35 @@ func (file *GridFile) Close() (err error) {
 	file.mode = gfsClosed
 	debugf("GridFile %p: closed", file)
 	return file.err
+}
+
+func (file *GridFile) completeWrite() {
+	for file.wpending > 0 {
+		debugf("GridFile %p: waiting for %d pending chunks to complete file write", file, file.wpending)
+		file.c.Wait()
+	}
+	if file.err != nil {
+		file.gfs.Chunks.RemoveAll(bson.D{{"files_id", file.doc.Id}})
+		return
+	}
+	hexsum := hex.EncodeToString(file.wsum.Sum(nil))
+	file.doc.UploadDate = bson.Now()
+	file.doc.MD5 = hexsum
+	file.err = file.gfs.Files.Insert(file.doc)
+	file.gfs.Chunks.EnsureIndexKey("files_id", "n")
+}
+
+// Abort cancels an in-progress write, preventing the file from being
+// automically created and ensuring previously written chunks are
+// removed when the file is closed.
+//
+// It is a runtime error to call Abort when the file was not opened
+// for writing.
+func (file *GridFile) Abort() {
+	if file.mode != gfsWriting {
+		panic("file.Abort must be called on file opened for writing")
+	}
+	file.err = errors.New("write aborted")
 }
 
 // Write writes the provided data to the file and returns the
@@ -598,20 +627,6 @@ func (file *GridFile) insertChunk(data []byte) {
 		file.c.Broadcast()
 		file.m.Unlock()
 	}()
-}
-
-func (file *GridFile) insertFile() {
-	hexsum := hex.EncodeToString(file.wsum.Sum(nil))
-	for file.wpending > 0 {
-		debugf("GridFile %p: waiting for %d pending chunks to insert file", file, file.wpending)
-		file.c.Wait()
-	}
-	if file.err == nil {
-		file.doc.UploadDate = bson.Now()
-		file.doc.MD5 = hexsum
-		file.err = file.gfs.Files.Insert(file.doc)
-		file.gfs.Chunks.EnsureIndexKey("files_id", "n")
-	}
 }
 
 // Seek sets the offset for the next Read or Write on file to

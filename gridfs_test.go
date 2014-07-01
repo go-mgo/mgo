@@ -263,6 +263,43 @@ func (s *S) TestGridFSCreateWithChunking(c *C) {
 	}
 }
 
+func (s *S) TestGridFSAbort(c *C) {
+	session, err := mgo.Dial("localhost:40011")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	db := session.DB("mydb")
+
+	gfs := db.GridFS("fs")
+	file, err := gfs.Create("")
+	c.Assert(err, IsNil)
+
+	file.SetChunkSize(5)
+
+	n, err := file.Write([]byte("some data"))
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 9)
+
+	var count int
+	for i := 0; i < 10; i++ {
+		count, err = db.C("fs.chunks").Count()
+		if count > 0 || err != nil {
+			break
+		}
+	}
+	c.Assert(err, IsNil)
+	c.Assert(count, Equals, 1)
+
+	file.Abort()
+
+	err = file.Close()
+	c.Assert(err, ErrorMatches, "write aborted")
+
+	count, err = db.C("fs.chunks").Count()
+	c.Assert(err, IsNil)
+	c.Assert(count, Equals, 0)
+}
+
 func (s *S) TestGridFSOpenNotFound(c *C) {
 	session, err := mgo.Dial("localhost:40011")
 	c.Assert(err, IsNil)
