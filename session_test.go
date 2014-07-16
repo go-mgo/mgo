@@ -2774,11 +2774,6 @@ func (s *S) TestMapReduce(c *C) {
 		c.Assert(item.Value, Equals, expected[item.Id])
 		expected[item.Id] = -1
 	}
-
-	// Weak attempt of testing that Sort gets delivered.
-	_, err = coll.Find(nil).Sort("-n").MapReduce(job, &result)
-	_, isQueryError := err.(*mgo.QueryError)
-	c.Assert(isQueryError, Equals, true)
 }
 
 func (s *S) TestMapReduceFinalize(c *C) {
