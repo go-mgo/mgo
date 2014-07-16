@@ -407,6 +407,8 @@ func (s *S) TestAuthRemoveUser(c *C) {
 	c.Assert(err, IsNil)
 	err = mydb.RemoveUser("myuser")
 	c.Assert(err, IsNil)
+	err = mydb.RemoveUser("myuser")
+	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = mydb.Login("myuser", "mypass")
 	c.Assert(err, ErrorMatches, "auth fail(s|ed)")
