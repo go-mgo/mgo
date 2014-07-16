@@ -754,7 +754,7 @@ func (db *Database) UpsertUser(user *User) error {
 		rundb = db.Session.DB(user.UserSource)
 	}
 	err := rundb.runUserCmd("updateUser", user)
-	if e, ok := err.(*QueryError); ok && e.Code == 11 {
+	if isNotFound(err) {
 		return rundb.runUserCmd("createUser", user)
 	}
 	if !isNoCmd(err) {
@@ -801,6 +801,11 @@ func (db *Database) UpsertUser(user *User) error {
 func isNoCmd(err error) bool {
 	e, ok := err.(*QueryError)
 	return ok && strings.HasPrefix(e.Message, "no such cmd:")
+}
+
+func isNotFound(err error) bool {
+	e, ok := err.(*QueryError)
+	return ok && e.Code == 11
 }
 
 func (db *Database) runUserCmd(cmdName string, user *User) error {
@@ -850,7 +855,7 @@ func (db *Database) AddUser(username, password string, readOnly bool) error {
 		}
 	}
 	err := db.runUserCmd("updateUser", user)
-	if e, ok := err.(*QueryError); ok && e.Code == 11 {
+	if isNotFound(err) {
 		return db.runUserCmd("createUser", user)
 	}
 	if !isNoCmd(err) {
@@ -872,6 +877,9 @@ func (db *Database) RemoveUser(user string) error {
 	if isNoCmd(err) {
 		users := db.C("system.users")
 		return users.Remove(bson.M{"user": user})
+	}
+	if isNotFound(err) {
+		return ErrNotFound
 	}
 	return err
 }
