@@ -2,10 +2,10 @@ package txn_test
 
 import (
 	"flag"
-	"labix.org/v2/mgo"
-	"labix.org/v2/mgo/bson"
-	"labix.org/v2/mgo/txn"
-	. "launchpad.net/gocheck"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
+	"gopkg.in/mgo.v2/txn"
+	. "gopkg.in/check.v1"
 	"math/rand"
 	"time"
 )

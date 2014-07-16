@@ -27,8 +27,8 @@
 package mgo_test
 
 import (
-	"labix.org/v2/mgo"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
+	"gopkg.in/mgo.v2"
 )
 
 func (s *S) TestBulkInsert(c *C) {
@@ -44,7 +44,7 @@ func (s *S) TestBulkInsert(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(r, FitsTypeOf, &mgo.BulkResult{})
 
-	type doc struct{ N int } 
+	type doc struct{ N int }
 	var res []doc
 	err = coll.Find(nil).Sort("n").All(&res)
 	c.Assert(err, IsNil)
@@ -62,7 +62,9 @@ func (s *S) TestBulkInsertError(c *C) {
 	_, err = bulk.Run()
 	c.Assert(err, ErrorMatches, ".*duplicate key.*")
 
-	type doc struct{ N int `_id` } 
+	type doc struct {
+		N int `_id`
+	}
 	var res []doc
 	err = coll.Find(nil).Sort("_id").All(&res)
 	c.Assert(err, IsNil)
@@ -81,7 +83,9 @@ func (s *S) TestBulkInsertErrorUnordered(c *C) {
 	_, err = bulk.Run()
 	c.Assert(err, ErrorMatches, ".*duplicate key.*")
 
-	type doc struct{ N int `_id` } 
+	type doc struct {
+		N int `_id`
+	}
 	var res []doc
 	err = coll.Find(nil).Sort("_id").All(&res)
 	c.Assert(err, IsNil)

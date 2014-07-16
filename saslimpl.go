@@ -3,7 +3,7 @@
 package mgo
 
 import (
-	"labix.org/v2/mgo/sasl"
+	"gopkg.in/mgo.v2/sasl"
 )
 
 func saslNew(cred Credential, host string) (saslStepper, error) {

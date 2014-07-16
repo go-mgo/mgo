@@ -2,8 +2,8 @@ package txn
 
 import (
 	"fmt"
-	"labix.org/v2/mgo/bson"
-	. "launchpad.net/gocheck"
+	"gopkg.in/mgo.v2/bson"
+	. "gopkg.in/check.v1"
 )
 
 type TarjanSuite struct{}
