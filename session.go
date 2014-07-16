@@ -804,10 +804,6 @@ func isNoCmd(err error) bool {
 }
 
 func (db *Database) runUserCmd(cmdName string, user *User) error {
-	//if user.UserSource != "" && (user.UserSource != "$external" || db.Name != "$external") {
-	//	return fmt.Errorf("MongoDB 2.6+ does not support the UserSource setting")
-	//}
-
 	cmd := make(bson.D, 0, 16)
 	cmd = append(cmd, bson.DocElem{cmdName, user.Username})
 	if user.Password != "" {
@@ -825,7 +821,11 @@ func (db *Database) runUserCmd(cmdName string, user *User) error {
 	if roles != nil || user.Roles != nil || cmdName == "createUser" {
 		cmd = append(cmd, bson.DocElem{"roles", roles})
 	}
-	return db.Run(cmd, nil)
+	err := db.Run(cmd, nil)
+	if !isNoCmd(err) && user.UserSource != "" && (user.UserSource != "$external" || db.Name != "$external") {
+		return fmt.Errorf("MongoDB 2.6+ does not support the UserSource setting")
+	}
+	return err
 }
 
 // AddUser creates or updates the authentication credentials of user within
