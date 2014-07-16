@@ -28,11 +28,12 @@ package mgo
 
 import (
 	"errors"
-	"labix.org/v2/mgo/bson"
 	"net"
 	"sort"
 	"sync"
 	"time"
+
+	"gopkg.in/mgo.v2/bson"
 )
 
 // ---------------------------------------------------------------------------

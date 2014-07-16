@@ -31,8 +31,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"labix.org/v2/mgo/bson"
 	"sync"
+
+	"gopkg.in/mgo.v2/bson"
 )
 
 type authCmd struct {

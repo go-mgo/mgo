@@ -29,13 +29,14 @@ package mgo_test
 import (
 	"fmt"
 	"io"
-	"labix.org/v2/mgo"
-	"labix.org/v2/mgo/bson"
-	. "launchpad.net/gocheck"
 	"net"
 	"strings"
 	"sync"
 	"time"
+
+	. "gopkg.in/check.v1"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 func (s *S) TestNewSession(c *C) {

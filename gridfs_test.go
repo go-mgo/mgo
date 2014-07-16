@@ -28,11 +28,12 @@ package mgo_test
 
 import (
 	"io"
-	"labix.org/v2/mgo"
-	"labix.org/v2/mgo/bson"
-	. "launchpad.net/gocheck"
 	"os"
 	"time"
+
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
+	. "gopkg.in/check.v1"
 )
 
 func (s *S) TestGridFSCreate(c *C) {

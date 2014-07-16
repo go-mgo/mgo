@@ -32,10 +32,11 @@ import (
 	"errors"
 	"hash"
 	"io"
-	"labix.org/v2/mgo/bson"
 	"os"
 	"sync"
 	"time"
+
+	"gopkg.in/mgo.v2/bson"
 )
 
 type GridFS struct {

@@ -3,9 +3,10 @@ package txn
 import (
 	"bytes"
 	"fmt"
-	"labix.org/v2/mgo/bson"
 	"sort"
 	"sync/atomic"
+
+	"gopkg.in/mgo.v2/bson"
 )
 
 var (

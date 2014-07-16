@@ -31,7 +31,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"labix.org/v2/mgo/bson"
 	"math"
 	"net"
 	"net/url"
@@ -41,6 +40,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gopkg.in/mgo.v2/bson"
 )
 
 type mode int
@@ -2278,7 +2279,6 @@ func checkQueryError(fullname string, d []byte) error {
 Error:
 	result := &queryError{}
 	bson.Unmarshal(d, result)
-	logf("queryError: %#v\n", result)
 	if result.LastError != nil {
 		return result.LastError
 	}
