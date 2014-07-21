@@ -1151,13 +1151,48 @@ func (s *S) TestRemovalOfClusterMember(c *C) {
 	c.Log("========== Test succeeded. ==========")
 }
 
-func (s *S) TestSocketLimit(c *C) {
+func (s *S) TestPoolLimitSimple(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	stats := mgo.GetStats()
+	for stats.MasterConns+stats.SlaveConns != 1 {
+		stats = mgo.GetStats()
+		c.Log("Waiting for connection to be established...")
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	c.Assert(stats.SocketsAlive, Equals, 1)
+	c.Assert(stats.SocketsInUse, Equals, 0)
+
+	// Put one socket in use.
+	c.Assert(session.Ping(), IsNil)
+
+	done := make(chan time.Duration)
+
+	// Now block trying to get another one due to the pool limit.
+	go func() {
+		copy := session.Copy()
+		defer copy.Close()
+		copy.SetPoolLimit(1)
+		started := time.Now()
+		c.Check(copy.Ping(), IsNil)
+		done <- time.Now().Sub(started)
+	}()
+
+	time.Sleep(500 * time.Millisecond)
+
+	// Put the one socket back in the pool, freeing it for the copy.
+	session.Refresh()
+	delay := <-done
+	c.Assert(delay > 500 * time.Millisecond, Equals, true, Commentf("Delay: %s", delay))
+}
+
+func (s *S) TestPoolLimitMany(c *C) {
 	if *fast {
 		c.Skip("-fast")
 	}
-	const socketLimit = 64
-	restore := mgo.HackSocketsPerServer(socketLimit)
-	defer restore()
 
 	session, err := mgo.Dial("localhost:40011")
 	c.Assert(err, IsNil)
@@ -1167,17 +1202,19 @@ func (s *S) TestSocketLimit(c *C) {
 	for stats.MasterConns+stats.SlaveConns != 3 {
 		stats = mgo.GetStats()
 		c.Log("Waiting for all connections to be established...")
-		time.Sleep(5e8)
+		time.Sleep(500 * time.Millisecond)
 	}
 	c.Assert(stats.SocketsAlive, Equals, 3)
 
+	const poolLimit = 64
+	session.SetPoolLimit(poolLimit)
+
 	// Consume the whole limit for the master.
 	var master []*mgo.Session
-	for i := 0; i < socketLimit; i++ {
+	for i := 0; i < poolLimit; i++ {
 		s := session.Copy()
 		defer s.Close()
-		err := s.Ping()
-		c.Assert(err, IsNil)
+		c.Assert(s.Ping(), IsNil)
 		master = append(master, s)
 	}
 
@@ -1187,7 +1224,7 @@ func (s *S) TestSocketLimit(c *C) {
 		master[0].Refresh()
 	}()
 
-	// Now a single ping must block, since it would need another
+	// Then, a single ping must block, since it would need another
 	// connection to the master, over the limit. Once the goroutine
 	// above releases its socket, it should move on.
 	session.Ping()

@@ -515,12 +515,10 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 	cluster.Unlock()
 }
 
-var socketsPerServer = 4096
-
 // AcquireSocket returns a socket to a server in the cluster.  If slaveOk is
 // true, it will attempt to return a socket to a slave server.  If it is
 // false, the socket will necessarily be to a master server.
-func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Duration, socketTimeout time.Duration, serverTags []bson.D) (s *mongoSocket, err error) {
+func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Duration, socketTimeout time.Duration, serverTags []bson.D, poolLimit int) (s *mongoSocket, err error) {
 	var started time.Time
 	var syncCount uint
 	warnedLimit := false
@@ -562,12 +560,13 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Durati
 			continue
 		}
 
-		s, abended, err := server.AcquireSocket(socketsPerServer, socketTimeout)
-		if err == errSocketLimit {
+		s, abended, err := server.AcquireSocket(poolLimit, socketTimeout)
+		if err == errPoolLimit {
 			if !warnedLimit {
+				warnedLimit = true
 				log("WARNING: Per-server connection limit reached.")
 			}
-			time.Sleep(1e8)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 		if err != nil {
@@ -582,7 +581,7 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Durati
 				logf("Cannot confirm server %s as master (%v)", server.Addr, err)
 				s.Release()
 				cluster.syncServers()
-				time.Sleep(1e8)
+				time.Sleep(100 * time.Millisecond)
 				continue
 			}
 		}

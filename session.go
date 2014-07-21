@@ -70,6 +70,7 @@ type Session struct {
 	sourcedb     string
 	dialCred     *Credential
 	creds        []Credential
+	poolLimit    int
 }
 
 type Database struct {
@@ -431,7 +432,12 @@ func parseURL(s string) (*urlInfo, error) {
 
 func newSession(consistency mode, cluster *mongoCluster, timeout time.Duration) (session *Session) {
 	cluster.Acquire()
-	session = &Session{cluster_: cluster, syncTimeout: timeout, sockTimeout: timeout}
+	session = &Session{
+		cluster_:    cluster,
+		syncTimeout: timeout,
+		sockTimeout: timeout,
+		poolLimit:   4096,
+	}
 	debugf("New session %p on cluster %p", session, cluster)
 	session.SetMode(consistency, true)
 	session.SetSafe(&Safe{})
@@ -1365,6 +1371,21 @@ func (s *Session) SetCursorTimeout(d time.Duration) {
 	} else {
 		panic("SetCursorTimeout: only 0 (disable timeout) supported for now")
 	}
+	s.m.Unlock()
+}
+
+// SetPoolLimit sets the maximum number of sockets in use in a single server
+// before this session will block waiting for a socket to be available.
+// The default limit is 4096.
+//
+// This limit must be set to cover more than any expected workload of the
+// application. It is a bad practice and an unsupported use case to use the
+// database driver to define the concurrency limit of an application. Prevent
+// such concurrency "at the door" instead, by properly restricting the amount
+// of used resources and number of goroutines before they are created.
+func (s *Session) SetPoolLimit(limit int) {
+	s.m.Lock()
+	s.poolLimit = limit
 	s.m.Unlock()
 }
 
@@ -3365,7 +3386,7 @@ func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 	}
 
 	// Still not good.  We need a new socket.
-	sock, err := s.cluster().AcquireSocket(slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags)
+	sock, err := s.cluster().AcquireSocket(slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags, s.poolLimit)
 	if err != nil {
 		return nil, err
 	}

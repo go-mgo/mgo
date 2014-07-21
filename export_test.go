@@ -4,15 +4,6 @@ import (
 	"time"
 )
 
-func HackSocketsPerServer(newLimit int) (restore func()) {
-	oldLimit := newLimit
-	restore = func() {
-		socketsPerServer = oldLimit
-	}
-	socketsPerServer = newLimit
-	return
-}
-
 func HackPingDelay(newDelay time.Duration) (restore func()) {
 	globalMutex.Lock()
 	defer globalMutex.Unlock()

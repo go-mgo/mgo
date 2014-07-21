@@ -89,7 +89,7 @@ func newServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer) *
 	return server
 }
 
-var errSocketLimit = errors.New("per-server connection limit reached")
+var errPoolLimit = errors.New("per-server connection limit reached")
 var errServerClosed = errors.New("server was closed")
 
 // AcquireSocket returns a socket for communicating with the server.
@@ -97,9 +97,10 @@ var errServerClosed = errors.New("server was closed")
 // it will establish a new one. The returned socket is owned by the call site,
 // and will return to the cache when the socket has its Release method called
 // the same number of times as AcquireSocket + Acquire were called for it.
-// If the limit argument is not zero, a socket will only be returned if the
-// number of sockets in use for this server is under the provided limit.
-func (server *mongoServer) AcquireSocket(limit int, timeout time.Duration) (socket *mongoSocket, abended bool, err error) {
+// If the poolLimit argument is greater than zero and the number of sockets in
+// use in this server is greater than the provided limit, errPoolLimit is
+// returned.
+func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (socket *mongoSocket, abended bool, err error) {
 	for {
 		server.Lock()
 		abended = server.abended
@@ -108,9 +109,9 @@ func (server *mongoServer) AcquireSocket(limit int, timeout time.Duration) (sock
 			return nil, abended, errServerClosed
 		}
 		n := len(server.unusedSockets)
-		if limit > 0 && len(server.liveSockets)-n >= limit {
+		if poolLimit > 0 && len(server.liveSockets)-n >= poolLimit {
 			server.Unlock()
-			return nil, false, errSocketLimit
+			return nil, false, errPoolLimit
 		}
 		if n > 0 {
 			socket = server.unusedSockets[n-1]
