@@ -28,6 +28,7 @@
 package bson
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/url"
@@ -51,6 +52,7 @@ var (
 	typeURL            = reflect.TypeOf(url.URL{})
 	typeTime           = reflect.TypeOf(time.Time{})
 	typeString         = reflect.TypeOf("")
+	typeJSONNumber     = reflect.TypeOf(json.Number(""))
 )
 
 const itoaCacheSize = 32
@@ -271,6 +273,17 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 		case typeSymbol:
 			e.addElemName('\x0E', name)
 			e.addStr(s)
+		case typeJSONNumber:
+			n := v.Interface().(json.Number)
+			if i, err := n.Int64(); err == nil {
+				e.addElemName('\x12', name)
+				e.addInt64(i)
+			} else if f, err := n.Float64(); err == nil {
+				e.addElemName('\x01', name)
+				e.addFloat64(f)
+			} else {
+				panic("Failed to convert a json.Number to a number: " + s)
+			}
 		default:
 			e.addElemName('\x02', name)
 			e.addStr(s)
@@ -278,7 +291,7 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 
 	case reflect.Float32, reflect.Float64:
 		e.addElemName('\x01', name)
-		e.addInt64(int64(math.Float64bits(v.Float())))
+		e.addFloat64(v.Float())
 
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		u := v.Uint()
@@ -455,6 +468,10 @@ func (e *encoder) addInt64(v int64) {
 	u := uint64(v)
 	e.addBytes(byte(u), byte(u>>8), byte(u>>16), byte(u>>24),
 		byte(u>>32), byte(u>>40), byte(u>>48), byte(u>>56))
+}
+
+func (e *encoder) addFloat64(v float64) {
+	e.addInt64(int64(math.Float64bits(v)))
 }
 
 func (e *encoder) addBytes(v ...byte) {
