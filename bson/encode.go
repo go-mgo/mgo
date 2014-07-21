@@ -282,7 +282,7 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 				e.addElemName('\x01', name)
 				e.addFloat64(f)
 			} else {
-				panic("Failed to convert a json.Number to a number: " + s)
+				panic("failed to convert json.Number to a number: " + s)
 			}
 		default:
 			e.addElemName('\x02', name)

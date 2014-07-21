@@ -32,6 +32,7 @@ import (
 	"math"
 	"net/url"
 	"reflect"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -594,6 +595,16 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 				out.SetString(string(b))
 				return true
 			}
+		case reflect.Int, reflect.Int64:
+			if outt == typeJSONNumber {
+				out.SetString(strconv.FormatInt(inv.Int(), 10))
+				return true
+			}
+		case reflect.Float64:
+			if outt == typeJSONNumber {
+				out.SetString(strconv.FormatFloat(inv.Float(), 'f', -1, 64))
+				return true
+			}
 		}
 	case reflect.Slice, reflect.Array:
 		// Remember, array (0x04) slices are built with the correct
@@ -632,7 +643,7 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 			}
 			return true
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-			panic("Can't happen. No uint types in BSON?")
+			panic("can't happen: no uint types in BSON (!?)")
 		}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		switch inv.Kind() {

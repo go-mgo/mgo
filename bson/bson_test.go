@@ -308,17 +308,6 @@ var oneWayMarshalItems = []testItemType{
 		"\x12\x00\xFF\xFF\xFF\xFF\x00\x00\x00\x00"},
 	{bson.M{"": uint(1<<32 - 1)},
 		"\x12\x00\xFF\xFF\xFF\xFF\x00\x00\x00\x00"},
-
-	// Converting json.Number to an actual number
-	{bson.M{"_": json.Number("5.05")},
-		"\x01_\x00333333\x14@"},
-	{bson.M{"_": json.Number("258")},
-		"\x12_\x00\x02\x01\x00\x00\x00\x00\x00\x00"},
-
-	// If the json.Number integer is too large for int64, parsing as int64
-	// will fail and 'overflow' into a float64
-	{bson.M{"_": json.Number("1267650600228229401496703205376")},
-		"\x01_\x00\x00\x00\x00\x00\x00\x000F"},
 }
 
 func (s *S) TestOneWayMarshalItems(c *C) {
@@ -1248,6 +1237,11 @@ var twoWayCrossItems = []crossTypeItem{
 
 	// bson.M <=> map[MyString]
 	{bson.M{"a": bson.M{"b": 1, "c": 2}}, map[MyString]interface{}{"a": map[MyString]interface{}{"b": 1, "c": 2}}},
+
+	// json.Number <=> int64, float64
+	{&struct{ N json.Number }{"5"}, map[string]interface{}{"n": int64(5)}},
+	{&struct{ N json.Number }{"5.05"}, map[string]interface{}{"n": 5.05}},
+	{&struct{ N json.Number }{"9223372036854776000"}, map[string]interface{}{"n": float64(1 << 63)}},
 }
 
 // Same thing, but only one way (obj1 => obj2).
