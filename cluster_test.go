@@ -1152,41 +1152,40 @@ func (s *S) TestRemovalOfClusterMember(c *C) {
 }
 
 func (s *S) TestPoolLimitSimple(c *C) {
-	session, err := mgo.Dial("localhost:40001")
-	c.Assert(err, IsNil)
-	defer session.Close()
+	for test := 0; test < 2; test++ {
+		var session *mgo.Session
+		var err error
+		if test == 0 {
+			session, err = mgo.Dial("localhost:40001")
+			c.Assert(err, IsNil)
+			session.SetPoolLimit(1)
+		} else {
+			session, err = mgo.Dial("localhost:40001?maxPoolSize=1")
+			c.Assert(err, IsNil)
+		}
+		defer session.Close()
 
-	stats := mgo.GetStats()
-	for stats.MasterConns+stats.SlaveConns != 1 {
-		stats = mgo.GetStats()
-		c.Log("Waiting for connection to be established...")
-		time.Sleep(100 * time.Millisecond)
+		// Put one socket in use.
+		c.Assert(session.Ping(), IsNil)
+
+		done := make(chan time.Duration)
+
+		// Now block trying to get another one due to the pool limit.
+		go func() {
+			copy := session.Copy()
+			defer copy.Close()
+			started := time.Now()
+			c.Check(copy.Ping(), IsNil)
+			done <- time.Now().Sub(started)
+		}()
+
+		time.Sleep(300 * time.Millisecond)
+
+		// Put the one socket back in the pool, freeing it for the copy.
+		session.Refresh()
+		delay := <-done
+		c.Assert(delay > 300 * time.Millisecond, Equals, true, Commentf("Delay: %s", delay))
 	}
-
-	c.Assert(stats.SocketsAlive, Equals, 1)
-	c.Assert(stats.SocketsInUse, Equals, 0)
-
-	// Put one socket in use.
-	c.Assert(session.Ping(), IsNil)
-
-	done := make(chan time.Duration)
-
-	// Now block trying to get another one due to the pool limit.
-	go func() {
-		copy := session.Copy()
-		defer copy.Close()
-		copy.SetPoolLimit(1)
-		started := time.Now()
-		c.Check(copy.Ping(), IsNil)
-		done <- time.Now().Sub(started)
-	}()
-
-	time.Sleep(500 * time.Millisecond)
-
-	// Put the one socket back in the pool, freeing it for the copy.
-	session.Refresh()
-	delay := <-done
-	c.Assert(delay > 500 * time.Millisecond, Equals, true, Commentf("Delay: %s", delay))
 }
 
 func (s *S) TestPoolLimitMany(c *C) {

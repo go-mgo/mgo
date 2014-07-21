@@ -186,8 +186,13 @@ const defaultPrefetch = 0.25
 //
 //     gssapiServiceName=<name>
 //
-//           Defines the service name to use when authenticating with the GSSAPI
-//           mechanism. Defaults to "mongodb".
+//        Defines the service name to use when authenticating with the GSSAPI
+//        mechanism. Defaults to "mongodb".
+//
+//     maxPoolSize=<limit>
+//
+//        Defines the per-server socket pool limit. Defaults to 4096.
+//        See Session.SetPoolLimit for details.
 //
 //
 // Relevant documentation:
@@ -218,6 +223,7 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 	mechanism := ""
 	service := ""
 	source := ""
+	poolLimit := 0
 	for k, v := range uinfo.options {
 		switch k {
 		case "authSource":
@@ -226,6 +232,11 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 			mechanism = v
 		case "gssapiServiceName":
 			service = v
+		case "maxPoolSize":
+			poolLimit, err = strconv.Atoi(v)
+			if err != nil {
+				return nil, errors.New("bad value for maxPoolSize: " + v)
+			}
 		case "connect":
 			if v == "direct" {
 				direct = true
@@ -249,6 +260,7 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 		Mechanism: mechanism,
 		Service:   service,
 		Source:    source,
+		PoolLimit: poolLimit,
 	}
 	return DialWithInfo(&info)
 }
@@ -299,6 +311,10 @@ type DialInfo struct {
 	// done on the database defined by the Source field. See Session.Login.
 	Username string
 	Password string
+
+	// PoolLimit defines the per-server socket pool limit. Defaults to 4096.
+	// See Session.SetPoolLimit for details.
+	PoolLimit int
 
 	// DialServer optionally specifies the dial function for establishing
 	// connections with the MongoDB servers.
@@ -362,6 +378,9 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 			Source:    source,
 		}
 		session.creds = []Credential{*session.dialCred}
+	}
+	if info.PoolLimit > 0 {
+		session.poolLimit = info.PoolLimit
 	}
 	cluster.Release()
 
