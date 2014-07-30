@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
+	. "gopkg.in/check.v1"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/mgo.v2/txn"
-	. "gopkg.in/check.v1"
 )
 
 func TestAll(t *testing.T) {
@@ -485,26 +485,36 @@ func (s *S) TestPurgeMissing(c *C) {
 		Insert: M{"balance": 100},
 	}}
 
-	err = s.runner.Run(ops1, "", nil)
+	first := bson.NewObjectId()
+	c.Logf("---- Running ops1 under transaction %q, to be canceled by chaos", first.Hex())
+	err = s.runner.Run(ops1, first, nil)
 	c.Assert(err, Equals, txn.ErrChaos)
 
 	last := bson.NewObjectId()
+	c.Logf("---- Running ops2 under transaction %q, to be canceled by chaos", last.Hex())
 	err = s.runner.Run(ops2, last, nil)
 	c.Assert(err, Equals, txn.ErrChaos)
+
+	c.Logf("---- Removing transaction %q", last.Hex())
 	err = s.tc.RemoveId(last)
 	c.Assert(err, IsNil)
 
+	c.Logf("---- Disabling chaos and attempting to resume all")
 	txn.SetChaos(txn.Chaos{})
 	err = s.runner.ResumeAll()
 	c.Assert(err, IsNil)
 
+	again := bson.NewObjectId()
+	c.Logf("---- Running ops2 again under transaction %q, to fail for missing transaction", again.Hex())
 	err = s.runner.Run(ops2, "", nil)
 	c.Assert(err, ErrorMatches, "cannot find transaction .*")
 
+	c.Logf("---- Puring missing transactions")
 	err = s.runner.PurgeMissing("accounts")
 	c.Assert(err, IsNil)
 
-	err = s.runner.Run(ops2, "", nil)
+	c.Logf("---- Resuming pending transactions")
+	err = s.runner.ResumeAll()
 	c.Assert(err, IsNil)
 
 	expect := []struct{ Id, Balance int }{
@@ -584,8 +594,8 @@ func (s *S) TestTxnQueueStressTest(c *C) {
 	for id := 0; id < 2; id++ {
 		var account Account
 		err = s.accounts.FindId(id).One(&account)
-		if account.Balance != runners * changes {
-			c.Errorf("Account should have balance of %d, got %d", runners * changes, account.Balance)
+		if account.Balance != runners*changes {
+			c.Errorf("Account should have balance of %d, got %d", runners*changes, account.Balance)
 		}
 	}
 }
