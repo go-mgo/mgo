@@ -46,7 +46,7 @@ func chaos(bpname string) {
 			return
 		}
 		sc := chaosSetting.SlowdownChance
-		if sc > 0 && mrand.Intn(1000) < int(kc*1000) {
+		if sc > 0 && mrand.Intn(1000) < int(sc*1000) {
 			time.Sleep(chaosSetting.Slowdown)
 		}
 	}
