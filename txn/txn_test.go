@@ -1,11 +1,14 @@
 package txn_test
 
 import (
+	"sync"
+	"testing"
+	"time"
+
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/mgo.v2/txn"
 	. "gopkg.in/check.v1"
-	"testing"
 )
 
 func TestAll(t *testing.T) {
@@ -36,6 +39,11 @@ func (s *S) SetUpTest(c *C) {
 	s.sc = s.db.C("tc.stash")
 	s.accounts = s.db.C("accounts")
 	s.runner = txn.NewRunner(s.tc)
+}
+
+func (s *S) TearDownTest(c *C) {
+	txn.SetLogger(nil)
+	txn.SetDebug(false)
 }
 
 type Account struct {
@@ -516,6 +524,68 @@ func (s *S) TestPurgeMissing(c *C) {
 			c.Errorf("Account %d should have balance of %d, but wasn't found", want.Id, want.Balance)
 		} else if got.Balance != want.Balance {
 			c.Errorf("Account %d should have balance of %d, got %d", want.Id, want.Balance, got.Balance)
+		}
+	}
+}
+
+func (s *S) TestTxnQueueStressTest(c *C) {
+	txn.SetChaos(txn.Chaos{
+		SlowdownChance: 0.3,
+		Slowdown:       50 * time.Millisecond,
+	})
+	defer txn.SetChaos(txn.Chaos{})
+
+	// So we can run more iterations of the test in less time.
+	txn.SetDebug(false)
+
+	err := s.accounts.Insert(M{"_id": 0, "balance": 0}, M{"_id": 1, "balance": 0})
+	c.Assert(err, IsNil)
+
+	// Run half of the operations changing account 0 and then 1,
+	// and the other half in the opposite order.
+	ops01 := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Update: M{"$inc": M{"balance": 1}},
+	}, {
+		C:      "accounts",
+		Id:     1,
+		Update: M{"$inc": M{"balance": 1}},
+	}}
+
+	ops10 := []txn.Op{{
+		C:      "accounts",
+		Id:     1,
+		Update: M{"$inc": M{"balance": 1}},
+	}, {
+		C:      "accounts",
+		Id:     0,
+		Update: M{"$inc": M{"balance": 1}},
+	}}
+
+	ops := [][]txn.Op{ops01, ops10}
+
+	const runners = 4
+	const changes = 20
+
+	var wg sync.WaitGroup
+	wg.Add(runners)
+	for n := 0; n < runners; n++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < changes; i++ {
+				err = s.runner.Run(ops[n%2], "", nil)
+				c.Assert(err, IsNil)
+			}
+		}()
+	}
+	wg.Wait()
+
+	for id := 0; id < 2; id++ {
+		var account Account
+		err = s.accounts.FindId(id).One(&account)
+		if account.Balance != runners * changes {
+			c.Errorf("Account should have balance of %d, got %d", runners * changes, account.Balance)
 		}
 	}
 }

@@ -897,17 +897,10 @@ func tokensToPull(dqueue []token, pull map[bson.ObjectId]*transaction, dontPull 
 	var result []token
 	for j := len(dqueue) - 1; j >= 0; j-- {
 		dtt := dqueue[j]
-		if dt, ok := pull[dtt.id()]; ok {
-			if dt.Nonce == dtt.nonce() {
-				// It's valid and is being pulled out, so everything
-				// preceding it must have been handled already.
-				if dtt == dontPull {
-					// Not time to pull this one out yet.
-					j--
-				}
-				result = append(result, dqueue[:j+1]...)
-				break
-			}
+		if dtt == dontPull {
+			continue
+		}
+		if _, ok := pull[dtt.id()]; ok {
 			// It was handled before and this is a leftover invalid
 			// nonce in the queue. Cherry-pick it out.
 			result = append(result, dtt)
