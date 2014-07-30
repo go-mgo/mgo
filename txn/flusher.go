@@ -352,19 +352,7 @@ NextDoc:
 		f.debugf("Prepared queue with %s [has prereqs & not forced].", tt)
 		return nil, errPreReqs
 	}
-	for _, op := range t.Ops {
-		dkey := op.docKey()
-		revnos = append(revnos, revno[dkey])
-		drevno := revno[dkey]
-		switch {
-		case op.Insert != nil && drevno < 0:
-			revno[dkey] = -drevno + 1
-		case op.Update != nil && drevno >= 0:
-			revno[dkey] = drevno + 1
-		case op.Remove && drevno >= 0:
-			revno[dkey] = -drevno - 1
-		}
-	}
+	revnos = assembledRevnos(t.Ops, revno)
 	if !prereqs {
 		f.debugf("Prepared queue with %s [no prereqs]. Revnos: %v", tt, revnos)
 	} else {
@@ -483,19 +471,31 @@ func (f *flusher) rescan(t *transaction, force bool) (revnos []int64, err error)
 		f.debugf("Rescanned queue with %s: has prereqs, not forced", tt)
 		return nil, errPreReqs
 	}
-	for _, op := range t.Ops {
-		dkey := op.docKey()
-		revnos = append(revnos, revno[dkey])
-		if op.isChange() {
-			revno[dkey] += 1
-		}
-	}
+	revnos = assembledRevnos(t.Ops, revno)
 	if !prereqs {
 		f.debugf("Rescanned queue with %s: no prereqs, revnos: %v", tt, revnos)
 	} else {
 		f.debugf("Rescanned queue with %s: has prereqs, forced, revnos: %v", tt, revnos)
 	}
 	return revnos, nil
+}
+
+func assembledRevnos(ops []Op, revno map[docKey]int64) []int64 {
+	revnos := make([]int64, len(ops))
+	for i, op := range ops {
+		dkey := op.docKey()
+		revnos[i] = revno[dkey]
+		drevno := revno[dkey]
+		switch {
+		case op.Insert != nil && drevno < 0:
+			revno[dkey] = -drevno + 1
+		case op.Update != nil && drevno >= 0:
+			revno[dkey] = drevno + 1
+		case op.Remove && drevno >= 0:
+			revno[dkey] = -drevno - 1
+		}
+	}
+	return revnos
 }
 
 func (f *flusher) hasPreReqs(tt token, dkeys docKeys) (prereqs, found bool) {
@@ -688,18 +688,6 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 		pull = map[bson.ObjectId]*transaction{t.Id: t}
 	}
 
-	// Compute the operation in which t's id may be pulled
-	// out of txn-queue. That's on its last change, or the
-	// first assertion.
-	pullOp := make(map[docKey]int)
-	for i := range t.Ops {
-		op := &t.Ops[i]
-		dkey := op.docKey()
-		if _, ok := pullOp[dkey]; !ok || op.isChange() {
-			pullOp[dkey] = i
-		}
-	}
-
 	logRevnos := append([]int64(nil), t.Revnos...)
 	logDoc := bson.D{{"_id", t.Id}}
 
@@ -732,12 +720,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 			qdoc[1].Value = bson.D{{"$exists", false}}
 		}
 
-		dontPull := tt
-		isPullOp := pullOp[dkey] == i
-		if isPullOp {
-			dontPull = ""
-		}
-		pullAll := tokensToPull(dqueue, pull, dontPull)
+		pullAll := tokensToPull(dqueue, pull, tt)
 
 		var d bson.D
 		var outcome string
@@ -851,13 +834,10 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 							f.debugf("Stash for document %v removed", dkey)
 						}
 					}
-					if pullOp[dkey] == i && len(pullAll) > 0 {
-						_ = f.sc.UpdateId(dkey, bson.D{{"$pullAll", bson.D{{"txn-queue", pullAll}}}})
-					}
 				}
 			}
 		case op.Assert != nil:
-			// TODO pullAll if pullOp[dkey] == i
+			// Pure assertion. No changes to apply.
 		}
 		if err == nil {
 			outcome = "DONE"
