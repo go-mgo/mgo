@@ -9,10 +9,10 @@ start() {
     chmod 600 keyfile
     echo "Running supervisord..."
     supervisord || ( echo "Supervisord failed executing ($?)" && exit 1 )
-    COUNT=$(grep '^\[program' supervisord.conf | wc -l)
+    COUNT=$(grep '^\[program' supervisord.conf | wc -l | tr -d ' ')
     echo "Supervisord is up, starting $COUNT processes..."
     for i in $(seq 10); do
-        RUNNING=$(supervisorctl status | grep RUNNING | wc -l)
+        RUNNING=$(supervisorctl status | grep RUNNING | wc -l | tr -d ' ')
         echo "$RUNNING processes running..."
         if [ x$COUNT = x$RUNNING ]; then
             echo "Running setup.js with mongo..."
