@@ -576,11 +576,14 @@ func (s *S) TestTxnQueueStressTest(c *C) {
 	ops := [][]txn.Op{ops01, ops10}
 
 	const runners = 4
-	const changes = 20
+	const changes = 1000
+
+	txn.SetDebug(true)
 
 	var wg sync.WaitGroup
 	wg.Add(runners)
 	for n := 0; n < runners; n++ {
+		n := n
 		go func() {
 			defer wg.Done()
 			for i := 0; i < changes; i++ {
