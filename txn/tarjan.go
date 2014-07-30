@@ -13,16 +13,17 @@ func tarjanSort(successors map[bson.ObjectId][]bson.ObjectId) [][]bson.ObjectId 
 		index:      make(map[bson.ObjectId]int, len(successors)),
 	}
 
-	// Sort all nodes to stabilize the logic.
-	var all []string
 	for id := range successors {
-		all = append(all, string(id))
-	}
-	sort.Strings(all)
-	for _, strid := range all {
-		id := bson.ObjectId(strid)
+		id := bson.ObjectId(string(id))
 		if _, seen := data.index[id]; !seen {
 			data.strongConnect(id)
+		}
+	}
+
+	// Sort connected components to stabilize the algorithm.
+	for _, ids := range data.output {
+		if len(ids) > 1 {
+			sort.Sort(idList(ids))
 		}
 	}
 	return data.output
@@ -55,10 +56,7 @@ func (data *tarjanData) strongConnect(id bson.ObjectId) *tarjanNode {
 	data.nodes = append(data.nodes, tarjanNode{index, true})
 	node := &data.nodes[index]
 
-	// Sort to stabilize the algorithm.
-	succids := idList(data.successors[id])
-	sort.Sort(succids)
-	for _, succid := range succids {
+	for _, succid := range data.successors[id] {
 		succindex, seen := data.index[succid]
 		if !seen {
 			succnode := data.strongConnect(succid)
