@@ -2264,6 +2264,21 @@ func (q *Query) Hint(indexKey ...string) *Query {
 	return q
 }
 
+// SetMaxScan constrains the query to only scan the specified number of
+// documents when fulfilling the query.
+//
+// Relevant documentation:
+//
+//		 http://docs.mongodb.org/manual/reference/operator/meta/maxScan
+//
+func (q *Query) SetMaxScan(n int) *Query {
+	q.m.Lock()
+	q.op.options.MaxScan = n
+	q.op.hasOptions = true
+	q.m.Unlock()
+	return q
+}
+
 // Snapshot will force the performed query to make use of an available
 // index on the _id field to prevent the same document from being returned
 // more than once in a single iteration. This might happen without this

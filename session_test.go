@@ -1042,6 +1042,25 @@ func (s *S) TestQueryExplain(c *C) {
 	c.Assert(n, Equals, 2)
 }
 
+func (s *S) TestMaxScanned(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{40, 41, 42}
+	for _, n := range ns {
+		err := coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
+	}
+
+	query := coll.Find(nil).SetMaxScan(2)
+	var result []M
+	err = query.All(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result, HasLen, 2)
+}
+
 func (s *S) TestQueryHint(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
