@@ -8,8 +8,10 @@
 3) `mkdir -p ~/mgo-gopath/src/gopkg.in && git clone git@github.com:go-mgo/mgo.git ~/mgo-gopath/src/gopkg.in/mgo.v2 && export GOPATH=~/mgo-gopath`
 
 4) Install dependencies:
-`go get gopkg.in/mgo.v2/bson`
-`go get gopkg.in/check.v1`
+```
+go get gopkg.in/mgo.v2/bson
+go get gopkg.in/check.v1
+```
 
 5) Run tests:
 ```
