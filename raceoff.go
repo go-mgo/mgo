@@ -3,4 +3,3 @@
 package mgo
 
 const raceDetector = false
-

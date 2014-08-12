@@ -651,6 +651,14 @@ func (file *GridFile) Seek(offset int64, whence int) (pos int64, err error) {
 	if offset > file.doc.Length {
 		return file.offset, errors.New("seek past end of file")
 	}
+	if offset == file.doc.Length {
+		// If we're seeking to the end of the file,
+		// no need to read anything. This enables
+		// a client to find the size of the file using only the
+		// io.ReadSeeker interface with low overhead.
+		file.offset = offset
+		return file.offset, nil
+	}
 	chunk := int(offset / int64(file.doc.ChunkSize))
 	if chunk+1 == file.chunk && offset >= file.offset {
 		file.rbuf = file.rbuf[int(offset-file.offset):]
