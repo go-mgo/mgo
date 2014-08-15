@@ -1042,7 +1042,7 @@ func (s *S) TestQueryExplain(c *C) {
 	c.Assert(n, Equals, 2)
 }
 
-func (s *S) TestMaxScanned(c *C) {
+func (s *S) TestQueryMaxScan(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()

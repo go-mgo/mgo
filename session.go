@@ -2264,13 +2264,11 @@ func (q *Query) Hint(indexKey ...string) *Query {
 	return q
 }
 
-// SetMaxScan constrains the query to only scan the specified number of
-// documents when fulfilling the query.
+// SetMaxScan constrains the query to stop after scanning the specified
+// number of documents.
 //
-// Relevant documentation:
-//
-//		 http://docs.mongodb.org/manual/reference/operator/meta/maxScan
-//
+// This modifier is generally used to prevent potentially long running
+// queries from disrupting performance by scanning through too much data.
 func (q *Query) SetMaxScan(n int) *Query {
 	q.m.Lock()
 	q.op.options.MaxScan = n
