@@ -42,9 +42,9 @@ type log_Logger interface {
 }
 
 var (
-	globalLogger   log_Logger
-	globalDebug    bool
-	globalMutex sync.Mutex
+	globalLogger log_Logger
+	globalDebug  bool
+	globalMutex  sync.Mutex
 )
 
 // RACE WARNING: There are known data races when logging, which are manually
