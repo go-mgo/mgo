@@ -304,7 +304,7 @@ type DialInfo struct {
 	Service string
 
 	// ServiceHost defines which hostname to use when authenticating
-        // with the GSSAPI mechanism. If not specified, defaults to the MongoDB
+	// with the GSSAPI mechanism. If not specified, defaults to the MongoDB
 	// server's address.
 	ServiceHost string
 
@@ -603,8 +603,8 @@ type Credential struct {
 	Service string
 
 	// ServiceHost defines which hostname to use when authenticating
-        // with the GSSAPI mechanism. If not specified, defaults to the MongoDB
-        // server's address.
+	// with the GSSAPI mechanism. If not specified, defaults to the MongoDB
+	// server's address.
 	ServiceHost string
 
 	// Mechanism defines the protocol for credential negotiation.
