@@ -982,7 +982,7 @@ func (s *S) TestAuthKerberosServiceHost(c *C) {
 	cred := &mgo.Credential{
 		Username:    kerberosUser,
 		Mechanism:   "GSSAPI",
-		ServiceHost: wrongServiceHostname,
+		ServiceHost: wrongServiceHost,
 	}
 
 	c.Logf("Connecting to %s...", kerberosHost)
@@ -994,7 +994,7 @@ func (s *S) TestAuthKerberosServiceHost(c *C) {
 	err = session.Login(cred)
 	c.Assert(err, ErrorMatches, ".*Server krbtgt/BACON.TK@10GEN.ME not found.*")
 
-	cred.ServiceHost = rightServiceHostname
+	cred.ServiceHost = rightServiceHost
 	c.Logf("Authenticating with correct service host...")
 	err = session.Login(cred)
 	c.Assert(err, IsNil)
