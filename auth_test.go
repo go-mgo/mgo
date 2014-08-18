@@ -936,3 +936,73 @@ func (s *S) TestAuthKerberosURL(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(len(names) > 0, Equals, true)
 }
+
+func (s *S) TestAuthKerberosServiceName(c *C) {
+	if !*kerberosFlag {
+                c.Skip("no -kerberos")
+        }
+
+	wrongServiceName := "wrong"
+	rightServiceName := "mongodb"
+
+        cred := &mgo.Credential{
+                Username:  kerberosUser,
+                Mechanism: "GSSAPI",
+                Service: wrongServiceName,
+        }
+
+	c.Logf("Connecting to %s...", kerberosHost)
+        session, err := mgo.Dial(kerberosHost)
+        c.Assert(err, IsNil)
+        defer session.Close()
+
+	c.Logf("Authenticating with incorrect service name...")
+        err = session.Login(cred)
+        c.Assert(err, ErrorMatches,
+		".*Server wrong/mmscustmongo.10gen.me@10GEN.ME not found.*")
+
+	cred.Service = rightServiceName
+	c.Logf("Authenticating with correct service name...")
+        err = session.Login(cred)
+        c.Assert(err, IsNil)
+        c.Logf("Authenticated!")
+
+        names, err := session.DatabaseNames()
+        c.Assert(err, IsNil)
+        c.Assert(len(names) > 0, Equals, true)
+}
+
+func (s *S) TestAuthKerberosServiceHostname(c *C) {
+	if !*kerberosFlag {
+                c.Skip("no -kerberos")
+        }
+
+	wrongServiceHostname := "eggs.bacon.tk"
+	rightServiceHostname := "mmscustmongo.10gen.me"
+
+        cred := &mgo.Credential{
+                Username:        kerberosUser,
+                Mechanism:       "GSSAPI",
+		ServiceHostname: wrongServiceHostname,
+        }
+
+        c.Logf("Connecting to %s...", kerberosHost)
+        session, err := mgo.Dial(kerberosHost)
+        c.Assert(err, IsNil)
+        defer session.Close()
+
+        c.Logf("Authenticating with incorrect service hostname...")
+        err = session.Login(cred)
+        c.Assert(err, ErrorMatches,
+                ".*Server krbtgt/BACON.TK@10GEN.ME not found.*")
+
+        cred.ServiceHostname = rightServiceHostname
+        c.Logf("Authenticating with correct service hostname...")
+        err = session.Login(cred)
+        c.Assert(err, IsNil)
+        c.Logf("Authenticated!")
+
+        names, err := session.DatabaseNames()
+        c.Assert(err, IsNil)
+        c.Assert(len(names) > 0, Equals, true)
+}
