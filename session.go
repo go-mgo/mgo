@@ -303,6 +303,11 @@ type DialInfo struct {
 	// mechanism. Defaults to "mongodb".
 	Service string
 
+	// ServiceHost defines which hostname to use when authenticating
+	// with the GSSAPI mechanism. If not specified, defaults to the MongoDB
+	// server's address.
+	ServiceHost string
+
 	// Mechanism defines the protocol for credential negotiation.
 	// Defaults to "MONGODB-CR".
 	Mechanism string
@@ -371,11 +376,12 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 			source = "$external"
 		}
 		session.dialCred = &Credential{
-			Username:  info.Username,
-			Password:  info.Password,
-			Mechanism: info.Mechanism,
-			Service:   info.Service,
-			Source:    source,
+			Username:    info.Username,
+			Password:    info.Password,
+			Mechanism:   info.Mechanism,
+			Service:     info.Service,
+			ServiceHost: info.ServiceHost,
+			Source:      source,
 		}
 		session.creds = []Credential{*session.dialCred}
 	}
@@ -595,6 +601,11 @@ type Credential struct {
 	// Service defines the service name to use when authenticating with the GSSAPI
 	// mechanism. Defaults to "mongodb".
 	Service string
+
+	// ServiceHost defines which hostname to use when authenticating
+	// with the GSSAPI mechanism. If not specified, defaults to the MongoDB
+	// server's address.
+	ServiceHost string
 
 	// Mechanism defines the protocol for credential negotiation.
 	// Defaults to "MONGODB-CR".
