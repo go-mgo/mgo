@@ -1184,7 +1184,7 @@ func (s *S) TestPoolLimitSimple(c *C) {
 		// Put the one socket back in the pool, freeing it for the copy.
 		session.Refresh()
 		delay := <-done
-		c.Assert(delay > 300 * time.Millisecond, Equals, true, Commentf("Delay: %s", delay))
+		c.Assert(delay > 300*time.Millisecond, Equals, true, Commentf("Delay: %s", delay))
 	}
 }
 

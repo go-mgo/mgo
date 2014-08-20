@@ -47,17 +47,21 @@ import (
 type mode int
 
 const (
-	Eventual  mode = 0
+	// Eventual consistency mode
+	Eventual mode = 0
+	// Monotonic consistency mode
 	Monotonic mode = 1
-	Strong    mode = 2
+	// Strong consistency mode
+	Strong mode = 2
 )
 
 // When changing the Session type, check if newSession and copySession
 // need to be updated too.
 
+// Session is a primary point of connection between a Go client and a MongoDB instance
 type Session struct {
 	m            sync.RWMutex
-	cluster_     *mongoCluster
+	cluster      *mongoCluster
 	slaveSocket  *mongoSocket
 	masterSocket *mongoSocket
 	slaveOk      bool
@@ -73,17 +77,20 @@ type Session struct {
 	poolLimit    int
 }
 
+// Database is a MongoDB database
 type Database struct {
 	Session *Session
 	Name    string
 }
 
+// Collection is a MongoDB collection
 type Collection struct {
 	Database *Database
 	Name     string // "collection"
 	FullName string // "db.collection"
 }
 
+// Query is a MongoDB query
 type Query struct {
 	m       sync.Mutex
 	session *Session
@@ -104,6 +111,7 @@ type getLastError struct {
 	J        bool        "j,omitempty"
 }
 
+// Iter is an interator presenting access to a sequence of values
 type Iter struct {
 	m              sync.Mutex
 	gotReply       sync.Cond
@@ -120,6 +128,7 @@ type Iter struct {
 	timedout       bool
 }
 
+// ErrNotFound represents the results of an operation that yielded no results
 var ErrNotFound = errors.New("not found")
 
 const defaultPrefetch = 0.25
@@ -452,7 +461,7 @@ func parseURL(s string) (*urlInfo, error) {
 func newSession(consistency mode, cluster *mongoCluster, timeout time.Duration) (session *Session) {
 	cluster.Acquire()
 	session = &Session{
-		cluster_:    cluster,
+		cluster:     cluster,
 		syncTimeout: timeout,
 		sockTimeout: timeout,
 		poolLimit:   4096,
@@ -465,7 +474,7 @@ func newSession(consistency mode, cluster *mongoCluster, timeout time.Duration) 
 }
 
 func copySession(session *Session, keepCreds bool) (s *Session) {
-	cluster := session.cluster()
+	cluster := session.getCluster()
 	cluster.Acquire()
 	if session.masterSocket != nil {
 		session.masterSocket.Acquire()
@@ -492,7 +501,7 @@ func copySession(session *Session, keepCreds bool) (s *Session) {
 // currently known to be alive.
 func (s *Session) LiveServers() (addrs []string) {
 	s.m.RLock()
-	addrs = s.cluster().LiveServers()
+	addrs = s.getCluster().LiveServers()
 	s.m.RUnlock()
 	return addrs
 }
@@ -730,13 +739,14 @@ type User struct {
 	UserSource string `bson:"userSource,omitempty"`
 }
 
+// Role is a set or privileges that permit actions on resources
 type Role string
 
+// Relevant documentation:
+//
+//     http://docs.mongodb.org/manual/reference/user-privileges/
+//
 const (
-	// Relevant documentation:
-	//
-	//     http://docs.mongodb.org/manual/reference/user-privileges/
-	//
 	RoleRoot         Role = "root"
 	RoleRead         Role = "read"
 	RoleReadAny      Role = "readAnyDatabase"
@@ -853,7 +863,7 @@ func (db *Database) runUserCmd(cmdName string, user *User) error {
 	}
 	err := db.Run(cmd, nil)
 	if !isNoCmd(err) && user.UserSource != "" && (user.UserSource != "$external" || db.Name != "$external") {
-		return fmt.Errorf("MongoDB 2.6+ does not support the UserSource setting")
+		return fmt.Errorf("setting UserSource is not supported in MongoDB 2.6+")
 	}
 	return err
 }
@@ -920,6 +930,7 @@ type indexSpec struct {
 	ExpireAfter    int  "expireAfterSeconds,omitempty"
 }
 
+// Index is a MongoDB collection index
 type Index struct {
 	Key        []string // Index key fields; prefix name with dash (-) for descending order
 	Unique     bool     // Prevent two documents from having the same index key
@@ -1079,7 +1090,7 @@ func (c *Collection) EnsureIndex(index Index) error {
 
 	session := c.Database.Session
 	cacheKey := c.FullName + "\x00" + name
-	if session.cluster().HasCachedIndex(cacheKey) {
+	if session.getCluster().HasCachedIndex(cacheKey) {
 		return nil
 	}
 
@@ -1105,7 +1116,7 @@ func (c *Collection) EnsureIndex(index Index) error {
 	db := c.Database.With(session)
 	err = db.C("system.indexes").Insert(&spec)
 	if err == nil {
-		session.cluster().CacheIndex(cacheKey, true)
+		session.getCluster().CacheIndex(cacheKey, true)
 	}
 	session.Close()
 	return err
@@ -1130,7 +1141,7 @@ func (c *Collection) DropIndex(key ...string) error {
 
 	session := c.Database.Session
 	cacheKey := c.FullName + "\x00" + name
-	session.cluster().CacheIndex(cacheKey, false)
+	session.getCluster().CacheIndex(cacheKey, false)
 
 	session = session.Clone()
 	defer session.Close()
@@ -1215,10 +1226,10 @@ func simpleIndexKey(realKey bson.D) (key []string) {
 	return
 }
 
-// ResetIndexCache() clears the cache of previously ensured indexes.
+// ResetIndexCache clears the cache of previously ensured indexes.
 // Following requests to EnsureIndex will contact the server.
 func (s *Session) ResetIndexCache() {
-	s.cluster().ResetIndexCache()
+	s.getCluster().ResetIndexCache()
 }
 
 // New creates a new session with the same parameters as the original
@@ -1268,20 +1279,20 @@ func (s *Session) Clone() *Session {
 // after it has been closed.
 func (s *Session) Close() {
 	s.m.Lock()
-	if s.cluster_ != nil {
+	if s.cluster != nil {
 		debugf("Closing session %p", s)
 		s.unsetSocket()
-		s.cluster_.Release()
-		s.cluster_ = nil
+		s.cluster.Release()
+		s.cluster = nil
 	}
 	s.m.Unlock()
 }
 
-func (s *Session) cluster() *mongoCluster {
-	if s.cluster_ == nil {
+func (s *Session) getCluster() *mongoCluster {
+	if s.cluster == nil {
 		panic("Session already closed")
 	}
-	return s.cluster_
+	return s.cluster
 }
 
 // Refresh puts back any reserved sockets in use and restarts the consistency
@@ -1444,7 +1455,7 @@ func (s *Session) SetPrefetch(p float64) {
 	s.m.Unlock()
 }
 
-// See SetSafe for details on the Safe type.
+// Safe contains session safety specifiers. See SetSafe for further details
 type Safe struct {
 	W        int    // Min # of servers to ack before success
 	WMode    string // Write mode for MongoDB 2.0+ (e.g. "majority")
@@ -1741,15 +1752,16 @@ func (c *Collection) Find(query interface{}) *Query {
 	return q
 }
 
-// FindId is a convenience helper equivalent to:
+// FindID is a convenience helper equivalent to:
 //
 //     query := collection.Find(bson.M{"_id": id})
 //
 // See the Find method for more details.
-func (c *Collection) FindId(id interface{}) *Query {
+func (c *Collection) FindID(id interface{}) *Query {
 	return c.Find(bson.D{{"_id", id}})
 }
 
+// Pipe is a communication channel between commands
 type Pipe struct {
 	session    *Session
 	collection *Collection
@@ -1818,13 +1830,14 @@ func (p *Pipe) One(result interface{}) error {
 	return ErrNotFound
 }
 
+// LastError is the most result of the most recent operation on a given connection
 type LastError struct {
 	Err             string
 	Code, N, Waited int
 	FSyncFiles      int `bson:"fsyncFiles"`
 	WTimeout        bool
 	UpdatedExisting bool        `bson:"updatedExisting"`
-	UpsertedId      interface{} `bson:"upserted"`
+	UpsertedID      interface{} `bson:"upserted"`
 }
 
 func (err *LastError) Error() string {
@@ -1840,6 +1853,7 @@ type queryError struct {
 	LastError     *LastError "lastErrorObject"
 }
 
+// QueryError contains details of an error for a given query
 type QueryError struct {
 	Code      int
 	Message   string
@@ -1893,20 +1907,20 @@ func (c *Collection) Update(selector interface{}, update interface{}) error {
 	return err
 }
 
-// UpdateId is a convenience helper equivalent to:
+// UpdateID is a convenience helper equivalent to:
 //
 //     err := collection.Update(bson.M{"_id": id}, update)
 //
 // See the Update method for more details.
-func (c *Collection) UpdateId(id interface{}, update interface{}) error {
-	return c.Update(bson.D{{"_id", id}}, update)
+func (c *Collection) UpdateID(ID interface{}, update interface{}) error {
+	return c.Update(bson.D{{"_id", ID}}, update)
 }
 
 // ChangeInfo holds details about the outcome of an update operation.
 type ChangeInfo struct {
 	Updated    int         // Number of existing documents updated
 	Removed    int         // Number of documents removed
-	UpsertedId interface{} // Upserted _id field, when not explicitly provided
+	UpsertedID interface{} // Upserted _id field, when not explicitly provided
 }
 
 // UpdateAll finds all documents matching the provided selector document
@@ -1949,19 +1963,19 @@ func (c *Collection) Upsert(selector interface{}, update interface{}) (info *Cha
 		if lerr.UpdatedExisting {
 			info.Updated = lerr.N
 		} else {
-			info.UpsertedId = lerr.UpsertedId
+			info.UpsertedID = lerr.UpsertedID
 		}
 	}
 	return info, err
 }
 
-// UpsertId is a convenience helper equivalent to:
+// UpsertID is a convenience helper equivalent to:
 //
 //     info, err := collection.Upsert(bson.M{"_id": id}, update)
 //
 // See the Upsert method for more details.
-func (c *Collection) UpsertId(id interface{}, update interface{}) (info *ChangeInfo, err error) {
-	return c.Upsert(bson.D{{"_id", id}}, update)
+func (c *Collection) UpsertID(ID interface{}, update interface{}) (info *ChangeInfo, err error) {
+	return c.Upsert(bson.D{{"_id", ID}}, update)
 }
 
 // Remove finds a single document matching the provided selector document
@@ -1982,12 +1996,12 @@ func (c *Collection) Remove(selector interface{}) error {
 	return err
 }
 
-// RemoveId is a convenience helper equivalent to:
+// RemoveID is a convenience helper equivalent to:
 //
 //     err := collection.Remove(bson.M{"_id": id})
 //
 // See the Remove method for more details.
-func (c *Collection) RemoveId(id interface{}) error {
+func (c *Collection) RemoveID(id interface{}) error {
 	return c.Remove(bson.D{{"_id", id}})
 }
 
@@ -2026,14 +2040,14 @@ func (c *Collection) DropCollection() error {
 //     http://www.mongodb.org/display/DOCS/Capped+Collections
 //
 type CollectionInfo struct {
-	// DisableIdIndex prevents the automatic creation of the index
+	// DisableIDIndex prevents the automatic creation of the index
 	// on the _id field for the collection.
-	DisableIdIndex bool
+	DisableIDIndex bool
 
-	// ForceIdIndex enforces the automatic creation of the index
+	// ForceIDIndex enforces the automatic creation of the index
 	// on the _id field for the collection. Capped collections,
 	// for example, do not have such an index by default.
-	ForceIdIndex bool
+	ForceIDIndex bool
 
 	// If Capped is true new documents will replace old ones when
 	// the collection is full. MaxBytes must necessarily be set
@@ -2060,7 +2074,7 @@ func (c *Collection) Create(info *CollectionInfo) error {
 	cmd = append(cmd, bson.DocElem{"create", c.Name})
 	if info.Capped {
 		if info.MaxBytes < 1 {
-			return fmt.Errorf("Collection.Create: with Capped, MaxBytes must also be set")
+			return fmt.Errorf("collection.Create: with Capped, MaxBytes must also be set")
 		}
 		cmd = append(cmd, bson.DocElem{"capped", true})
 		cmd = append(cmd, bson.DocElem{"size", info.MaxBytes})
@@ -2068,10 +2082,10 @@ func (c *Collection) Create(info *CollectionInfo) error {
 			cmd = append(cmd, bson.DocElem{"max", info.MaxDocs})
 		}
 	}
-	if info.DisableIdIndex {
+	if info.DisableIDIndex {
 		cmd = append(cmd, bson.DocElem{"autoIndexId", false})
 	}
-	if info.ForceIdIndex {
+	if info.ForceIDIndex {
 		cmd = append(cmd, bson.DocElem{"autoIndexId", true})
 	}
 	return c.Database.Run(cmd, nil)
@@ -2404,7 +2418,7 @@ func (q *Query) One(result interface{}) (err error) {
 //
 type DBRef struct {
 	Collection string      `bson:"$ref"`
-	Id         interface{} `bson:"$id"`
+	ID         interface{} `bson:"$id"`
 	Database   string      `bson:"$db,omitempty"`
 }
 
@@ -2427,7 +2441,7 @@ func (db *Database) FindRef(ref *DBRef) *Query {
 	} else {
 		c = db.Session.DB(ref.Database).C(ref.Collection)
 	}
-	return c.FindId(ref.Id)
+	return c.FindID(ref.ID)
 }
 
 // FindRef returns a query that looks for the document in the provided
@@ -2442,10 +2456,10 @@ func (db *Database) FindRef(ref *DBRef) *Query {
 //
 func (s *Session) FindRef(ref *DBRef) *Query {
 	if ref.Database == "" {
-		panic(errors.New(fmt.Sprintf("Can't resolve database for %#v", ref)))
+		panic(fmt.Errorf("can't resolve database for %#v", ref))
 	}
 	c := s.DB(ref.Database).C(ref.Collection)
-	return c.FindId(ref.Id)
+	return c.FindID(ref.ID)
 }
 
 // CollectionNames returns the collection names present in database.
@@ -2664,17 +2678,17 @@ func (iter *Iter) Close() error {
 }
 
 func (iter *Iter) killCursor() error {
-	if iter.op.cursorId != 0 {
+	if iter.op.cursorID != 0 {
 		socket, err := iter.acquireSocket()
 		if err == nil {
 			// TODO Batch kills.
-			err = socket.Query(&killCursorsOp{[]int64{iter.op.cursorId}})
+			err = socket.Query(&killCursorsOp{[]int64{iter.op.cursorID}})
 			socket.Release()
 		}
 		if err != nil && (iter.err == nil || iter.err == ErrNotFound) {
 			iter.err = err
 		}
-		iter.op.cursorId = 0
+		iter.op.cursorID = 0
 		return err
 	}
 	return nil
@@ -2715,7 +2729,7 @@ func (iter *Iter) Next(result interface{}) bool {
 	iter.m.Lock()
 	iter.timedout = false
 	timeout := time.Time{}
-	for iter.err == nil && iter.docData.Len() == 0 && (iter.docsToReceive > 0 || iter.op.cursorId != 0) {
+	for iter.err == nil && iter.docData.Len() == 0 && (iter.docsToReceive > 0 || iter.op.cursorID != 0) {
 		if iter.docsToReceive == 0 {
 			if iter.timeout >= 0 {
 				if timeout.IsZero() {
@@ -2751,7 +2765,7 @@ func (iter *Iter) Next(result interface{}) bool {
 				}
 			}
 		}
-		if iter.op.cursorId != 0 && iter.err == nil {
+		if iter.op.cursorID != 0 && iter.err == nil {
 			if iter.docsBeforeMore == 0 {
 				iter.getMore()
 			}
@@ -2784,7 +2798,7 @@ func (iter *Iter) Next(result interface{}) bool {
 		debugf("Iter %p returning false: %s", iter, iter.err)
 		iter.m.Unlock()
 		return false
-	} else if iter.op.cursorId == 0 {
+	} else if iter.op.cursorID == 0 {
 		iter.err = ErrNotFound
 		debugf("Iter %p exhausted with cursor=0", iter)
 		iter.m.Unlock()
@@ -2847,13 +2861,13 @@ func (q *Query) All(result interface{}) error {
 	return q.Iter().All(result)
 }
 
-// The For method is obsolete and will be removed in a future release.
+// For is obsolete and will be removed in a future release.
 // See Iter as an elegant replacement.
 func (q *Query) For(result interface{}, f func() error) error {
 	return q.Iter().For(result, f)
 }
 
-// The For method is obsolete and will be removed in a future release.
+// For is obsolete and will be removed in a future release.
 // See Iter as an elegant replacement.
 func (iter *Iter) For(result interface{}, f func() error) (err error) {
 	valid := false
@@ -3027,6 +3041,7 @@ type mapReduceResult struct {
 	Timing     *MapReduceTime
 }
 
+// MapReduce is a MongoDB map-reduce command
 type MapReduce struct {
 	Map      string      // Map Javascript function code (required)
 	Reduce   string      // Reduce Javascript function code (required)
@@ -3036,6 +3051,7 @@ type MapReduce struct {
 	Verbose  bool
 }
 
+// MapReduceInfo is the runtime detail of a MapReduce command
 type MapReduceInfo struct {
 	InputCount  int            // Number of documents mapped
 	EmitCount   int            // Number of times reduce called emit
@@ -3046,6 +3062,7 @@ type MapReduceInfo struct {
 	VerboseTime *MapReduceTime // Only defined if Verbose was true
 }
 
+// MapReduceTime is the runtime timing details of a MapReduce command
 type MapReduceTime struct {
 	Total    int64 // Total time, in nanoseconds
 	Map      int64 "mapTime"  // Time within map function, in nanoseconds
@@ -3315,7 +3332,7 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 	} else if change.Remove {
 		info.Removed = lerr.N
 	} else if change.Upsert {
-		info.UpsertedId = lerr.UpsertedId
+		info.UpsertedID = lerr.UpsertedID
 	}
 	return info, nil
 }
@@ -3405,7 +3422,7 @@ func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 	}
 
 	// Still not good.  We need a new socket.
-	sock, err := s.cluster().AcquireSocket(slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags, s.poolLimit)
+	sock, err := s.getCluster().AcquireSocket(slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags, s.poolLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -3469,10 +3486,10 @@ func (iter *Iter) replyFunc() replyFunc {
 			iter.err = err
 			debugf("Iter %p received an error: %s", iter, err.Error())
 		} else if docNum == -1 {
-			debugf("Iter %p received no documents (cursor=%d).", iter, op.cursorId)
-			if op != nil && op.cursorId != 0 {
+			debugf("Iter %p received no documents (cursor=%d).", iter, op.cursorID)
+			if op != nil && op.cursorID != 0 {
 				// It's a tailable cursor.
-				iter.op.cursorId = op.cursorId
+				iter.op.cursorID = op.cursorID
 			} else {
 				iter.err = ErrNotFound
 			}
@@ -3486,10 +3503,10 @@ func (iter *Iter) replyFunc() replyFunc {
 				} else {
 					iter.docsBeforeMore = -1
 				}
-				iter.op.cursorId = op.cursorId
+				iter.op.cursorID = op.cursorID
 			}
 			// XXX Handle errors and flags.
-			debugf("Iter %p received reply document %d/%d (cursor=%d)", iter, docNum+1, rdocs, op.cursorId)
+			debugf("Iter %p received reply document %d/%d (cursor=%d)", iter, docNum+1, rdocs, op.cursorID)
 			iter.docData.Push(docData)
 		}
 		iter.gotReply.Broadcast()
@@ -3516,41 +3533,42 @@ func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
 
 	if safeOp == nil {
 		return nil, socket.Query(op)
-	} else {
-		var mutex sync.Mutex
-		var replyData []byte
-		var replyErr error
-		mutex.Lock()
-		query := *safeOp // Copy the data.
-		query.collection = dbname + ".$cmd"
-		query.replyFunc = func(err error, reply *replyOp, docNum int, docData []byte) {
-			replyData = docData
-			replyErr = err
-			mutex.Unlock()
-		}
-		err = socket.Query(op, &query)
+	}
+
+	var mutex sync.Mutex
+	var replyData []byte
+	var replyErr error
+	mutex.Lock()
+	query := *safeOp // Copy the data.
+	query.collection = dbname + ".$cmd"
+	query.replyFunc = func(err error, reply *replyOp, docNum int, docData []byte) {
+		replyData = docData
+		replyErr = err
+		mutex.Unlock()
+	}
+	err = socket.Query(op, &query)
+	if err != nil {
+		return nil, err
+	}
+	mutex.Lock() // Wait.
+	if replyErr != nil {
+		return nil, replyErr // XXX TESTME
+	}
+	if hasErrMsg(replyData) {
+		// Looks like getLastError itself failed.
+		err = checkQueryError(query.collection, replyData)
 		if err != nil {
 			return nil, err
 		}
-		mutex.Lock() // Wait.
-		if replyErr != nil {
-			return nil, replyErr // XXX TESTME
-		}
-		if hasErrMsg(replyData) {
-			// Looks like getLastError itself failed.
-			err = checkQueryError(query.collection, replyData)
-			if err != nil {
-				return nil, err
-			}
-		}
-		result := &LastError{}
-		bson.Unmarshal(replyData, &result)
-		debugf("Result from writing query: %#v", result)
-		if result.Err != "" {
-			return result, result
-		}
-		return result, nil
 	}
+	result := &LastError{}
+	bson.Unmarshal(replyData, &result)
+	debugf("Result from writing query: %#v", result)
+	if result.Err != "" {
+		return result, result
+	}
+	return result, nil
+
 	panic("unreachable")
 }
 

@@ -39,6 +39,7 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
+// GridFS contains file and chunk details
 type GridFS struct {
 	Files  *Collection
 	Chunks *Collection
@@ -52,6 +53,7 @@ const (
 	gfsWriting gfsFileMode = 2
 )
 
+// GridFile contains file level details
 type GridFile struct {
 	m    sync.Mutex
 	c    sync.Cond
@@ -73,7 +75,7 @@ type GridFile struct {
 }
 
 type gfsFile struct {
-	Id          interface{} "_id"
+	ID          interface{} "_id"
 	ChunkSize   int         "chunkSize"
 	UploadDate  time.Time   "uploadDate"
 	Length      int64       ",minsize"
@@ -84,8 +86,8 @@ type gfsFile struct {
 }
 
 type gfsChunk struct {
-	Id      interface{} "_id"
-	FilesId interface{} "files_id"
+	ID      interface{} "_id"
+	FilesID interface{} "files_id"
 	N       int
 	Data    []byte
 }
@@ -115,8 +117,8 @@ func finalizeFile(file *GridFile) {
 // Create creates a new file with the provided name in the GridFS.  If the file
 // name already exists, a new version will be inserted with an up-to-date
 // uploadDate that will cause it to be atomically visible to the Open and
-// OpenId methods.  If the file name is not important, an empty name may be
-// provided and the file Id used instead.
+// OpenID methods.  If the file name is not important, an empty name may be
+// provided and the file ID used instead.
 //
 // It's important to Close files whether they are being written to
 // or read from, and to check the err result to ensure the operation
@@ -154,11 +156,11 @@ func (gfs *GridFS) Create(name string) (file *GridFile, err error) {
 	file = gfs.newFile()
 	file.mode = gfsWriting
 	file.wsum = md5.New()
-	file.doc = gfsFile{Id: bson.NewObjectId(), ChunkSize: 256 * 1024, Filename: name}
+	file.doc = gfsFile{ID: bson.NewObjectId(), ChunkSize: 256 * 1024, Filename: name}
 	return
 }
 
-// OpenId returns the file with the provided id, for reading.
+// OpenID returns the file with the provided id, for reading.
 // If the file isn't found, err will be set to mgo.ErrNotFound.
 //
 // It's important to Close files whether they are being written to
@@ -172,7 +174,7 @@ func (gfs *GridFS) Create(name string) (file *GridFile, err error) {
 //             panic(err.String())
 //         }
 //     }
-//     file, err := db.GridFS("fs").OpenId(objid)
+//     file, err := db.GridFS("fs").OpenID(objid)
 //     check(err)
 //     b := make([]byte, 8192)
 //     n, err := file.Read(b)
@@ -187,14 +189,14 @@ func (gfs *GridFS) Create(name string) (file *GridFile, err error) {
 // deal with it.  As an example, the following snippet will dump the whole
 // file into the standard output:
 //
-//     file, err := db.GridFS("fs").OpenId(objid)
+//     file, err := db.GridFS("fs").OpenID(objid)
 //     check(err)
 //     err = io.Copy(os.Stdout, file)
 //     check(err)
 //     err = file.Close()
 //     check(err)
 //
-func (gfs *GridFS) OpenId(id interface{}) (file *GridFile, err error) {
+func (gfs *GridFS) OpenID(id interface{}) (file *GridFile, err error) {
 	var doc gfsFile
 	err = gfs.Files.Find(bson.M{"_id": id}).One(&doc)
 	if err != nil {
@@ -313,8 +315,8 @@ func (gfs *GridFS) Find(query interface{}) *Query {
 	return gfs.Files.Find(query)
 }
 
-// RemoveId deletes the file with the provided id from the GridFS.
-func (gfs *GridFS) RemoveId(id interface{}) error {
+// RemoveID deletes the file with the provided id from the GridFS.
+func (gfs *GridFS) RemoveID(id interface{}) error {
 	err := gfs.Files.Remove(bson.M{"_id": id})
 	if err != nil {
 		return err
@@ -323,16 +325,16 @@ func (gfs *GridFS) RemoveId(id interface{}) error {
 	return err
 }
 
-type gfsDocId struct {
-	Id interface{} "_id"
+type gfsDocID struct {
+	ID interface{} "_id"
 }
 
 // Remove deletes all files with the provided name from the GridFS.
 func (gfs *GridFS) Remove(name string) (err error) {
 	iter := gfs.Files.Find(bson.M{"filename": name}).Select(bson.M{"_id": 1}).Iter()
-	var doc gfsDocId
+	var doc gfsDocID
 	for iter.Next(&doc) {
-		if e := gfs.RemoveId(doc.Id); e != nil {
+		if e := gfs.RemoveID(doc.ID); e != nil {
 			err = e
 		}
 	}
@@ -371,19 +373,19 @@ func (file *GridFile) SetChunkSize(bytes int) {
 	file.m.Unlock()
 }
 
-// Id returns the current file Id.
-func (file *GridFile) Id() interface{} {
-	return file.doc.Id
+// ID returns the current file ID.
+func (file *GridFile) ID() interface{} {
+	return file.doc.ID
 }
 
-// SetId changes the current file Id.
+// SetID changes the current file ID.
 //
 // It is a runtime error to call this function once the file has started
 // being written to, or when the file is not open for writing.
-func (file *GridFile) SetId(id interface{}) {
+func (file *GridFile) SetID(id interface{}) {
 	file.assertMode(gfsWriting)
 	file.m.Lock()
-	file.doc.Id = id
+	file.doc.ID = id
 	file.m.Unlock()
 }
 
@@ -411,8 +413,8 @@ func (file *GridFile) ContentType() string {
 	return file.doc.ContentType
 }
 
-// ContentType changes the optional file content type.  An empty string may be
-// used to unset it.
+// SetContentType changes the optional file content type.
+// An empty string may be used to unset it.
 //
 // It is a runtime error to call this function when the file is not open
 // for writing.
@@ -511,7 +513,7 @@ func (file *GridFile) completeWrite() {
 		file.c.Wait()
 	}
 	if file.err != nil {
-		file.gfs.Chunks.RemoveAll(bson.D{{"files_id", file.doc.Id}})
+		file.gfs.Chunks.RemoveAll(bson.D{{"files_id", file.doc.ID}})
 		return
 	}
 	hexsum := hex.EncodeToString(file.wsum.Sum(nil))
@@ -612,7 +614,7 @@ func (file *GridFile) insertChunk(data []byte) {
 
 	// We may not own the memory of data, so rather than
 	// simply copying it, we'll marshal the document ahead of time.
-	data, err := bson.Marshal(gfsChunk{bson.NewObjectId(), file.doc.Id, n, data})
+	data, err := bson.Marshal(gfsChunk{bson.NewObjectId(), file.doc.ID, n, data})
 	if err != nil {
 		file.err = err
 		return
@@ -706,7 +708,7 @@ func (file *GridFile) getChunk() (data []byte, err error) {
 	} else {
 		debugf("GridFile %p: Fetching chunk %d", file, file.chunk)
 		var doc gfsChunk
-		err = file.gfs.Chunks.Find(bson.D{{"files_id", file.doc.Id}, {"n", file.chunk}}).One(&doc)
+		err = file.gfs.Chunks.Find(bson.D{{"files_id", file.doc.ID}, {"n", file.chunk}}).One(&doc)
 		data = doc.Data
 	}
 	file.chunk++
@@ -725,7 +727,7 @@ func (file *GridFile) getChunk() (data []byte, err error) {
 			cache.err = chunks.Find(bson.D{{"files_id", id}, {"n", n}}).One(&doc)
 			cache.data = doc.Data
 			cache.wait.Unlock()
-		}(file.doc.Id, file.chunk)
+		}(file.doc.ID, file.chunk)
 		file.rcache = cache
 	}
 	debugf("Returning err: %#v", err)

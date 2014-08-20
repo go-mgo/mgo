@@ -120,7 +120,7 @@ func (s *S) TearDownTest(c *C) {
 			c.Fatal("Test left sockets in a dirty state")
 		}
 		c.Logf("Waiting for sockets to die: %d in use, %d alive", stats.SocketsInUse, stats.SocketsAlive)
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(5 * time.Second)
 	}
 	for i := 0; ; i++ {
 		stats = mgo.GetStats()
@@ -131,13 +131,13 @@ func (s *S) TearDownTest(c *C) {
 			c.Fatal("Test left clusters alive")
 		}
 		c.Logf("Waiting for clusters to die: %d alive", stats.Clusters)
-		time.Sleep(1 * time.Second)
+		time.Sleep(10 * time.Second)
 	}
 }
 
 func (s *S) Stop(host string) {
 	// Give a moment for slaves to sync and avoid getting rollback issues.
-	time.Sleep(2 * time.Second)
+	time.Sleep(20 * time.Second)
 	err := run("cd _testdb && supervisorctl stop " + supvName(host))
 	if err != nil {
 		panic(err)
