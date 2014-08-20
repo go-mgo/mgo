@@ -220,7 +220,7 @@ func (s *S) TestAuthUpsertUser(c *C) {
 
 	err = myotherdb.UpsertUser(rwuserother)
 	if s.versionAtLeast(2, 6) {
-		c.Assert(err, ErrorMatches, `MongoDB 2.6\+ does not support the UserSource setting`)
+		c.Assert(err, ErrorMatches, `setting UserSource is not supported in MongoDB 2.6\+`)
 		return
 	}
 	c.Assert(err, IsNil)
@@ -774,7 +774,7 @@ func (s *S) TestAuthURLWithDatabase(c *C) {
 		defer usession.Close()
 
 		ucoll := usession.DB("mydb").C("mycoll")
-		err = ucoll.FindId(0).One(nil)
+		err = ucoll.FindID(0).One(nil)
 		c.Assert(err, Equals, mgo.ErrNotFound)
 		err = ucoll.Insert(M{"n": 1})
 		c.Assert(err, ErrorMatches, "unauthorized|not authorized .*")

@@ -33,6 +33,7 @@ import (
 var stats *Stats
 var statsMutex sync.Mutex
 
+// SetStats enables or disables socket and connection statistics
 func SetStats(enabled bool) {
 	statsMutex.Lock()
 	if enabled {
@@ -45,6 +46,7 @@ func SetStats(enabled bool) {
 	statsMutex.Unlock()
 }
 
+// GetStats retrieves current connection and socket statistics
 func GetStats() (snapshot Stats) {
 	statsMutex.Lock()
 	snapshot = *stats
@@ -52,6 +54,7 @@ func GetStats() (snapshot Stats) {
 	return
 }
 
+// ResetStats zeros connection and socket statistics
 func ResetStats() {
 	statsMutex.Lock()
 	debug("Resetting stats")
@@ -66,6 +69,7 @@ func ResetStats() {
 	return
 }
 
+// Stats contains connection and socket statistics
 type Stats struct {
 	Clusters     int
 	MasterConns  int

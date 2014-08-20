@@ -31,9 +31,9 @@ import (
 	"os"
 	"time"
 
+	. "gopkg.in/check.v1"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
-	. "gopkg.in/check.v1"
 )
 
 func (s *S) TestGridFSCreate(c *C) {
@@ -63,9 +63,9 @@ func (s *S) TestGridFSCreate(c *C) {
 	err = db.C("fs.files").Find(nil).One(result)
 	c.Assert(err, IsNil)
 
-	fileId, ok := result["_id"].(bson.ObjectId)
+	fileID, ok := result["_id"].(bson.ObjectId)
 	c.Assert(ok, Equals, true)
-	c.Assert(fileId.Valid(), Equals, true)
+	c.Assert(fileID.Valid(), Equals, true)
 	result["_id"] = "<id>"
 
 	ud, ok := result["uploadDate"].(time.Time)
@@ -87,14 +87,14 @@ func (s *S) TestGridFSCreate(c *C) {
 	err = db.C("fs.chunks").Find(nil).One(result)
 	c.Assert(err, IsNil)
 
-	chunkId, ok := result["_id"].(bson.ObjectId)
+	chunkID, ok := result["_id"].(bson.ObjectId)
 	c.Assert(ok, Equals, true)
-	c.Assert(chunkId.Valid(), Equals, true)
+	c.Assert(chunkID.Valid(), Equals, true)
 	result["_id"] = "<id>"
 
 	expected = M{
 		"_id":      "<id>",
-		"files_id": fileId,
+		"files_id": fileID,
 		"n":        0,
 		"data":     []byte("some data"),
 	}
@@ -131,7 +131,7 @@ func (s *S) TestGridFSFileDetails(c *C) {
 
 	c.Assert(file.Size(), Equals, int64(9))
 
-	id, _ := file.Id().(bson.ObjectId)
+	id, _ := file.ID().(bson.ObjectId)
 	c.Assert(id.Valid(), Equals, true)
 	c.Assert(file.Name(), Equals, "myfile1.txt")
 	c.Assert(file.ContentType(), Equals, "")
@@ -141,12 +141,12 @@ func (s *S) TestGridFSFileDetails(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(info, IsNil)
 
-	file.SetId("myid")
+	file.SetID("myid")
 	file.SetName("myfile2.txt")
 	file.SetContentType("text/plain")
 	file.SetMeta(M{"any": "thing"})
 
-	c.Assert(file.Id(), Equals, "myid")
+	c.Assert(file.ID(), Equals, "myid")
 	c.Assert(file.Name(), Equals, "myfile2.txt")
 	c.Assert(file.ContentType(), Equals, "text/plain")
 
@@ -225,8 +225,8 @@ func (s *S) TestGridFSCreateWithChunking(c *C) {
 	err = db.C("fs.files").Find(nil).One(result)
 	c.Assert(err, IsNil)
 
-	fileId, _ := result["_id"].(bson.ObjectId)
-	c.Assert(fileId.Valid(), Equals, true)
+	fileID, _ := result["_id"].(bson.ObjectId)
+	c.Assert(fileID.Valid(), Equals, true)
 	result["_id"] = "<id>"
 	result["uploadDate"] = "<timestamp>"
 
@@ -256,7 +256,7 @@ func (s *S) TestGridFSCreateWithChunking(c *C) {
 
 		expected = M{
 			"_id":      "<id>",
-			"files_id": fileId,
+			"files_id": fileID,
 			"n":        i,
 			"data":     []byte(dataChunks[i]),
 		}
@@ -309,7 +309,7 @@ func (s *S) TestGridFSOpenNotFound(c *C) {
 	db := session.DB("mydb")
 
 	gfs := db.GridFS("fs")
-	file, err := gfs.OpenId("non-existent")
+	file, err := gfs.OpenID("non-existent")
 	c.Assert(err == mgo.ErrNotFound, Equals, true)
 	c.Assert(file, IsNil)
 
@@ -328,7 +328,7 @@ func (s *S) TestGridFSReadAll(c *C) {
 	gfs := db.GridFS("fs")
 	file, err := gfs.Create("")
 	c.Assert(err, IsNil)
-	id := file.Id()
+	id := file.ID()
 
 	file.SetChunkSize(5)
 
@@ -339,7 +339,7 @@ func (s *S) TestGridFSReadAll(c *C) {
 	err = file.Close()
 	c.Assert(err, IsNil)
 
-	file, err = gfs.OpenId(id)
+	file, err = gfs.OpenID(id)
 	c.Assert(err, IsNil)
 
 	b := make([]byte, 30)
@@ -367,7 +367,7 @@ func (s *S) TestGridFSReadChunking(c *C) {
 	file, err := gfs.Create("")
 	c.Assert(err, IsNil)
 
-	id := file.Id()
+	id := file.ID()
 
 	file.SetChunkSize(5)
 
@@ -378,7 +378,7 @@ func (s *S) TestGridFSReadChunking(c *C) {
 	err = file.Close()
 	c.Assert(err, IsNil)
 
-	file, err = gfs.OpenId(id)
+	file, err = gfs.OpenID(id)
 	c.Assert(err, IsNil)
 
 	b := make([]byte, 30)
@@ -455,7 +455,7 @@ func (s *S) TestGridFSSeek(c *C) {
 	gfs := db.GridFS("fs")
 	file, err := gfs.Create("")
 	c.Assert(err, IsNil)
-	id := file.Id()
+	id := file.ID()
 
 	file.SetChunkSize(5)
 
@@ -468,7 +468,7 @@ func (s *S) TestGridFSSeek(c *C) {
 
 	b := make([]byte, 5)
 
-	file, err = gfs.OpenId(id)
+	file, err = gfs.OpenID(id)
 	c.Assert(err, IsNil)
 
 	o, err := file.Seek(3, os.SEEK_SET)
@@ -534,10 +534,10 @@ func (s *S) TestGridFSRemoveId(c *C) {
 	file, err = gfs.Create("myfile.txt")
 	c.Assert(err, IsNil)
 	file.Write([]byte{'2'})
-	id := file.Id()
+	id := file.ID()
 	file.Close()
 
-	err = gfs.RemoveId(id)
+	err = gfs.RemoveID(id)
 	c.Assert(err, IsNil)
 
 	file, err = gfs.Open("myfile.txt")

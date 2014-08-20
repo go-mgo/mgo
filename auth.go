@@ -70,7 +70,7 @@ type logoutCmd struct {
 type saslCmd struct {
 	Start          int    `bson:"saslStart,omitempty"`
 	Continue       int    `bson:"saslContinue,omitempty"`
-	ConversationId int    `bson:"conversationId,omitempty"`
+	ConversationID int    `bson:"conversationId,omitempty"`
 	Mechanism      string `bson:"mechanism,omitempty"`
 	Payload        []byte
 }
@@ -80,7 +80,7 @@ type saslResult struct {
 	NotOk bool `bson:"code"` // Server <= 2.3.2 returns ok=1 & code>0 on errors (WTF?)
 	Done  bool
 
-	ConversationId int `bson:"conversationId"`
+	ConversationID int `bson:"conversationId"`
 	Payload        []byte
 	ErrMsg         string
 }
@@ -98,7 +98,7 @@ func (socket *mongoSocket) getNonce() (nonce string, err error) {
 	}
 	if socket.cachedNonce == "mongos" {
 		socket.Unlock()
-		return "", errors.New("Can't authenticate with mongos; see http://j.mp/mongos-auth")
+		return "", errors.New("can't authenticate with mongos; see http://j.mp/mongos-auth")
 	}
 	debugf("Socket %p to %s: got nonce", socket, socket.addr)
 	nonce, err = socket.cachedNonce, socket.dead
@@ -292,7 +292,7 @@ func (socket *mongoSocket) loginSASL(cred Credential) error {
 		cmd = saslCmd{
 			Start:          start,
 			Continue:       1 - start,
-			ConversationId: res.ConversationId,
+			ConversationID: res.ConversationID,
 			Mechanism:      cred.Mechanism,
 			Payload:        payload,
 		}

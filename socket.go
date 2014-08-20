@@ -43,7 +43,7 @@ type mongoSocket struct {
 	conn          net.Conn
 	timeout       time.Duration
 	addr          string // For debugging only.
-	nextRequestId uint32
+	nextRequestID uint32
 	replyFuncs    map[uint32]replyFunc
 	references    int
 	creds         []Credential
@@ -109,13 +109,13 @@ func (op *queryOp) finalQuery(socket *mongoSocket) interface{} {
 type getMoreOp struct {
 	collection string
 	limit      int32
-	cursorId   int64
+	cursorID   int64
 	replyFunc  replyFunc
 }
 
 type replyOp struct {
 	flags     uint32
-	cursorId  int64
+	cursorID  int64
 	firstDoc  int32
 	replyDocs int32
 }
@@ -140,7 +140,7 @@ type deleteOp struct {
 }
 
 type killCursorsOp struct {
-	cursorIds []int64
+	cursorIDs []int64
 }
 
 type requestInfo struct {
@@ -284,7 +284,7 @@ func (socket *mongoSocket) updateDeadline(which deadlineType) {
 
 // Close terminates the socket use.
 func (socket *mongoSocket) Close() {
-	socket.kill(errors.New("Closed explicitly"), false)
+	socket.kill(errors.New("closed explicitly"), false)
 }
 
 func (socket *mongoSocket) kill(err error, abend bool) {
@@ -415,7 +415,7 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 			buf = addInt32(buf, 0) // Reserved
 			buf = addCString(buf, op.collection)
 			buf = addInt32(buf, op.limit)
-			buf = addInt64(buf, op.cursorId)
+			buf = addInt64(buf, op.cursorID)
 			replyFunc = op.replyFunc
 
 		case *deleteOp:
@@ -432,9 +432,9 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 		case *killCursorsOp:
 			buf = addHeader(buf, 2007)
 			buf = addInt32(buf, 0) // Reserved
-			buf = addInt32(buf, int32(len(op.cursorIds)))
-			for _, cursorId := range op.cursorIds {
-				buf = addInt64(buf, cursorId)
+			buf = addInt32(buf, int32(len(op.cursorIDs)))
+			for _, cursorID := range op.cursorIDs {
+				buf = addInt64(buf, cursorID)
 			}
 
 		default:
@@ -472,16 +472,16 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 	wasWaiting := len(socket.replyFuncs) > 0
 
 	// Reserve id 0 for requests which should have no responses.
-	requestId := socket.nextRequestId + 1
-	if requestId == 0 {
-		requestId++
+	requestID := socket.nextRequestID + 1
+	if requestID == 0 {
+		requestID++
 	}
-	socket.nextRequestId = requestId + uint32(requestCount)
+	socket.nextRequestID = requestID + uint32(requestCount)
 	for i := 0; i != requestCount; i++ {
 		request := &requests[i]
-		setInt32(buf, request.bufferPos+4, int32(requestId))
-		socket.replyFuncs[requestId] = request.replyFunc
-		requestId++
+		setInt32(buf, request.bufferPos+4, int32(requestID))
+		socket.replyFuncs[requestID] = request.replyFunc
+		requestID++
 	}
 
 	debugf("Socket %p to %s: sending %d op(s) (%d bytes)", socket, socket.addr, len(ops), len(buf))
@@ -538,7 +538,7 @@ func (socket *mongoSocket) readLoop() {
 
 		reply := replyOp{
 			flags:     uint32(getInt32(p, 16)),
-			cursorId:  getInt64(p, 20),
+			cursorID:  getInt64(p, 20),
 			firstDoc:  getInt32(p, 28),
 			replyDocs: getInt32(p, 32),
 		}
