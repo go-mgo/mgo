@@ -246,7 +246,13 @@ func (socket *mongoSocket) loginPlain(cred Credential) error {
 }
 
 func (socket *mongoSocket) loginSASL(cred Credential) error {
-	sasl, err := saslNew(cred, socket.Server().Addr)
+	var sasl saslStepper
+	var err error
+	if len(cred.ServiceHost) > 0 {
+		sasl, err = saslNew(cred, cred.ServiceHost)
+	} else {
+		sasl, err = saslNew(cred, socket.Server().Addr)
+	}
 	if err != nil {
 		return err
 	}
