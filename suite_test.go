@@ -32,8 +32,8 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"runtime"
 	"strconv"
-	"syscall"
 	"testing"
 	"time"
 
@@ -105,9 +105,11 @@ func (s *S) TearDownTest(c *C) {
 	if s.stopped {
 		s.StartAll()
 	}
-	for _, host := range s.frozen {
-		if host != "" {
-			s.Thaw(host)
+	if runtime.GOOS != "windows" {
+		for _, host := range s.frozen {
+			if host != "" {
+				s.Thaw(host)
+			}
 		}
 	}
 	var stats mgo.Stats
@@ -137,6 +139,9 @@ func (s *S) TearDownTest(c *C) {
 
 func (s *S) Stop(host string) {
 	// Give a moment for slaves to sync and avoid getting rollback issues.
+	if runtime.GOOS == "windows" {
+		panic("Stop() currently unsupported on windows!")
+	}
 	time.Sleep(2 * time.Second)
 	err := run("cd _testdb && supervisorctl stop " + supvName(host))
 	if err != nil {
@@ -158,26 +163,6 @@ func (s *S) pid(host string) int {
 	return pid
 }
 
-func (s *S) Freeze(host string) {
-	err := syscall.Kill(s.pid(host), syscall.SIGSTOP)
-	if err != nil {
-		panic(err)
-	}
-	s.frozen = append(s.frozen, host)
-}
-
-func (s *S) Thaw(host string) {
-	err := syscall.Kill(s.pid(host), syscall.SIGCONT)
-	if err != nil {
-		panic(err)
-	}
-	for i, frozen := range s.frozen {
-		if frozen == host {
-			s.frozen[i] = ""
-		}
-	}
-}
-
 func (s *S) StartAll() {
 	// Restart any stopped nodes.
 	run("cd _testdb && supervisorctl start all")
@@ -189,7 +174,14 @@ func (s *S) StartAll() {
 }
 
 func run(command string) error {
-	output, err := exec.Command("/bin/sh", "-c", command).CombinedOutput()
+	var output []byte
+	var err error
+	if runtime.GOOS == "windows" {
+		output, err = exec.Command("cmd", "/C", command).CombinedOutput()
+	} else {
+		output, err = exec.Command("/bin/sh", "-c", command).CombinedOutput()
+	}
+
 	if err != nil {
 		msg := fmt.Sprintf("Failed to execute: %s: %s\n%s", command, err.Error(), string(output))
 		return errors.New(msg)

@@ -4,7 +4,15 @@ start() {
     mkdir _testdb
     cd _testdb
     mkdir db1 db2 rs1a rs1b rs1c rs2a rs2b rs2c rs3a rs3b rs3c rs4a cfg1 cfg2 cfg3
-    ln -s ../testdb/supervisord.conf supervisord.conf
+    if [[ `uname` == 'CYGWIN_NT-6.1' ]]; then
+        # Supervisor will only run on windows through cygwin. However, to get
+        # it to start you need to pass the properly-escaped windows-style path
+        # to _testdb as an environment variable. For instance:
+        # env DIRECTORY="d:\\\\cygwin\\\\home\\\\Administrator\\\\mgo-gopath\\\\src\\\\gopkg.in\\\\mgo.v2\\\\_testdb\\\\" make startdb
+        ln -s ../testdb/supervisord-cygwin.conf supervisord.conf
+    else
+        ln -s ../testdb/supervisord.conf supervisord.conf
+    fi
     echo keyfile > keyfile
     chmod 600 keyfile
     echo "Running supervisord..."
