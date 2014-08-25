@@ -2794,6 +2794,94 @@ func (iter *Iter) Next(result interface{}) bool {
 	panic("unreachable")
 }
 
+// NextCopyBytes is a hack of Next(). It takes in an existing byte buffer and copies
+// the returned bson bytes from the db into it. It returns a boolean similar to Next()
+// and integer representing the number of bytes copied into the buffer. 
+func (iter *Iter) NextCopyBytes(out []byte) (bool, int) {
+	iter.m.Lock()
+	iter.timedout = false
+	timeout := time.Time{}
+	for iter.err == nil && iter.docData.Len() == 0 && (iter.docsToReceive > 0 || iter.op.cursorId != 0) {
+		if iter.docsToReceive == 0 {
+			if iter.timeout >= 0 {
+				if timeout.IsZero() {
+					timeout = time.Now().Add(iter.timeout)
+				}
+				if time.Now().After(timeout) {
+					iter.timedout = true
+					iter.m.Unlock()
+					return false, 0
+				}
+			}
+			iter.getMore()
+			if iter.err != nil {
+				break
+			}
+		}
+		iter.gotReply.Wait()
+	}
+
+	// Exhaust available data before reporting any errors.
+	if docData, ok := iter.docData.Pop().([]byte); ok {
+		if iter.limit > 0 {
+			iter.limit--
+			if iter.limit == 0 {
+				if iter.docData.Len() > 0 {
+					iter.m.Unlock()
+					panic(fmt.Errorf("data remains after limit exhausted: %d", iter.docData.Len()))
+				}
+				iter.err = ErrNotFound
+				if iter.killCursor() != nil {
+					iter.m.Unlock()
+					return false, 0
+				}
+			}
+		}
+		if iter.op.cursorId != 0 && iter.err == nil {
+			if iter.docsBeforeMore == 0 {
+				iter.getMore()
+			}
+			iter.docsBeforeMore-- // Goes negative.
+		}
+		iter.m.Unlock()
+
+		copied := copy(out, docData)
+
+		if copied < len(docData) {
+			err := fmt.Errorf("buffer too small")
+			debugf("Iter %p document copying failed: %v", iter, err)
+			iter.m.Lock()
+			if iter.err == nil {
+				iter.err = err
+			}
+			iter.m.Unlock()
+			return false, 0
+		}
+		// XXX Only have to check first document for a query error?
+		err := checkQueryError(iter.op.collection, docData)
+		if err != nil {
+			iter.m.Lock()
+			if iter.err == nil {
+				iter.err = err
+			}
+			iter.m.Unlock()
+			return false, 0
+		}
+		return true, copied
+	} else if iter.err != nil {
+		debugf("Iter %p returning false: %s", iter, iter.err)
+		iter.m.Unlock()
+		return false, 0
+	} else if iter.op.cursorId == 0 {
+		iter.err = ErrNotFound
+		debugf("Iter %p exhausted with cursor=0", iter)
+		iter.m.Unlock()
+		return false, 0
+	}
+
+	panic("unreachable")
+}
+
 // All retrieves all documents from the result set into the provided slice
 // and closes the iterator.
 //
