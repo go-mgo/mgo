@@ -2197,18 +2197,25 @@ func (q *Query) Select(selector interface{}) *Query {
 //     query1 := collection.Find(nil).Sort("firstname", "lastname")
 //     query2 := collection.Find(nil).Sort("-age")
 //     query3 := collection.Find(nil).Sort("$natural")
+//     query4 := collection.Find(nil).Select(bson.M{"score": bson.M{"$meta": "textScore"}}).Sort("$textScore:score")
 //
 // Relevant documentation:
 //
 //     http://www.mongodb.org/display/DOCS/Sorting+and+Natural+Order
 //
 func (q *Query) Sort(fields ...string) *Query {
-	// TODO //     query4 := collection.Find(nil).Sort("score:{$meta:textScore}")
 	q.m.Lock()
 	var order bson.D
 	for _, field := range fields {
 		n := 1
+		var kind string
 		if field != "" {
+			if field[0] == '$' {
+				if c := strings.Index(field, ":"); c > 1 && c < len(field)-1 {
+					kind = field[1:c]
+					field = field[c+1:]
+				}
+			}
 			switch field[0] {
 			case '+':
 				field = field[1:]
@@ -2220,7 +2227,11 @@ func (q *Query) Sort(fields ...string) *Query {
 		if field == "" {
 			panic("Sort: empty field name")
 		}
-		order = append(order, bson.DocElem{field, n})
+		if kind == "textScore" {
+			order = append(order, bson.DocElem{field, bson.M{"$meta": kind}})
+		} else {
+			order = append(order, bson.DocElem{field, n})
+		}
 	}
 	q.op.options.OrderBy = order
 	q.op.hasOptions = true
