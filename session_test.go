@@ -3254,3 +3254,45 @@ func (s *S) TestSetCursorTimeout(c *C) {
 	c.Assert(result.N, Equals, 42)
 	c.Assert(iter.Next(&result), Equals, false)
 }
+
+// --------------------------------------------------------------------------
+// Some benchmarks that require a running database.
+
+func (s *S) BenchmarkFindIterRaw(c *C) {
+	err := run("mongo --nodb testdb/dropall.js")
+	if err != nil {
+		panic(err)
+	}
+	session, err := mgo.Dial("localhost:40001")
+	if err != nil {
+		panic(err)
+	}
+	defer session.Close()
+	coll := session.DB("mydb").C("mycoll")
+
+	// Insert 10,000 test documents
+	for i := 0; i < 10000; i++ {
+		doc := bson.M{
+			"_id": i,
+			"f2":  "a short string",
+			"f3":  bson.M{"1": "one", "2": float64(2)},
+			"f4":  []string{"a", "b", "c", "d", "e", "f", "g"},
+		}
+		err := coll.Insert(doc)
+		if err != nil {
+			panic(err)
+		}
+	}
+	raw := bson.Raw{}
+
+	c.ResetTimer()
+	for i := 0; i < c.N; i++ {
+		iter := coll.Find(nil).Iter()
+		for iter.Next(&raw) {
+		}
+		if err := iter.Err(); err != nil {
+			panic(err)
+		}
+	}
+
+}
