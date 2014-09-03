@@ -436,7 +436,7 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 	if kind == '\x03' {
 		// Special case for documents. Delegate to readDocTo().
 		switch out.Kind() {
-		case reflect.Interface, reflect.Ptr, reflect.Struct, reflect.Map:
+		case reflect.Interface, reflect.Ptr, reflect.Struct, reflect.Map, reflect.Array, reflect.Slice:
 			d.readDocTo(out)
 		default:
 			switch out.Interface().(type) {
