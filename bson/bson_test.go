@@ -1448,14 +1448,14 @@ type BenchRawT struct {
 	D []float64
 }
 
-func BenchmarkUnmarhsalStruct(b *testing.B) {
+func (s *S) BenchmarkUnmarhsalStruct(c *C) {
 	v := BenchT{A: "A", D: "D", E: "E"}
 	data, err := bson.Marshal(&v)
 	if err != nil {
 		panic(err)
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	c.ResetTimer()
+	for i := 0; i < c.N; i++ {
 		err = bson.Unmarshal(data, &v)
 	}
 	if err != nil {
@@ -1463,14 +1463,14 @@ func BenchmarkUnmarhsalStruct(b *testing.B) {
 	}
 }
 
-func BenchmarkUnmarhsalMap(b *testing.B) {
+func (s *S) BenchmarkUnmarhsalMap(c *C) {
 	m := bson.M{"a": "a", "d": "d", "e": "e"}
 	data, err := bson.Marshal(&m)
 	if err != nil {
 		panic(err)
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	c.ResetTimer()
+	for i := 0; i < c.N; i++ {
 		err = bson.Unmarshal(data, &m)
 	}
 	if err != nil {
@@ -1478,7 +1478,7 @@ func BenchmarkUnmarhsalMap(b *testing.B) {
 	}
 }
 
-func BenchmarkUnmarshalRaw(b *testing.B) {
+func (s *S) BenchmarkUnmarshalRaw(c *C) {
 	var err error
 	m := BenchRawT{
 		A: "test_string",
@@ -1494,8 +1494,8 @@ func BenchmarkUnmarshalRaw(b *testing.B) {
 		panic(err)
 	}
 	raw := bson.Raw{}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	c.ResetTimer()
+	for i := 0; i < c.N; i++ {
 		err = bson.Unmarshal(data, &raw)
 	}
 	if err != nil {

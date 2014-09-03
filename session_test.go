@@ -35,7 +35,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"testing"
 	"time"
 
 	. "gopkg.in/check.v1"
@@ -3259,7 +3258,7 @@ func (s *S) TestSetCursorTimeout(c *C) {
 // --------------------------------------------------------------------------
 // Some benchmarks that require a running database.
 
-func BenchmarkFindIterRaw(b *testing.B) {
+func (s *S) BenchmarkFindIterRaw(c *C) {
 	err := run("mongo --nodb testdb/dropall.js")
 	if err != nil {
 		panic(err)
@@ -3286,8 +3285,8 @@ func BenchmarkFindIterRaw(b *testing.B) {
 	}
 	raw := bson.Raw{}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	c.ResetTimer()
+	for i := 0; i < c.N; i++ {
 		iter := coll.Find(nil).Iter()
 		for iter.Next(&raw) {
 		}
