@@ -21,21 +21,22 @@ type saslStepper interface {
 
 type saslSession struct {
 	// Credentials
-	mech string
-	service string
-	host string
+	mech          string
+	service       string
+	host          string
 	userPlusRealm string
 
 	// Internal state
 	authComplete bool
-	errored bool
-	step int
+	errored      bool
+	step         int
 
 	// C internal state
 	credHandle C.CredHandle
-	context C.CtxtHandle
+	context    C.CtxtHandle
 	hasContext C.int
 
+	// Keep track of pointers we need to explicitly free
 	stringsToFree []*C.char
 	buffersToFree []C.PVOID
 }
@@ -70,6 +71,7 @@ func New(username, password, mechanism, service, host string) (saslStepper, erro
 	domain := usernameComponents[1]
 
 	var status C.SECURITY_STATUS
+	// Step 0: call AcquireCredentialsHandle to get a nice SSPI CredHandle
 	if len(password) > 0 {
 		status = C.sspi_acquire_credentials_handle(&ss.credHandle, ss.cstr(user), ss.cstr(password), ss.cstr(domain))
 	} else {
@@ -78,7 +80,7 @@ func New(username, password, mechanism, service, host string) (saslStepper, erro
 
 	if status != C.SEC_E_OK {
 		ss.errored = true
-		return nil, fmt.Errorf("Couldn't create new SSPI client, error code %v", status) 
+		return nil, fmt.Errorf("Couldn't create new SSPI client, error code %v", status)
 	}
 
 	return ss, nil
@@ -106,8 +108,8 @@ func (ss *saslSession) Close() {
 func (ss *saslSession) Step(serverData []byte) (clientData []byte, done bool, err error) {
 	ss.step++
 	if ss.step > 10 {
-                return nil, false, fmt.Errorf("too many SSPI steps without authentication")
-        }
+		return nil, false, fmt.Errorf("too many SSPI steps without authentication")
+	}
 	var buffer C.PVOID
 	var bufferLength C.ULONG
 	if len(serverData) > 0 {
@@ -116,9 +118,11 @@ func (ss *saslSession) Step(serverData []byte) (clientData []byte, done bool, er
 	}
 	var status C.int
 	if ss.authComplete {
+		// Step 3: last bit of magic to use the correct server credentials
 		status = C.sspi_send_client_authz_id(&ss.context, &buffer, &bufferLength, ss.cstr(ss.userPlusRealm))
 		ss.buffersToFree = append(ss.buffersToFree, buffer)
 	} else {
+		// Step 1 + Step 2: set up security context with the server and TGT
 		target := fmt.Sprintf("%s/%s", ss.service, ss.host)
 		status = C.sspi_step(&ss.credHandle, ss.hasContext, &ss.context, &buffer, &bufferLength, ss.cstr(target))
 		ss.buffersToFree = append(ss.buffersToFree, buffer)
@@ -126,15 +130,15 @@ func (ss *saslSession) Step(serverData []byte) (clientData []byte, done bool, er
 
 	if status != C.SEC_E_OK && status != C.SEC_I_CONTINUE_NEEDED {
 		ss.errored = true
-                return nil, false, fmt.Errorf("Error doing step %v, error code %v", ss.step, status)
-        }
+		return nil, false, fmt.Errorf("Error doing step %v, error code %v", ss.step, status)
+	}
 
 	clientData = C.GoBytes(unsafe.Pointer(buffer), C.int(bufferLength))
 	if status == C.SEC_E_OK {
 		ss.authComplete = true
-		return clientData, true, nil 
+		return clientData, true, nil
 	} else {
-		ss.hasContext = 1 
-		return clientData, false, nil 
+		ss.hasContext = 1
+		return clientData, false, nil
 	}
 }
