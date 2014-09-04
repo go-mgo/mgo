@@ -3278,40 +3278,30 @@ func (s *S) TestSetCursorTimeout(c *C) {
 // Some benchmarks that require a running database.
 
 func (s *S) BenchmarkFindIterRaw(c *C) {
-	err := run("mongo --nodb testdb/dropall.js")
-	if err != nil {
-		panic(err)
-	}
 	session, err := mgo.Dial("localhost:40001")
-	if err != nil {
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	doc := bson.D{
+		{"f2", "a short string"},
+		{"f3", bson.D{{"1", "one"}, {"2", 2.0}}},
+		{"f4", []string{"a", "b", "c", "d", "e", "f", "g"}},
+	}
+
+	for i := 0; i < c.N; i++ {
+		err := coll.Insert(doc)
+		c.Assert(err, IsNil)
+	}
+
+	var raw bson.Raw
+	iter := coll.Find(nil).Iter()
+	c.ResetTimer()
+	for iter.Next(&raw) {
+		// nothing
+	}
+	c.StopTimer()
+	if err := iter.Err(); err != nil {
 		panic(err)
 	}
-	defer session.Close()
-	coll := session.DB("mydb").C("mycoll")
-
-	// Insert 10,000 test documents
-	for i := 0; i < 10000; i++ {
-		doc := bson.M{
-			"_id": i,
-			"f2":  "a short string",
-			"f3":  bson.M{"1": "one", "2": float64(2)},
-			"f4":  []string{"a", "b", "c", "d", "e", "f", "g"},
-		}
-		err := coll.Insert(doc)
-		if err != nil {
-			panic(err)
-		}
-	}
-	raw := bson.Raw{}
-
-	c.ResetTimer()
-	for i := 0; i < c.N; i++ {
-		iter := coll.Find(nil).Iter()
-		for iter.Next(&raw) {
-		}
-		if err := iter.Err(); err != nil {
-			panic(err)
-		}
-	}
-
 }
