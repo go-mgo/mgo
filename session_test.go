@@ -3289,19 +3289,22 @@ func (s *S) BenchmarkFindIterRaw(c *C) {
 		{"f4", []string{"a", "b", "c", "d", "e", "f", "g"}},
 	}
 
-	for i := 0; i < c.N; i++ {
+	for i := 0; i < c.N+1; i++ {
 		err := coll.Insert(doc)
 		c.Assert(err, IsNil)
 	}
 
+	session.SetBatch(c.N)
+
 	var raw bson.Raw
 	iter := coll.Find(nil).Iter()
+	iter.Next(&raw)
 	c.ResetTimer()
+	i := 0
 	for iter.Next(&raw) {
-		// nothing
+		i++
 	}
 	c.StopTimer()
-	if err := iter.Err(); err != nil {
-		panic(err)
-	}
+	c.Assert(iter.Err(), IsNil)
+	c.Assert(i, Equals, c.N)
 }
