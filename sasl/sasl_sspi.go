@@ -45,7 +45,7 @@ var initError error
 var initOnce sync.Once
 
 func initSSPI() {
-	rc := C.load_library()
+	rc := C._load_library()
 	if rc != 0 {
 		initError = fmt.Errorf("Error loading libraries: %v", rc)
 	}

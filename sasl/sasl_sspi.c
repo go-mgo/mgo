@@ -1,3 +1,5 @@
+#ifdef _WIN32
+
 #include "sasl_sspi.h" 
 
 static const LPSTR SSPI_PACKAGE_NAME = "kerberos";
@@ -13,7 +15,7 @@ SECURITY_STATUS SEC_ENTRY sspi_acquire_credentials_handle(CredHandle* cred_handl
   auth_identity.PasswordLength = strlen(password);
   auth_identity.Domain = (LPSTR) domain;
   auth_identity.DomainLength = strlen(domain);
-  return _sspi_AcquireCredentialsHandle(
+  return _sspi_acquire_credentials_handle(
     NULL,
     SSPI_PACKAGE_NAME,
     SECPKG_CRED_OUTBOUND,
@@ -51,7 +53,7 @@ int sspi_step(CredHandle* cred_handle, int has_context, CtxtHandle* context, PVO
 
   ULONG context_attr = 0;
 
-  int ret = _sspi_initializeSecurityContext(
+  int ret = _sspi_initialize_security_context(
     cred_handle,
     has_context > 0 ? context : NULL,
     (LPSTR) target,
@@ -74,7 +76,7 @@ int sspi_step(CredHandle* cred_handle, int has_context, CtxtHandle* context, PVO
 
 int sspi_send_client_authz_id(CtxtHandle* context, PVOID* buffer, ULONG* buffer_length, char* user_plus_realm) {
   SecPkgContext_Sizes sizes;
-  SECURITY_STATUS status = _sspi_QueryContextAttributes(context, SECPKG_ATTR_SIZES, &sizes);
+  SECURITY_STATUS status = _sspi_query_context_attributes(context, SECPKG_ATTR_SIZES, &sizes);
 
   if (status != SEC_E_OK) {
     return status;
@@ -106,7 +108,7 @@ int sspi_send_client_authz_id(CtxtHandle* context, PVOID* buffer, ULONG* buffer_
   wrapBufs[2].BufferType = SECBUFFER_PADDING;
   wrapBufs[2].pvBuffer = msg + sizes.cbSecurityTrailer + msgSize;
 
-  status = _sspi_EncryptMessage(context, SECQOP_WRAP_NO_ENCRYPT, &wrapBufDesc, 0);
+  status = _sspi_encrypt_message(context, SECQOP_WRAP_NO_ENCRYPT, &wrapBufDesc, 0);
   if (status != SEC_E_OK) {
     return status;
   }
@@ -120,3 +122,5 @@ int sspi_send_client_authz_id(CtxtHandle* context, PVOID* buffer, ULONG* buffer_
 
   return SEC_E_OK;
 }
+
+#endif

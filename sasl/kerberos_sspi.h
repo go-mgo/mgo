@@ -1,3 +1,4 @@
+#ifdef _WIN32
 #ifndef SSPI_C_H
 #define SSPI_C_H
 
@@ -9,14 +10,14 @@
 /**
  * Encrypt A Message
  */
-SECURITY_STATUS SEC_ENTRY _sspi_EncryptMessage(PCtxtHandle phContext, unsigned long fQOP, PSecBufferDesc pMessage, unsigned long MessageSeqNo);
+SECURITY_STATUS SEC_ENTRY _sspi_encrypt_message(PCtxtHandle phContext, unsigned long fQOP, PSecBufferDesc pMessage, unsigned long MessageSeqNo);
 
 typedef DWORD (WINAPI *encryptMessage_fn)(PCtxtHandle phContext, ULONG fQOP, PSecBufferDesc pMessage, ULONG MessageSeqNo);  
 
 /**
  * Acquire Credentials
  */
-SECURITY_STATUS SEC_ENTRY _sspi_AcquireCredentialsHandle(
+SECURITY_STATUS SEC_ENTRY _sspi_acquire_credentials_handle(
   LPSTR pszPrincipal,                 // Name of principal
   LPSTR pszPackage,                   // Name of package
   unsigned long fCredentialUse,       // Flags indicating use
@@ -35,31 +36,9 @@ typedef DWORD (WINAPI *acquireCredentialsHandle_fn)(
   );
 
 /**
- * Delete Security Context
- */
-SECURITY_STATUS SEC_ENTRY _sspi_DeleteSecurityContext(
-  PCtxtHandle phContext               // Context to delete
-);
-
-typedef DWORD (WINAPI *deleteSecurityContext_fn)(PCtxtHandle phContext);  
-
-/**
- * Decrypt Message
- */
-SECURITY_STATUS SEC_ENTRY _sspi_DecryptMessage(
-  PCtxtHandle phContext, 
-  PSecBufferDesc pMessage, 
-  unsigned long MessageSeqNo, 
-  unsigned long pfQOP
-);
-
-typedef DWORD (WINAPI *decryptMessage_fn)(
-  PCtxtHandle phContext, PSecBufferDesc pMessage, unsigned long MessageSeqNo, unsigned long pfQOP);
-
-/**
  * Initialize Security Context
  */
-SECURITY_STATUS SEC_ENTRY _sspi_initializeSecurityContext(
+SECURITY_STATUS SEC_ENTRY _sspi_initialize_security_context(
   PCredHandle phCredential,       // Cred to base context
   PCtxtHandle phContext,          // Existing context (OPT)
   LPSTR pszTargetName,            // Name of target
@@ -82,7 +61,7 @@ typedef DWORD (WINAPI *initializeSecurityContext_fn)(
 /**
  * Query Context Attributes
  */
-SECURITY_STATUS SEC_ENTRY _sspi_QueryContextAttributes(
+SECURITY_STATUS SEC_ENTRY _sspi_query_context_attributes(
   PCtxtHandle phContext,          // Context to query
   unsigned long ulAttribute,      // Attribute to query
   void * pBuffer                  // Buffer for attributes
@@ -92,15 +71,9 @@ typedef DWORD (WINAPI *queryContextAttributes_fn)(
   PCtxtHandle phContext, unsigned long ulAttribute, void * pBuffer);
 
 /**
- * InitSecurityInterface
- */
-PSecurityFunctionTable _ssip_InitSecurityInterface();
-
-typedef DWORD (WINAPI *initSecurityInterface_fn) ();
-
-/**
  * Load security.dll dynamically
  */
-int load_library();
+int _load_library();
 
+#endif
 #endif
