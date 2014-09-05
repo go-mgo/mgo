@@ -163,6 +163,26 @@ func (s *S) pid(host string) int {
 	return pid
 }
 
+func (s *S) Freeze(host string) {
+	err := s.Stop(host)
+	if err != nil {
+		panic(err)
+	}
+	s.frozen = append(s.frozen, host)
+}
+
+func (s *S) Thaw(host string) {
+	err := s.Continue(host)
+	if err != nil {
+		panic(err)
+	}
+	for i, frozen := range s.frozen {
+		if frozen == host {
+			s.frozen[i] = ""
+		}
+	}
+}
+
 func (s *S) StartAll() {
 	// Restart any stopped nodes.
 	run("cd _testdb && supervisorctl start all")
