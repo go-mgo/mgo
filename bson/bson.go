@@ -481,15 +481,15 @@ func Marshal(in interface{}) (out []byte, err error) {
 //
 // Pointer values are initialized when necessary.
 func Unmarshal(in []byte, out interface{}) (err error) {
+	if raw, ok := out.(*Raw); ok {
+		raw.Kind = 3
+		raw.Data = in
+		return nil
+	}
 	defer handleErr(&err)
 	v := reflect.ValueOf(out)
 	switch v.Kind() {
 	case reflect.Ptr:
-		if raw, ok := out.(*Raw); ok {
-			raw.Kind = 3
-			raw.Data = in
-			return nil
-		}
 		fallthrough
 	case reflect.Map:
 		d := newDecoder(in)
