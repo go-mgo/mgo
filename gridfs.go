@@ -154,7 +154,7 @@ func (gfs *GridFS) Create(name string) (file *GridFile, err error) {
 	file = gfs.newFile()
 	file.mode = gfsWriting
 	file.wsum = md5.New()
-	file.doc = gfsFile{Id: bson.NewObjectId(), ChunkSize: 256 * 1024, Filename: name}
+	file.doc = gfsFile{Id: bson.NewObjectId(), ChunkSize: 255 * 1024, Filename: name}
 	return
 }
 

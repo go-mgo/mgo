@@ -76,7 +76,7 @@ func (s *S) TestGridFSCreate(c *C) {
 	expected := M{
 		"_id":        "<id>",
 		"length":     9,
-		"chunkSize":  262144,
+		"chunkSize":  255 * 1024,
 		"uploadDate": "<timestamp>",
 		"md5":        "1e50210a0202497fb79bc38b6ade6c34",
 	}
@@ -173,7 +173,7 @@ func (s *S) TestGridFSFileDetails(c *C) {
 	expected := M{
 		"_id":         "myid",
 		"length":      9,
-		"chunkSize":   262144,
+		"chunkSize":   255 * 1024,
 		"uploadDate":  "<timestamp>",
 		"md5":         "1e50210a0202497fb79bc38b6ade6c34",
 		"filename":    "myfile2.txt",
