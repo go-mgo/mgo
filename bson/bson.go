@@ -117,7 +117,7 @@ type M map[string]interface{}
 // using a map is generally more comfortable. See bson.M and bson.RawD.
 type D []DocElem
 
-// See the D type.
+// DocElem is an element of the bson.D document representation.
 type DocElem struct {
 	Name  string
 	Value interface{}
@@ -484,7 +484,14 @@ func Unmarshal(in []byte, out interface{}) (err error) {
 	defer handleErr(&err)
 	v := reflect.ValueOf(out)
 	switch v.Kind() {
-	case reflect.Map, reflect.Ptr:
+	case reflect.Ptr:
+		if raw, ok := out.(*Raw); ok {
+			raw.Kind = 3
+			raw.Data = in
+			return nil
+		}
+		fallthrough
+	case reflect.Map:
 		d := newDecoder(in)
 		d.readDocTo(v)
 	case reflect.Struct:
