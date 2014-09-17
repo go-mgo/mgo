@@ -32,8 +32,8 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"runtime"
 	"strconv"
-	"syscall"
 	"testing"
 	"time"
 
@@ -105,6 +105,7 @@ func (s *S) TearDownTest(c *C) {
 	if s.stopped {
 		s.StartAll()
 	}
+	panicOnWindows()
 	for _, host := range s.frozen {
 		if host != "" {
 			s.Thaw(host)
@@ -137,6 +138,7 @@ func (s *S) TearDownTest(c *C) {
 
 func (s *S) Stop(host string) {
 	// Give a moment for slaves to sync and avoid getting rollback issues.
+	panicOnWindows()
 	time.Sleep(2 * time.Second)
 	err := run("cd _testdb && supervisorctl stop " + supvName(host))
 	if err != nil {
@@ -159,7 +161,7 @@ func (s *S) pid(host string) int {
 }
 
 func (s *S) Freeze(host string) {
-	err := syscall.Kill(s.pid(host), syscall.SIGSTOP)
+	err := stop(s.pid(host))
 	if err != nil {
 		panic(err)
 	}
@@ -167,7 +169,7 @@ func (s *S) Freeze(host string) {
 }
 
 func (s *S) Thaw(host string) {
-	err := syscall.Kill(s.pid(host), syscall.SIGCONT)
+	err := cont(s.pid(host))
 	if err != nil {
 		panic(err)
 	}
@@ -189,7 +191,14 @@ func (s *S) StartAll() {
 }
 
 func run(command string) error {
-	output, err := exec.Command("/bin/sh", "-c", command).CombinedOutput()
+	var output []byte
+	var err error
+	if runtime.GOOS == "windows" {
+		output, err = exec.Command("cmd", "/C", command).CombinedOutput()
+	} else {
+		output, err = exec.Command("/bin/sh", "-c", command).CombinedOutput()
+	}
+
 	if err != nil {
 		msg := fmt.Sprintf("Failed to execute: %s: %s\n%s", command, err.Error(), string(output))
 		return errors.New(msg)
@@ -237,4 +246,10 @@ func hostPort(host string) string {
 		panic(err)
 	}
 	return port
+}
+
+func panicOnWindows() {
+	if runtime.GOOS == "windows" {
+		panic("the test suite is not yet fully supported on Windows")
+	}
 }
