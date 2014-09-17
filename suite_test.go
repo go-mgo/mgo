@@ -164,7 +164,7 @@ func (s *S) pid(host string) int {
 }
 
 func (s *S) Freeze(host string) {
-	err := s.Stop(host)
+	err := stop(s.pid(host))
 	if err != nil {
 		panic(err)
 	}
@@ -172,7 +172,7 @@ func (s *S) Freeze(host string) {
 }
 
 func (s *S) Thaw(host string) {
-	err := s.Continue(host)
+	err := cont(s.pid(host))
 	if err != nil {
 		panic(err)
 	}

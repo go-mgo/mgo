@@ -6,10 +6,10 @@ import (
 	"syscall"
 )
 
-func (s *S) Stop(host string) error {
-	return syscall.Kill(s.pid(host), syscall.SIGSTOP)
+func stop(pid int) (err error) {
+	return syscall.Kill(pid, syscall.SIGSTOP)
 }
 
-func (s *S) Continue(host string) error {
-	return syscall.Kill(s.pid(host), syscall.SIGCONT)
+func cont(pid int) (err error) {
+	return syscall.Kill(pid, syscall.SIGCONT)
 }
