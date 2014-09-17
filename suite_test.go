@@ -105,11 +105,10 @@ func (s *S) TearDownTest(c *C) {
 	if s.stopped {
 		s.StartAll()
 	}
-	if runtime.GOOS != "windows" {
-		for _, host := range s.frozen {
-			if host != "" {
-				s.Thaw(host)
-			}
+	panicOnWindows()
+	for _, host := range s.frozen {
+		if host != "" {
+			s.Thaw(host)
 		}
 	}
 	var stats mgo.Stats
@@ -139,9 +138,7 @@ func (s *S) TearDownTest(c *C) {
 
 func (s *S) Stop(host string) {
 	// Give a moment for slaves to sync and avoid getting rollback issues.
-	if runtime.GOOS == "windows" {
-		panic("Stop() currently unsupported on windows!")
-	}
+	panicOnWindows()
 	time.Sleep(2 * time.Second)
 	err := run("cd _testdb && supervisorctl stop " + supvName(host))
 	if err != nil {
@@ -249,4 +246,10 @@ func hostPort(host string) string {
 		panic(err)
 	}
 	return port
+}
+
+func panicOnWindows() {
+	if runtime.GOOS == "windows" {
+		panic("the test suite is not yet fully supported on Windows")
+	}
 }
