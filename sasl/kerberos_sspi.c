@@ -1,3 +1,8 @@
+/** This code is adapted from the NodeJS kerberos library:
+  * https://github.com/christkv/kerberos/tree/master/lib/win32/kerberos_sspi.c
+  * Under the terms of the Apache License, Version 2.0:
+  * http://www.apache.org/licenses/LICENSE-2.0 */
+
 #ifdef _WIN32
 #include "kerberos_sspi.h"
 #include <stdlib.h>
@@ -8,7 +13,7 @@ static HINSTANCE _sspi_secur32_dll = NULL;
 /**
  * Encrypt A Message
  */
-SECURITY_STATUS SEC_ENTRY _sspi_encrypt_message(PCtxtHandle phContext, unsigned long fQOP, PSecBufferDesc pMessage, unsigned long MessageSeqNo) {
+SECURITY_STATUS SEC_ENTRY call_sspi_encrypt_message(PCtxtHandle phContext, unsigned long fQOP, PSecBufferDesc pMessage, unsigned long MessageSeqNo) {
   // Create function pointer instance
   encryptMessage_fn pfn_encryptMessage = NULL;
 
@@ -31,7 +36,7 @@ SECURITY_STATUS SEC_ENTRY _sspi_encrypt_message(PCtxtHandle phContext, unsigned 
 /**
  * Acquire Credentials
  */
-SECURITY_STATUS SEC_ENTRY _sspi_acquire_credentials_handle(LPSTR pszPrincipal, LPSTR pszPackage, unsigned long fCredentialUse,
+SECURITY_STATUS SEC_ENTRY call_sspi_acquire_credentials_handle(LPSTR pszPrincipal, LPSTR pszPackage, unsigned long fCredentialUse,
     void* pvLogonId, void* pAuthData, SEC_GET_KEY_FN pGetKeyFn, void* pvGetKeyArgument, PCredHandle phCredential,
     PTimeStamp ptsExpiry) {
   // Create function pointer instance
@@ -70,7 +75,7 @@ SECURITY_STATUS SEC_ENTRY _sspi_acquire_credentials_handle(LPSTR pszPrincipal, L
 /**
  * Initialize Security Context
  */
-SECURITY_STATUS SEC_ENTRY _sspi_initialize_security_context(PCredHandle phCredential, PCtxtHandle phContext, LPSTR pszTargetName,
+SECURITY_STATUS SEC_ENTRY call_sspi_initialize_security_context(PCredHandle phCredential, PCtxtHandle phContext, LPSTR pszTargetName,
     unsigned long fContextReq, unsigned long Reserved1, unsigned long TargetDataRep, PSecBufferDesc pInput, unsigned long Reserved2,
     PCtxtHandle phNewContext, PSecBufferDesc pOutput, unsigned long * pfContextAttr, PTimeStamp ptsExpiry) {
   // Create function pointer instance
@@ -112,7 +117,7 @@ SECURITY_STATUS SEC_ENTRY _sspi_initialize_security_context(PCredHandle phCreden
 /**
  * Query Context Attributes
  */
-SECURITY_STATUS SEC_ENTRY _sspi_query_context_attributes(PCtxtHandle phContext, unsigned long ulAttribute, void * pBuffer) {
+SECURITY_STATUS SEC_ENTRY call_sspi_query_context_attributes(PCtxtHandle phContext, unsigned long ulAttribute, void * pBuffer) {
   // Create function pointer instance
   queryContextAttributes_fn pfn_queryContextAttributes = NULL;
 
@@ -142,7 +147,7 @@ SECURITY_STATUS SEC_ENTRY _sspi_query_context_attributes(PCtxtHandle phContext, 
 /**
  * Load security.dll dynamically
  */
-int _load_library() {
+int load_library() {
   DWORD err;
   // Load the library
   _sspi_security_dll = LoadLibrary("security.dll");

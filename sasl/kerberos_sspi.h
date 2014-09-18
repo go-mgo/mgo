@@ -1,3 +1,8 @@
+/** This code is adapted from the NodeJS kerberos library:
+  * https://github.com/christkv/kerberos/tree/master/lib/win32/kerberos_sspi.h
+  * Under the terms of the Apache License, Version 2.0:
+  * http://www.apache.org/licenses/LICENSE-2.0 */
+
 #ifdef _WIN32
 #ifndef SSPI_C_H
 #define SSPI_C_H
@@ -10,14 +15,14 @@
 /**
  * Encrypt A Message
  */
-SECURITY_STATUS SEC_ENTRY _sspi_encrypt_message(PCtxtHandle phContext, unsigned long fQOP, PSecBufferDesc pMessage, unsigned long MessageSeqNo);
+SECURITY_STATUS SEC_ENTRY call_sspi_encrypt_message(PCtxtHandle phContext, unsigned long fQOP, PSecBufferDesc pMessage, unsigned long MessageSeqNo);
 
 typedef DWORD (WINAPI *encryptMessage_fn)(PCtxtHandle phContext, ULONG fQOP, PSecBufferDesc pMessage, ULONG MessageSeqNo);  
 
 /**
  * Acquire Credentials
  */
-SECURITY_STATUS SEC_ENTRY _sspi_acquire_credentials_handle(
+SECURITY_STATUS SEC_ENTRY call_sspi_acquire_credentials_handle(
   LPSTR pszPrincipal,                 // Name of principal
   LPSTR pszPackage,                   // Name of package
   unsigned long fCredentialUse,       // Flags indicating use
@@ -38,7 +43,7 @@ typedef DWORD (WINAPI *acquireCredentialsHandle_fn)(
 /**
  * Initialize Security Context
  */
-SECURITY_STATUS SEC_ENTRY _sspi_initialize_security_context(
+SECURITY_STATUS SEC_ENTRY call_sspi_initialize_security_context(
   PCredHandle phCredential,       // Cred to base context
   PCtxtHandle phContext,          // Existing context (OPT)
   LPSTR pszTargetName,            // Name of target
@@ -61,7 +66,7 @@ typedef DWORD (WINAPI *initializeSecurityContext_fn)(
 /**
  * Query Context Attributes
  */
-SECURITY_STATUS SEC_ENTRY _sspi_query_context_attributes(
+SECURITY_STATUS SEC_ENTRY call_sspi_query_context_attributes(
   PCtxtHandle phContext,          // Context to query
   unsigned long ulAttribute,      // Attribute to query
   void * pBuffer                  // Buffer for attributes
@@ -73,7 +78,7 @@ typedef DWORD (WINAPI *queryContextAttributes_fn)(
 /**
  * Load security.dll dynamically
  */
-int _load_library();
+int load_library();
 
 #endif
 #endif

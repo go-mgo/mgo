@@ -1,9 +1,7 @@
-// +build windows
-
 package sasl
 
 //
-// #include "sasl_sspi.h"
+// #include "sasl_windows.h"
 //
 import "C"
 
@@ -45,7 +43,7 @@ var initError error
 var initOnce sync.Once
 
 func initSSPI() {
-	rc := C._load_library()
+	rc := C.load_library()
 	if rc != 0 {
 		initError = fmt.Errorf("Error loading libraries: %v", rc)
 	}
