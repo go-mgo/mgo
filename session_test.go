@@ -1042,6 +1042,25 @@ func (s *S) TestQueryExplain(c *C) {
 	c.Assert(n, Equals, 2)
 }
 
+func (s *S) TestQueryMaxScan(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{40, 41, 42}
+	for _, n := range ns {
+		err := coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
+	}
+
+	query := coll.Find(nil).SetMaxScan(2)
+	var result []M
+	err = query.All(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result, HasLen, 2)
+}
+
 func (s *S) TestQueryHint(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
@@ -3253,4 +3272,39 @@ func (s *S) TestSetCursorTimeout(c *C) {
 	c.Assert(iter.Next(&result), Equals, true)
 	c.Assert(result.N, Equals, 42)
 	c.Assert(iter.Next(&result), Equals, false)
+}
+
+// --------------------------------------------------------------------------
+// Some benchmarks that require a running database.
+
+func (s *S) BenchmarkFindIterRaw(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	doc := bson.D{
+		{"f2", "a short string"},
+		{"f3", bson.D{{"1", "one"}, {"2", 2.0}}},
+		{"f4", []string{"a", "b", "c", "d", "e", "f", "g"}},
+	}
+
+	for i := 0; i < c.N+1; i++ {
+		err := coll.Insert(doc)
+		c.Assert(err, IsNil)
+	}
+
+	session.SetBatch(c.N)
+
+	var raw bson.Raw
+	iter := coll.Find(nil).Iter()
+	iter.Next(&raw)
+	c.ResetTimer()
+	i := 0
+	for iter.Next(&raw) {
+		i++
+	}
+	c.StopTimer()
+	c.Assert(iter.Err(), IsNil)
+	c.Assert(i, Equals, c.N)
 }
