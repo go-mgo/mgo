@@ -1,5 +1,3 @@
-#ifdef _WIN32
-
 #include "sasl_windows.h"
 
 static const LPSTR SSPI_PACKAGE_NAME = "kerberos";
@@ -122,5 +120,3 @@ int sspi_send_client_authz_id(CtxtHandle* context, PVOID* buffer, ULONG* buffer_
 
   return SEC_E_OK;
 }
-
-#endif

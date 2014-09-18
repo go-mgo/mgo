@@ -95,11 +95,8 @@ func (ss *saslSession) Close() {
 		C.free(unsafe.Pointer(cstr))
 	}
 
-	// Make sure we've cleaned up all the buffers we malloced when we're sure we don't need em anymore
-	if ss.authComplete || ss.errored {
-		for _, cbuf := range ss.buffersToFree {
-			C.free(unsafe.Pointer(cbuf))
-		}
+	for _, cbuf := range ss.buffersToFree {
+		C.free(unsafe.Pointer(cbuf))
 	}
 }
 
