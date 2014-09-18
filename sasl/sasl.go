@@ -3,7 +3,7 @@
 // This package is not meant to be used by itself.
 //
 
-// +build linux darwin
+// +build !windows
 
 package sasl
 
