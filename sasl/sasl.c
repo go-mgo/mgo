@@ -1,7 +1,7 @@
-#include <sasl/sasl.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <sasl/sasl.h>
 
 static int mgo_sasl_simple(void *context, int id, const char **result, unsigned int *len)
 {

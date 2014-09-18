@@ -2,6 +2,9 @@
 //
 // This package is not meant to be used by itself.
 //
+
+// +build linux darwin
+
 package sasl
 
 // #cgo LDFLAGS: -lsasl2

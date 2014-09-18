@@ -10,8 +10,8 @@ package mgo
 //   http://blog.mongodb.org/post/84922794768/mongodbs-new-bulk-api
 //
 type Bulk struct {
-	c *Collection 
-	ordered bool 
+	c       *Collection
+	ordered bool
 	inserts []interface{}
 }
 
@@ -44,7 +44,7 @@ func (c *Collection) Bulk() *Bulk {
 }
 
 // Unordered puts the bulk operation in unordered mode.
-// 
+//
 // In unordered mode the indvidual operations may be sent
 // out of order, which means latter operations may proceed
 // even if prior ones have failed.

@@ -86,6 +86,7 @@ type queryWrapper struct {
 	Explain        bool        "$explain,omitempty"
 	Snapshot       bool        "$snapshot,omitempty"
 	ReadPreference bson.D      "$readPreference,omitempty"
+	MaxScan        int         "$maxScan,omitempty"
 }
 
 func (op *queryOp) finalQuery(socket *mongoSocket) interface{} {
