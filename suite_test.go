@@ -105,7 +105,6 @@ func (s *S) TearDownTest(c *C) {
 	if s.stopped {
 		s.StartAll()
 	}
-	panicOnWindows()
 	for _, host := range s.frozen {
 		if host != "" {
 			s.Thaw(host)
