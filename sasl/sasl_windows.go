@@ -76,7 +76,6 @@ func New(username, password, mechanism, service, host string) (saslStepper, erro
 	if len(password) > 0 {
 		status = C.sspi_acquire_credentials_handle(&ss.credHandle, ss.cstr(user), ss.cstr(password), ss.cstr(ss.domain))
 	} else {
-		panic("Need password!")
 		status = C.sspi_acquire_credentials_handle(&ss.credHandle, ss.cstr(user), nil, ss.cstr(ss.domain))
 	}
 
