@@ -30,6 +30,8 @@ import (
 	"flag"
 	"fmt"
 	"net/url"
+	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -893,11 +895,30 @@ func (s *S) TestAuthPlainURL(c *C) {
 
 var (
 	kerberosFlag = flag.Bool("kerberos", false, "Test Kerberos authentication (depends on custom environment)")
-	kerberosHost = "mmscustmongo.10gen.me"
-	kerberosUser = "mmsagent/mmscustagent.10gen.me@10GEN.ME"
+	kerberosHost = "ldaptest.10gen.cc"
+	kerberosUser = "drivers@LDAPTEST.10GEN.CC"
+
+	winKerberosPasswordEnv = "MGO_KERBEROS_PASSWORD"
 )
 
-func (s *S) TestAuthKerberosCred(c *C) {
+// Kerberos has its own suite because it talks to a remote server and thus
+// doesn't need the usual Setup() and Teardown()
+type KerberosSuite struct {
+}
+
+var _ = Suite(&KerberosSuite{})
+
+func (kerberosSuite *KerberosSuite) SetUpSuite(c *C) {
+	mgo.SetDebug(true)
+	mgo.SetStats(true)
+}
+
+func (kerberosSuite *KerberosSuite) SetUpTest(c *C) {
+	mgo.SetLogger((*cLogger)(c))
+	mgo.ResetStats()
+}
+
+func (kerberosSuite *KerberosSuite) TestAuthKerberosCred(c *C) {
 	if !*kerberosFlag {
 		c.Skip("no -kerberos")
 	}
@@ -905,39 +926,44 @@ func (s *S) TestAuthKerberosCred(c *C) {
 		Username:  kerberosUser,
 		Mechanism: "GSSAPI",
 	}
+	windowsAppendPasswordToCredential(cred)
 	c.Logf("Connecting to %s...", kerberosHost)
 	session, err := mgo.Dial(kerberosHost)
 	c.Assert(err, IsNil)
 	defer session.Close()
 
 	c.Logf("Connected! Testing the need for authentication...")
-	names, err := session.DatabaseNames()
-	c.Assert(err, ErrorMatches, "unauthorized")
+	n, err := session.DB("kerberos").C("test").Find(M{}).Count()
+	c.Assert(err, ErrorMatches, ".*authorized.*")
 
 	c.Logf("Authenticating...")
 	err = session.Login(cred)
 	c.Assert(err, IsNil)
 	c.Logf("Authenticated!")
 
-	names, err = session.DatabaseNames()
+	n, err = session.DB("kerberos").C("test").Find(M{}).Count()
 	c.Assert(err, IsNil)
-	c.Assert(len(names) > 0, Equals, true)
+	c.Assert(n, Equals, 1)
 }
 
-func (s *S) TestAuthKerberosURL(c *C) {
+func (kerberosSuite *KerberosSuite) TestAuthKerberosURL(c *C) {
 	if !*kerberosFlag {
 		c.Skip("no -kerberos")
 	}
 	c.Logf("Connecting to %s...", kerberosHost)
-	session, err := mgo.Dial(url.QueryEscape(kerberosUser) + "@" + kerberosHost + "?authMechanism=GSSAPI")
+	connectUri := url.QueryEscape(kerberosUser) + "@" + kerberosHost + "?authMechanism=GSSAPI"
+	if runtime.GOOS == "windows" {
+		connectUri = url.QueryEscape(kerberosUser) + ":" + url.QueryEscape(getWindowsKerberosPassword()) + "@" + kerberosHost + "?authMechanism=GSSAPI"
+	}
+	session, err := mgo.Dial(connectUri)
 	c.Assert(err, IsNil)
 	defer session.Close()
-	names, err := session.DatabaseNames()
+	n, err := session.DB("kerberos").C("test").Find(M{}).Count()
 	c.Assert(err, IsNil)
-	c.Assert(len(names) > 0, Equals, true)
+	c.Assert(n, Equals, 1)
 }
 
-func (s *S) TestAuthKerberosServiceName(c *C) {
+func (kerberosSuite *KerberosSuite) TestAuthKerberosServiceName(c *C) {
 	if !*kerberosFlag {
 		c.Skip("no -kerberos")
 	}
@@ -948,8 +974,9 @@ func (s *S) TestAuthKerberosServiceName(c *C) {
 	cred := &mgo.Credential{
 		Username:  kerberosUser,
 		Mechanism: "GSSAPI",
-		Service: wrongServiceName,
+		Service:   wrongServiceName,
 	}
+	windowsAppendPasswordToCredential(cred)
 
 	c.Logf("Connecting to %s...", kerberosHost)
 	session, err := mgo.Dial(kerberosHost)
@@ -958,7 +985,7 @@ func (s *S) TestAuthKerberosServiceName(c *C) {
 
 	c.Logf("Authenticating with incorrect service name...")
 	err = session.Login(cred)
-	c.Assert(err, ErrorMatches, ".*Server wrong/mmscustmongo.10gen.me@10GEN.ME not found.*")
+	c.Assert(err, ErrorMatches, ".*wrong/ldaptest.10gen.cc@LDAPTEST.10GEN.CC not found.*")
 
 	cred.Service = rightServiceName
 	c.Logf("Authenticating with correct service name...")
@@ -966,24 +993,25 @@ func (s *S) TestAuthKerberosServiceName(c *C) {
 	c.Assert(err, IsNil)
 	c.Logf("Authenticated!")
 
-	names, err := session.DatabaseNames()
+	n, err := session.DB("kerberos").C("test").Find(M{}).Count()
 	c.Assert(err, IsNil)
-	c.Assert(len(names) > 0, Equals, true)
+	c.Assert(n, Equals, 1)
 }
 
-func (s *S) TestAuthKerberosServiceHost(c *C) {
+func (kerberosSuite *KerberosSuite) TestAuthKerberosServiceHost(c *C) {
 	if !*kerberosFlag {
 		c.Skip("no -kerberos")
 	}
 
 	wrongServiceHost := "eggs.bacon.tk"
-	rightServiceHost := "mmscustmongo.10gen.me"
+	rightServiceHost := kerberosHost
 
 	cred := &mgo.Credential{
 		Username:    kerberosUser,
 		Mechanism:   "GSSAPI",
 		ServiceHost: wrongServiceHost,
 	}
+	windowsAppendPasswordToCredential(cred)
 
 	c.Logf("Connecting to %s...", kerberosHost)
 	session, err := mgo.Dial(kerberosHost)
@@ -992,7 +1020,7 @@ func (s *S) TestAuthKerberosServiceHost(c *C) {
 
 	c.Logf("Authenticating with incorrect service host...")
 	err = session.Login(cred)
-	c.Assert(err, ErrorMatches, ".*Server krbtgt/BACON.TK@10GEN.ME not found.*")
+	c.Assert(err, ErrorMatches, ".*@LDAPTEST.10GEN.CC not found.*")
 
 	cred.ServiceHost = rightServiceHost
 	c.Logf("Authenticating with correct service host...")
@@ -1000,7 +1028,24 @@ func (s *S) TestAuthKerberosServiceHost(c *C) {
 	c.Assert(err, IsNil)
 	c.Logf("Authenticated!")
 
-	names, err := session.DatabaseNames()
+	n, err := session.DB("kerberos").C("test").Find(M{}).Count()
 	c.Assert(err, IsNil)
-	c.Assert(len(names) > 0, Equals, true)
+	c.Assert(n, Equals, 1)
+}
+
+// No kinit on SSPI-style Kerberos, so we need to provide a password. In order
+// to avoid inlining password, require it to be set as an environment variable,
+// for instance: `SET MGO_KERBEROS_PASSWORD=this_isnt_the_password`
+func getWindowsKerberosPassword() string {
+	pw := os.Getenv(winKerberosPasswordEnv)
+	if pw == "" {
+		panic(fmt.Sprintf("Need to set %v environment variable to run Kerberos tests on Windows", winKerberosPasswordEnv))
+	}
+	return pw
+}
+
+func windowsAppendPasswordToCredential(cred *mgo.Credential) {
+	if runtime.GOOS == "windows" {
+		cred.Password = getWindowsKerberosPassword()
+	}
 }

@@ -23,6 +23,8 @@ type saslSession struct {
 	service       string
 	host          string
 	userPlusRealm string
+	target        string
+	domain        string
 
 	// Internal state
 	authComplete bool
@@ -66,14 +68,15 @@ func New(username, password, mechanism, service, host string) (saslStepper, erro
 		return nil, fmt.Errorf("Username '%v' doesn't contain a realm!", username)
 	}
 	user := usernameComponents[0]
-	domain := usernameComponents[1]
+	ss.domain = usernameComponents[1]
+	ss.target = fmt.Sprintf("%s/%s", ss.service, ss.host)
 
 	var status C.SECURITY_STATUS
 	// Step 0: call AcquireCredentialsHandle to get a nice SSPI CredHandle
 	if len(password) > 0 {
-		status = C.sspi_acquire_credentials_handle(&ss.credHandle, ss.cstr(user), ss.cstr(password), ss.cstr(domain))
+		status = C.sspi_acquire_credentials_handle(&ss.credHandle, ss.cstr(user), ss.cstr(password), ss.cstr(ss.domain))
 	} else {
-		status = C.sspi_acquire_credentials_handle(&ss.credHandle, ss.cstr(user), nil, ss.cstr(domain))
+		status = C.sspi_acquire_credentials_handle(&ss.credHandle, ss.cstr(user), nil, ss.cstr(ss.domain))
 	}
 
 	if status != C.SEC_E_OK {
@@ -118,14 +121,13 @@ func (ss *saslSession) Step(serverData []byte) (clientData []byte, done bool, er
 		ss.buffersToFree = append(ss.buffersToFree, buffer)
 	} else {
 		// Step 1 + Step 2: set up security context with the server and TGT
-		target := fmt.Sprintf("%s/%s", ss.service, ss.host)
-		status = C.sspi_step(&ss.credHandle, ss.hasContext, &ss.context, &buffer, &bufferLength, ss.cstr(target))
+		status = C.sspi_step(&ss.credHandle, ss.hasContext, &ss.context, &buffer, &bufferLength, ss.cstr(ss.target))
 		ss.buffersToFree = append(ss.buffersToFree, buffer)
 	}
 
 	if status != C.SEC_E_OK && status != C.SEC_I_CONTINUE_NEEDED {
 		ss.errored = true
-		return nil, false, fmt.Errorf("Error doing step %v, error code %v", ss.step, status)
+		return nil, false, ss.handleSSPIErrorCode(status)
 	}
 
 	clientData = C.GoBytes(unsafe.Pointer(buffer), C.int(bufferLength))
@@ -136,4 +138,13 @@ func (ss *saslSession) Step(serverData []byte) (clientData []byte, done bool, er
 		ss.hasContext = 1
 		return clientData, false, nil
 	}
+}
+
+func (ss *saslSession) handleSSPIErrorCode(code C.int) error {
+	switch {
+	case code == C.SEC_E_TARGET_UNKNOWN:
+		return fmt.Errorf("Target %v@%v not found", ss.target, ss.domain)
+	}
+
+	return fmt.Errorf("Unknown error doing step %v, error code %v", ss.step, code)
 }
