@@ -901,7 +901,24 @@ var (
 	winKerberosPasswordEnv = "MGO_KERBEROS_PASSWORD"
 )
 
-func (remoteSuite *RemoteSuite) TestAuthKerberosCred(c *C) {
+// Kerberos has its own suite because it talks to a remote server and thus
+// doesn't need the usual Setup() and Teardown()
+type KerberosSuite struct {
+}
+
+var _ = Suite(&KerberosSuite{})
+
+func (kerberosSuite *KerberosSuite) SetUpSuite(c *C) {
+	mgo.SetDebug(true)
+	mgo.SetStats(true)
+}
+
+func (kerberosSuite *KerberosSuite) SetUpTest(c *C) {
+	mgo.SetLogger((*cLogger)(c))
+	mgo.ResetStats()
+}
+
+func (kerberosSuite *KerberosSuite) TestAuthKerberosCred(c *C) {
 	if !*kerberosFlag {
 		c.Skip("no -kerberos")
 	}
@@ -929,7 +946,7 @@ func (remoteSuite *RemoteSuite) TestAuthKerberosCred(c *C) {
 	c.Assert(n, Equals, 1)
 }
 
-func (remoteSuite *RemoteSuite) TestAuthKerberosURL(c *C) {
+func (kerberosSuite *KerberosSuite) TestAuthKerberosURL(c *C) {
 	if !*kerberosFlag {
 		c.Skip("no -kerberos")
 	}
@@ -946,7 +963,7 @@ func (remoteSuite *RemoteSuite) TestAuthKerberosURL(c *C) {
 	c.Assert(n, Equals, 1)
 }
 
-func (remoteSuite *RemoteSuite) TestAuthKerberosServiceName(c *C) {
+func (kerberosSuite *KerberosSuite) TestAuthKerberosServiceName(c *C) {
 	if !*kerberosFlag {
 		c.Skip("no -kerberos")
 	}
@@ -981,7 +998,7 @@ func (remoteSuite *RemoteSuite) TestAuthKerberosServiceName(c *C) {
 	c.Assert(n, Equals, 1)
 }
 
-func (remoteSuite *RemoteSuite) TestAuthKerberosServiceHost(c *C) {
+func (kerberosSuite *KerberosSuite) TestAuthKerberosServiceHost(c *C) {
 	if !*kerberosFlag {
 		c.Skip("no -kerberos")
 	}
