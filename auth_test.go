@@ -985,7 +985,7 @@ func (kerberosSuite *KerberosSuite) TestAuthKerberosServiceName(c *C) {
 
 	c.Logf("Authenticating with incorrect service name...")
 	err = session.Login(cred)
-	c.Assert(err, ErrorMatches, ".*wrong/ldaptest.10gen.cc@LDAPTEST.10GEN.CC not found.*")
+	c.Assert(err, ErrorMatches, ".*@LDAPTEST.10GEN.CC not found.*")
 
 	cred.Service = rightServiceName
 	c.Logf("Authenticating with correct service name...")
