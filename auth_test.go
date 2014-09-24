@@ -27,8 +27,10 @@
 package mgo_test
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"runtime"
@@ -1091,4 +1093,134 @@ func windowsAppendPasswordToCredential(cred *mgo.Credential) {
 	if runtime.GOOS == "windows" {
 		cred.Password = getWindowsKerberosPassword()
 	}
+}
+
+var (
+	x509Flag    = flag.String("x509", "", "Test x509 authentication (depends on custom environment)")
+	x509Subject = "CN=localhost,OU=Client,O=MGO,L=MGO,ST=MGO,C=GO"
+	clientCert  = `-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEAwE2sl8YeTTSetwo9kykJ5mCZ/FtfPtn/0X4nOlTM2Qc/uWzA
+sjSYoSV4UkuOiWjKQQH2EDeXaltshOo7F0oCY5ozVeQe+phe987iKTvLtf7NoXJD
+KqNqR4Kb4ylbCrEky7+Xvw6yrrqw8qgWy+9VsrilR3q8LsETE9SBMtfp3BUaaNQp
+peNm+iAhx3uZSv3mdzSLFSA/o61kAyG0scLExYDjo/7xyMNQoloLvNmx4Io160+y
+lOz077/qqU620tmuDLRz1QdxK/bptmXTnsBCRxl+U8nzbwVZgWFENhXplbcN+SjN
+LhdnvTiU2qFhgZmc7ZtCKdPIpx3W6pH9bx7kTwIDAQABAoIBAQCOQygyo8NY9FuS
+J8ZDrvF+9+oS8fm1QorpDT2x/ngI+j7fSyAG9bgQRusLXpAVAWvWyb+iYa3nZbkT
+X0DVys+XpcTifr+YPc7L3sYbIPxkKBsxm5kq2vfN7Uart7V9ZG1HOfblxdbUQpKT
+AVzUA7vPWqATEC5VHEqjuerWlTqRr9YLZE/nkE7ICLISqdl4WDYfUYJwoXWfYkXQ
+Lfl5Qh2leyri9S3urvDrhnURTQ1lM182IbTRA+9rUiFzsRW+9U4HPY7Ao2Itp8dr
+GRP4rcq4TP+NcF0Ky64cNfKXCWmwqTBRFYAlTD6gwjN/s2BzvWD/2nlnc0DYAXrB
+TgFCPk7xAoGBAOwuHICwwTxtzrdWjuRGU3RxL4eLEXedtL8yon/yPci3e+8eploX
+1Fp0rEK2gIGDp/X8DiOtrKXih8XPusCwE/I3EvjHdI0RylLZXTPOp1Ei21dXRsiV
+YxcF+d5s11q5tJtF+5ISUeIz2iSc9Z2LBnb8JDK1jcCRa5Q212q3ZWW5AoGBANBw
+9CoMbxINLG1q0NvOOSwMKDk2OB+9JbQ5lwF4ijZl2I6qRoOCzQ3lBs0Qv/AeBjNR
+SerDs2+eWnIBUbgSdiqcOKnXAI/Qbl1IkVFYV/2g9m6dgu1fNWNBv8NIYDHCLfDx
+W3fpO5JMf+iE5XC4XqCfSBIME2yxPSGQjal6tB5HAoGAddYDzolhv/6hVoPPQ0F7
+PeuC5UOTcXSzy3k97kw0W0KAiStnoCengYIYuChKMVQ4ptgdTdvG+fTt/NnJuX2g
+Vgb4ZjtNgVzQ70kX4VNH04lqmkcnP8iY6dHHexwezls9KwNdouGVDSEFw6K0QOgu
+T4s5nDtNADkNzaMXE11xL7ECgYBoML3rstFmTY1ymB0Uck3jtaP5jR+axdpt7weL
+Zax4qooILhcXL6++DUhMAt5ecTOaPTzci7xKw/Xj3MLzZs8IV5R/WQhf2sj/+gEh
+jy5UijwEaNmEO74dAkWPoMLsvGpocMzO8JeldnXNTXi+0noCgfvtgXnIMAQlnfMh
+z0LviwKBgQCg5KR9JC4iuKses7Kfv2YelcO8vOZkRzBu3NdRWMsiJQC+qfetgd57
+RjRjlRWd1WCHJ5Kmx3hkUaZZOrX5knqfsRW3Nl0I74xgWl7Bli2eSJ9VWl59bcd6
+DqphhY7/gcW+QZlhXpnqbf0W8jB2gPhTYERyCBoS9LfhZWZu/11wuQ==
+-----END RSA PRIVATE KEY-----
+-----BEGIN CERTIFICATE-----
+MIICyTCCAjKgAwIBAgIBATANBgkqhkiG9w0BAQUFADBcMQswCQYDVQQGEwJHTzEM
+MAoGA1UECBMDTUdPMQwwCgYDVQQHEwNNR08xDDAKBgNVBAoTA01HTzEPMA0GA1UE
+CxMGU2VydmVyMRIwEAYDVQQDEwlsb2NhbGhvc3QwHhcNMTQwOTI0MTQwMzUzWhcN
+MTUwOTI0MTQwMzUzWjBcMQswCQYDVQQGEwJHTzEMMAoGA1UECBMDTUdPMQwwCgYD
+VQQHEwNNR08xDDAKBgNVBAoTA01HTzEPMA0GA1UECxMGQ2xpZW50MRIwEAYDVQQD
+Ewlsb2NhbGhvc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDATayX
+xh5NNJ63Cj2TKQnmYJn8W18+2f/Rfic6VMzZBz+5bMCyNJihJXhSS46JaMpBAfYQ
+N5dqW2yE6jsXSgJjmjNV5B76mF73zuIpO8u1/s2hckMqo2pHgpvjKVsKsSTLv5e/
+DrKuurDyqBbL71WyuKVHerwuwRMT1IEy1+ncFRpo1Cml42b6ICHHe5lK/eZ3NIsV
+ID+jrWQDIbSxwsTFgOOj/vHIw1CiWgu82bHgijXrT7KU7PTvv+qpTrbS2a4MtHPV
+B3Er9um2ZdOewEJHGX5TyfNvBVmBYUQ2FemVtw35KM0uF2e9OJTaoWGBmZztm0Ip
+08inHdbqkf1vHuRPAgMBAAGjFzAVMBMGA1UdJQQMMAoGCCsGAQUFBwMCMA0GCSqG
+SIb3DQEBBQUAA4GBAJZD7idSIRzhGlJYARPKWnX2CxD4VVB0F5cH5Mlc2YnoUSU/
+rKuPZFuOYND3awKqez6K3rNb3+tQmNitmoOT8ImmX1uJKBo5w9tuo4B2MmLQcPMk
+3fhPePuQCjtlArSmKVrNTrYPkyB9NwKS6q0+FzseFTw9ZJUIKiO9sSjMe+HP
+-----END CERTIFICATE-----
+`
+	// The server cert is not used by the test. It is here for
+	// convenience to use for the mongod specificed in the
+	// `x509Flag` as the --sslPEMKeyFile and --sslCAFIle parameters.
+	serverCert = `-----BEGIN CERTIFICATE-----
+MIIC+DCCAmGgAwIBAgIJAJ5pBAq2HXAsMA0GCSqGSIb3DQEBBQUAMFwxCzAJBgNV
+BAYTAkdPMQwwCgYDVQQIEwNNR08xDDAKBgNVBAcTA01HTzEMMAoGA1UEChMDTUdP
+MQ8wDQYDVQQLEwZTZXJ2ZXIxEjAQBgNVBAMTCWxvY2FsaG9zdDAeFw0xNDA5MjQx
+MzUxMTBaFw0xNTA5MjQxMzUxMTBaMFwxCzAJBgNVBAYTAkdPMQwwCgYDVQQIEwNN
+R08xDDAKBgNVBAcTA01HTzEMMAoGA1UEChMDTUdPMQ8wDQYDVQQLEwZTZXJ2ZXIx
+EjAQBgNVBAMTCWxvY2FsaG9zdDCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA
+pQ5wO2L23xMI4PzpVt/Ftvez82IvA9amwr3fUd7RjlYwiFsFeMnG24a4CUoOeKF0
+fpQWc9rmCs0EeP5ofZ2otOsfxoVWXZAZWdgauuwlYB6EeFaAMH3fxVH3IiH+21RR
+q2w9sH/s4fqh5stavUfyPdVmCcb8NW0jD8jlqniJL0kCAwEAAaOBwTCBvjAdBgNV
+HQ4EFgQUjyVWGMHBrmPDGwCY5VusHsKIpzIwgY4GA1UdIwSBhjCBg4AUjyVWGMHB
+rmPDGwCY5VusHsKIpzKhYKReMFwxCzAJBgNVBAYTAkdPMQwwCgYDVQQIEwNNR08x
+DDAKBgNVBAcTA01HTzEMMAoGA1UEChMDTUdPMQ8wDQYDVQQLEwZTZXJ2ZXIxEjAQ
+BgNVBAMTCWxvY2FsaG9zdIIJAJ5pBAq2HXAsMAwGA1UdEwQFMAMBAf8wDQYJKoZI
+hvcNAQEFBQADgYEAa65TgDKp3SRUDNAILSuQOCEbenWh/DMPL4vTVgo/Dxd4emoO
+7i8/4HMTa0XeYIVbAsxO+dqtxqt32IcV7DurmQozdUZ7q0ueJRXon6APnCN0IqPC
+sF71w63xXfpmnvTAfQXi7x6TUAyAQ2nScHExAjzc000DF1dO/6+nIINqNQE=
+-----END CERTIFICATE-----
+-----BEGIN RSA PRIVATE KEY-----
+MIICWwIBAAKBgQClDnA7YvbfEwjg/OlW38W297PzYi8D1qbCvd9R3tGOVjCIWwV4
+ycbbhrgJSg54oXR+lBZz2uYKzQR4/mh9nai06x/GhVZdkBlZ2Bq67CVgHoR4VoAw
+fd/FUfciIf7bVFGrbD2wf+zh+qHmy1q9R/I91WYJxvw1bSMPyOWqeIkvSQIDAQAB
+AoGABA9S22MXx2zkbwRJiQWAC3wURQxJM8L33xpkf9MHPIUKNJBolgwAhC3QIQpd
+SMJP5z0lQDxGJEXesksvrsdN+vsgbleRfQsAIcY/rEhr9h8m6auM08f+69oIX32o
+aTOWJJRofjbgzE5c/RijqhIaYGdq54a0EE9mAaODwZoa2/ECQQDRGrIRI5L3pdRA
+yifDKNjvAFOk6TbdGe+J9zHFw4F7bA2In/b+rno9vrj+EanOevD8LRLzeFshzXrG
+WQFzZ69/AkEAyhLSY7WNiQTeJWCwXawVnoSl5AMSRYFA/A2sEUokfORR5BS7gqvL
+mmEKmvslnZp5qlMtM4AyrW2OaoGvE6sFNwJACB3xK5kl61cUli9Cu+CqCx0IIi6r
+YonPMpvV4sdkD1ZycAtFmz1KoXr102b8IHfFQwS855aUcwt26Jwr4j70IQJAXv9+
+PTXq9hF9xiCwiTkPaNh/jLQM8PQU8uoSjIZIpRZJkWpVxNay/z7D15xeULuAmxxD
+UcThDjtFCrkw75Qk/QJAFfcM+5r31R1RrBGM1QPKwDqkFTGsFKnMWuS/pXyLTTOv
+I+In9ZJyA/R5zKeJZjM7xtZs0ANU9HpOpgespq6CvA==
+-----END RSA PRIVATE KEY-----`
+)
+
+func (s *S) TestAuthx509Cred(c *C) {
+	if *x509Flag == "" {
+		c.Skip("no -x509")
+	}
+
+	clientCert, err := tls.X509KeyPair([]byte(clientCert), []byte(clientCert))
+	c.Assert(err, IsNil)
+
+	tlsConfig := &tls.Config{
+		// Isolating tests to client certs, don't care about server validation.
+		InsecureSkipVerify: true,
+		Certificates:       []tls.Certificate{clientCert},
+	}
+
+	c.Logf("Connecting to %s...", *x509Flag)
+	session, err := mgo.DialWithInfo(&mgo.DialInfo{
+		Addrs: []string{*x509Flag},
+		DialServer: func(addr *mgo.ServerAddr) (net.Conn, error) {
+			return tls.Dial("tcp", addr.String(), tlsConfig)
+		},
+	})
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	c.Logf("Connected! Testing the need for authentication...")
+	names, err := session.DatabaseNames()
+	c.Assert(err, ErrorMatches, "not authorized .*")
+
+	cred := &mgo.Credential{
+		Username:  x509Subject,
+		Mechanism: "MONGODB-X509",
+		Source:    "$external",
+	}
+
+	c.Logf("Authenticating...")
+	err = session.Login(cred)
+	c.Assert(err, IsNil)
+	c.Logf("Authenticated!")
+
+	names, err = session.DatabaseNames()
+	c.Assert(err, IsNil)
+	c.Assert(len(names) > 0, Equals, true)
 }
