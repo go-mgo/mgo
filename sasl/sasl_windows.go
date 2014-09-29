@@ -1,8 +1,6 @@
 package sasl
 
-//
 // #include "sasl_windows.h"
-//
 import "C"
 
 import (
@@ -45,7 +43,7 @@ var initError error
 var initOnce sync.Once
 
 func initSSPI() {
-	rc := C.load_library()
+	rc := C.load_secur32_dll()
 	if rc != 0 {
 		initError = fmt.Errorf("Error loading libraries: %v", rc)
 	}
@@ -78,12 +76,10 @@ func New(username, password, mechanism, service, host string) (saslStepper, erro
 	} else {
 		status = C.sspi_acquire_credentials_handle(&ss.credHandle, ss.cstr(user), nil, ss.cstr(ss.domain))
 	}
-
 	if status != C.SEC_E_OK {
 		ss.errored = true
 		return nil, fmt.Errorf("Couldn't create new SSPI client, error code %v", status)
 	}
-
 	return ss, nil
 }
 
@@ -97,7 +93,6 @@ func (ss *saslSession) Close() {
 	for _, cstr := range ss.stringsToFree {
 		C.free(unsafe.Pointer(cstr))
 	}
-
 	for _, cbuf := range ss.buffersToFree {
 		C.free(unsafe.Pointer(cbuf))
 	}
@@ -124,7 +119,6 @@ func (ss *saslSession) Step(serverData []byte) (clientData []byte, done bool, er
 		status = C.sspi_step(&ss.credHandle, ss.hasContext, &ss.context, &buffer, &bufferLength, ss.cstr(ss.target))
 		ss.buffersToFree = append(ss.buffersToFree, buffer)
 	}
-
 	if status != C.SEC_E_OK && status != C.SEC_I_CONTINUE_NEEDED {
 		ss.errored = true
 		return nil, false, ss.handleSSPIErrorCode(status)
@@ -145,6 +139,5 @@ func (ss *saslSession) handleSSPIErrorCode(code C.int) error {
 	case code == C.SEC_E_TARGET_UNKNOWN:
 		return fmt.Errorf("Target %v@%v not found", ss.target, ss.domain)
 	}
-
 	return fmt.Errorf("Unknown error doing step %v, error code %v", ss.step, code)
 }

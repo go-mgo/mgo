@@ -1,4 +1,5 @@
 #include <windows.h>
+
 #include "kerberos_sspi.h"
 
 SECURITY_STATUS SEC_ENTRY sspi_acquire_credentials_handle(CredHandle* cred_handle, char* username, char* password, char* domain);
