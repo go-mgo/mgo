@@ -2976,9 +2976,12 @@ func (q *Query) Count() (n int, err error) {
 
 	dbname := op.collection[:c]
 	cname := op.collection[c+1:]
-
+	query := op.query
+	if query == nil {
+		query = bson.D{}
+	}
 	result := struct{ N int }{}
-	err = session.DB(dbname).Run(countCmd{cname, op.query, limit, op.skip}, &result)
+	err = session.DB(dbname).Run(countCmd{cname, query, limit, op.skip}, &result)
 	return result.N, err
 }
 
@@ -3164,7 +3167,7 @@ func (q *Query) MapReduce(job *MapReduce, result interface{}) (info *MapReduceIn
 	}
 
 	if cmd.Out == nil {
-		cmd.Out = bson.M{"inline": 1}
+		cmd.Out = bson.D{{"inline", 1}}
 	}
 
 	var doc mapReduceResult
