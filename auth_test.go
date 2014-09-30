@@ -842,6 +842,40 @@ func (s *S) TestAuthDirectWithLogin(c *C) {
 	}
 }
 
+// TODO SCRAM-SHA-1 will become the default, and this flag will go away.
+var scramFlag = flag.String("scram", "", "Host to test SCRAM-SHA-1 authentication against (depends on custom environment)")
+
+func (s *S) TestAuthScramSha1Cred(c *C) {
+	if *scramFlag == "" {
+		c.Skip("no -plain")
+	}
+	cred := &mgo.Credential{
+		Username:  "root",
+		Password:  "rapadura",
+		Mechanism: "SCRAM-SHA-1",
+		Source:    "admin",
+	}
+	c.Logf("Connecting to %s...", *scramFlag)
+	session, err := mgo.Dial(*scramFlag)
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	mycoll := session.DB("admin").C("mycoll")
+
+	c.Logf("Connected! Testing the need for authentication...")
+	err = mycoll.Find(nil).One(nil)
+	c.Assert(err, ErrorMatches, "unauthorized|not authorized .*")
+
+	c.Logf("Authenticating...")
+	err = session.Login(cred)
+	c.Assert(err, IsNil)
+	c.Logf("Authenticated!")
+
+	c.Logf("Connected! Testing the need for authentication...")
+	err = mycoll.Find(nil).One(nil)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+}
+
 var (
 	plainFlag = flag.String("plain", "", "Host to test PLAIN authentication against (depends on custom environment)")
 	plainUser = "einstein"
@@ -901,10 +935,10 @@ var (
 	winKerberosPasswordEnv = "MGO_KERBEROS_PASSWORD"
 )
 
-// Kerberos has its own suite because it talks to a remote server and thus
-// doesn't need the usual Setup() and Teardown()
-type KerberosSuite struct {
-}
+
+// Kerberos has its own suite because it talks to a remote server
+// that is prepared to authenticate against a kerberos deployment.
+type KerberosSuite struct{}
 
 var _ = Suite(&KerberosSuite{})
 
@@ -913,9 +947,18 @@ func (kerberosSuite *KerberosSuite) SetUpSuite(c *C) {
 	mgo.SetStats(true)
 }
 
+func (kerberosSuite *KerberosSuite) TearDownSuite(c *C) {
+	mgo.SetDebug(false)
+	mgo.SetStats(false)
+}
+
 func (kerberosSuite *KerberosSuite) SetUpTest(c *C) {
 	mgo.SetLogger((*cLogger)(c))
 	mgo.ResetStats()
+}
+
+func (kerberosSuite *KerberosSuite) TearDownTest(c *C) {
+	mgo.SetLogger(nil)
 }
 
 func (kerberosSuite *KerberosSuite) TestAuthKerberosCred(c *C) {

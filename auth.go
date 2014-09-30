@@ -28,12 +28,14 @@ package mgo
 
 import (
 	"crypto/md5"
+	"crypto/sha1"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
 
 	"gopkg.in/mgo.v2/bson"
+	"gopkg.in/mgo.v2/internal/scram"
 )
 
 type authCmd struct {
@@ -248,7 +250,10 @@ func (socket *mongoSocket) loginPlain(cred Credential) error {
 func (socket *mongoSocket) loginSASL(cred Credential) error {
 	var sasl saslStepper
 	var err error
-	if len(cred.ServiceHost) > 0 {
+	if cred.Mechanism == "SCRAM-SHA-1" {
+		// SCRAM is handled without external libraries.
+		sasl = saslNewScram(cred)
+	} else if len(cred.ServiceHost) > 0 {
 		sasl, err = saslNew(cred, cred.ServiceHost)
 	} else {
 		sasl, err = saslNew(cred, socket.Server().Addr)
@@ -322,6 +327,25 @@ func (socket *mongoSocket) loginSASL(cred Credential) error {
 	}
 
 	return nil
+}
+
+func saslNewScram(cred Credential) *saslScram {
+	credsum := md5.New()
+	credsum.Write([]byte(cred.Username + ":mongo:" + cred.Password))
+	client := scram.NewClient(sha1.New, cred.Username, hex.EncodeToString(credsum.Sum(nil)))
+	return &saslScram{cred: cred, client: client}
+}
+
+type saslScram struct {
+	cred           Credential
+	client         *scram.Client
+}
+
+func (s *saslScram) Close() {}
+
+func (s *saslScram) Step(serverData []byte) (clientData []byte, done bool, err error) {
+	more := s.client.Step(serverData)
+	return s.client.Out(), !more, s.client.Err()
 }
 
 func (socket *mongoSocket) loginRun(db string, query, result interface{}, f func() error) error {
