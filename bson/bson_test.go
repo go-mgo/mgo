@@ -139,6 +139,8 @@ var allItems = []testItemType{
 		"\x06_\x00"},
 	{bson.M{"_": bson.ObjectId("0123456789ab")},
 		"\x07_\x000123456789ab"},
+	{bson.M{"_": bson.DBPointer{"testnamespace", bson.ObjectId("0123456789ab")}},
+		"\x0C_\x00\x0e\x00\x00\x00testnamespace\x000123456789ab"},
 	{bson.M{"_": false},
 		"\x08_\x00\x00"},
 	{bson.M{"_": true},
