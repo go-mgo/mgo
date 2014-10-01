@@ -179,7 +179,7 @@ func (socket *mongoSocket) Login(cred Credential) error {
 
 	var err error
 	switch cred.Mechanism {
-	case "", "MONGO-CR":
+	case "", "MONGODB-CR":
 		err = socket.loginClassic(cred)
 	case "PLAIN":
 		err = socket.loginPlain(cred)
