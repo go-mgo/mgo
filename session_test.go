@@ -2436,10 +2436,14 @@ func (s *S) TestEnsureIndex(c *C) {
 	delete(result2, "v")
 	expected2 := M{
 		"name":     "a_1_b_-1",
-		"key":      M{"a": 1, "b": -1},
+		"key":      M{"a": 1, "b": -1},b
 		"ns":       "mydb.mycoll",
 		"unique":   true,
 		"dropDups": true,
+	}
+	if s.versionAtLeast(2, 7) {
+		// Was deprecated in 2.6, and not being reported by 2.7+.
+		delete(expected2, "dropDups")
 	}
 	c.Assert(result2, DeepEquals, expected2)
 

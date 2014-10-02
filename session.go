@@ -1179,6 +1179,23 @@ func (c *Collection) DropIndex(key ...string) error {
 //
 // See the EnsureIndex method for more details on indexes.
 func (c *Collection) Indexes() (indexes []Index, err error) {
+	// Try with a command.
+	var cmdResult struct {
+		Indexes []indexSpec
+	}
+	err = c.Database.Run(bson.D{{"listIndexes", c.Name}}, &cmdResult)
+	if err == nil {
+		for _, spec := range cmdResult.Indexes {
+			indexes = append(indexes, indexFromSpec(spec))
+		}
+		sort.Sort(indexSlice(indexes))
+		return indexes, nil
+	}
+	if err != nil && !isNoCmd(err) {
+		return nil, err
+	}
+
+	// Command not yet supported. Query the database instead.
 	query := c.Database.C("system.indexes").Find(bson.M{"ns": c.FullName})
 	iter := query.Sort("name").Iter()
 	for {
@@ -1186,20 +1203,29 @@ func (c *Collection) Indexes() (indexes []Index, err error) {
 		if !iter.Next(&spec) {
 			break
 		}
-		index := Index{
-			Name:        spec.Name,
-			Key:         simpleIndexKey(spec.Key),
-			Unique:      spec.Unique,
-			DropDups:    spec.DropDups,
-			Background:  spec.Background,
-			Sparse:      spec.Sparse,
-			ExpireAfter: time.Duration(spec.ExpireAfter) * time.Second,
-		}
-		indexes = append(indexes, index)
+		indexes = append(indexes, indexFromSpec(spec))
 	}
 	err = iter.Close()
-	return
+	sort.Sort(indexSlice(indexes))
+	return indexes, nil
 }
+
+func indexFromSpec(spec indexSpec) Index {
+	return Index{
+		Name:        spec.Name,
+		Key:         simpleIndexKey(spec.Key),
+		Unique:      spec.Unique,
+		DropDups:    spec.DropDups,
+		Background:  spec.Background,
+		Sparse:      spec.Sparse,
+		ExpireAfter: time.Duration(spec.ExpireAfter) * time.Second,
+	}
+}
+
+type indexSlice []Index
+func (idxs indexSlice) Len() int           { return len(idxs) }
+func (idxs indexSlice) Less(i, j int) bool { return idxs[i].Name < idxs[j].Name }
+func (idxs indexSlice) Swap(i, j int)      { idxs[i], idxs[j] = idxs[j], idxs[i] }
 
 func simpleIndexKey(realKey bson.D) (key []string) {
 	for i := range realKey {
@@ -2472,14 +2498,33 @@ func (s *Session) FindRef(ref *DBRef) *Query {
 	return c.FindId(ref.Id)
 }
 
-// CollectionNames returns the collection names present in database.
+// CollectionNames returns the collection names present in the db database.
 func (db *Database) CollectionNames() (names []string, err error) {
-	c := len(db.Name) + 1
+	// Try with a command.
+	var cmdResult struct {
+		Collections []struct {
+			Name string
+		}
+	}
+	err = db.Run(bson.D{{"listCollections", 1}}, &cmdResult)
+	if err == nil {
+		for _, coll := range cmdResult.Collections {
+			names = append(names, coll.Name)
+		}
+		sort.Strings(names)
+		return names, err
+	}
+	if err != nil && !isNoCmd(err) {
+		return nil, err
+	}
+
+	// Command not yet supported. Query the database instead.
+	nameIndex := len(db.Name) + 1
 	iter := db.C("system.namespaces").Find(nil).Iter()
 	var result *struct{ Name string }
 	for iter.Next(&result) {
 		if strings.Index(result.Name, "$") < 0 || strings.Index(result.Name, ".oplog.$") >= 0 {
-			names = append(names, result.Name[c:])
+			names = append(names, result.Name[nameIndex:])
 		}
 	}
 	if err := iter.Close(); err != nil {
