@@ -73,13 +73,14 @@ int sspi_send_client_authz_id(CtxtHandle *context, PVOID *buffer, ULONG *buffer_
 		return status;
 	}
 
-	int msgSize = 4 + 25;
+	size_t user_plus_realm_length = strlen(user_plus_realm);
+	int msgSize = 4 + user_plus_realm_length;
 	char *msg = malloc((sizes.cbSecurityTrailer + msgSize + sizes.cbBlockSize) * sizeof(char));
 	msg[sizes.cbSecurityTrailer + 0] = 1;
 	msg[sizes.cbSecurityTrailer + 1] = 0;
 	msg[sizes.cbSecurityTrailer + 2] = 0;
 	msg[sizes.cbSecurityTrailer + 3] = 0;
-	memcpy(&msg[sizes.cbSecurityTrailer + 4], user_plus_realm, 25);
+	memcpy(&msg[sizes.cbSecurityTrailer + 4], user_plus_realm, user_plus_realm_length);
 
 	SecBuffer wrapBufs[3];
 	SecBufferDesc wrapBufDesc;
