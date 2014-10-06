@@ -102,6 +102,7 @@ int sspi_send_client_authz_id(CtxtHandle *context, PVOID *buffer, ULONG *buffer_
 
 	status = call_sspi_encrypt_message(context, SECQOP_WRAP_NO_ENCRYPT, &wrapBufDesc, 0);
 	if (status != SEC_E_OK) {
+		free(msg);
 		return status;
 	}
 
@@ -112,5 +113,6 @@ int sspi_send_client_authz_id(CtxtHandle *context, PVOID *buffer, ULONG *buffer_
 	memcpy(*buffer + wrapBufs[0].cbBuffer, wrapBufs[1].pvBuffer, wrapBufs[1].cbBuffer);
 	memcpy(*buffer + wrapBufs[0].cbBuffer + wrapBufs[1].cbBuffer, wrapBufs[2].pvBuffer, wrapBufs[2].cbBuffer);
 
+	free(msg);
 	return SEC_E_OK;
 }
