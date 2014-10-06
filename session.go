@@ -790,7 +790,8 @@ func (db *Database) UpsertUser(user *User) error {
 		rundb = db.Session.DB(user.UserSource)
 	}
 	err := rundb.runUserCmd("updateUser", user)
-	if isNotFound(err) {
+	// retry with createUser when isAuthError in order to enable the "localhost exception"
+	if isNotFound(err) || isAuthError(err) {
 		return rundb.runUserCmd("createUser", user)
 	}
 	if !isNoCmd(err) {
@@ -842,6 +843,11 @@ func isNoCmd(err error) bool {
 func isNotFound(err error) bool {
 	e, ok := err.(*QueryError)
 	return ok && e.Code == 11
+}
+
+func isAuthError(err error) bool {
+	e, ok := err.(*QueryError)
+	return ok && e.Code == 13
 }
 
 func (db *Database) runUserCmd(cmdName string, user *User) error {
