@@ -2436,7 +2436,7 @@ func (s *S) TestEnsureIndex(c *C) {
 	delete(result2, "v")
 	expected2 := M{
 		"name":     "a_1_b_-1",
-		"key":      M{"a": 1, "b": -1},b
+		"key":      M{"a": 1, "b": -1},
 		"ns":       "mydb.mycoll",
 		"unique":   true,
 		"dropDups": true,
