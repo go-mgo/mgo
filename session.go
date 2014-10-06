@@ -779,8 +779,8 @@ func (db *Database) UpsertUser(user *User) error {
 	if (user.Password != "" || user.PasswordHash != "") && user.UserSource != "" {
 		return fmt.Errorf("user has both Password/PasswordHash and UserSource set")
 	}
-	if len(user.OtherDBRoles) > 0 && db.Name != "admin" {
-		return fmt.Errorf("user with OtherDBRoles is only supported in admin database")
+	if len(user.OtherDBRoles) > 0 && db.Name != "admin" && db.Name != "$external" {
+		return fmt.Errorf("user with OtherDBRoles is only supported in the admin or $external databases")
 	}
 
 	// Attempt to run this using 2.6+ commands.
