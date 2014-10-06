@@ -107,6 +107,32 @@ func (s *S) TestInsert(c *C) {
 	c.Assert(account.Balance, Equals, 200)
 }
 
+func (s *S) TestInsertStructID(c *C) {
+	type id struct {
+		firstName string
+		lastName  string
+	}
+
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     id{firstName: "John", lastName: "Smith"},
+		Assert: txn.DocMissing,
+		Insert: M{"balance": 200},
+	}, {
+		C:      "accounts",
+		Id:     id{firstName: "Bob", lastName: "Johns"},
+		Assert: txn.DocMissing,
+		Insert: M{"balance": 800},
+	}}
+
+	err := s.runner.Run(ops, "", nil)
+	c.Assert(err, IsNil)
+
+	n, err := s.accounts.Find(nil).Count()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, n)
+}
+
 func (s *S) TestRemove(c *C) {
 	err := s.accounts.Insert(M{"_id": 0, "balance": 300})
 	c.Assert(err, IsNil)
