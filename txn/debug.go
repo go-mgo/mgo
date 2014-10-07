@@ -70,12 +70,12 @@ func argsForLog(args []interface{}) []interface{} {
 			args[i] = lst
 		case map[docKey][]bson.ObjectId:
 			buf := &bytes.Buffer{}
-			var dkeys docKeys
+			var dkeys sortableDocKeys
 			for dkey := range v {
-				dkeys = append(dkeys, dkey)
+				dkeys = append(dkeys, newSortableDocKey(dkey))
 			}
 			sort.Sort(dkeys)
-			for i, dkey := range dkeys {
+			for i, dkey := range dkeys.GetKeys() {
 				if i > 0 {
 					buf.WriteByte(' ')
 				}
@@ -91,12 +91,12 @@ func argsForLog(args []interface{}) []interface{} {
 			args[i] = buf.String()
 		case map[docKey][]int64:
 			buf := &bytes.Buffer{}
-			var dkeys docKeys
+			var dkeys sortableDocKeys
 			for dkey := range v {
-				dkeys = append(dkeys, dkey)
+				dkeys = append(dkeys, newSortableDocKey(dkey))
 			}
 			sort.Sort(dkeys)
-			for i, dkey := range dkeys {
+			for i, dkey := range dkeys.GetKeys() {
 				if i > 0 {
 					buf.WriteByte(' ')
 				}
