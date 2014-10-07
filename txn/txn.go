@@ -7,6 +7,7 @@
 package txn
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"gopkg.in/mgo.v2"
@@ -505,6 +506,8 @@ func (ks sortableDocKeys) Less(i, j int) bool {
 		return a.idv.(float64) < b.idv.(float64)
 	case natureBool:
 		return !a.idv.(bool) && b.idv.(bool)
+	case natureStruct:
+		return bytes.Compare(a.idv.([]byte), b.idv.([]byte)) == -1
 	}
 	panic("unreachable")
 }
@@ -520,6 +523,7 @@ const (
 	natureInt
 	natureFloat
 	natureBool
+	natureStruct
 )
 
 func valueNature(v interface{}) (value interface{}, nature typeNature) {
@@ -535,6 +539,12 @@ func valueNature(v interface{}) (value interface{}, nature typeNature) {
 		return rv.Float(), natureFloat
 	case reflect.Bool:
 		return rv.Bool(), natureBool
+	case reflect.Struct:
+		mv, err := bson.Marshal(v)
+		if err != nil {
+			panic("could not marshal struct document id: " + err.Error())
+		}
+		return mv, natureStruct
 	}
 	panic("document id type unsupported by txn: " + rv.Kind().String())
 }
