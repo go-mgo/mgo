@@ -7,6 +7,7 @@
 package txn
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"gopkg.in/mgo.v2"
@@ -93,10 +94,10 @@ func (t *transaction) docKeys() docKeys {
 	if t.docKeysCached != nil {
 		return t.docKeysCached
 	}
-	dkeys := make(docKeys, 0, len(t.Ops))
+	dkeys := make(sortableDocKeys, 0, len(t.Ops))
 NextOp:
 	for _, op := range t.Ops {
-		dkey := op.docKey()
+		dkey := newSortableDocKey(op.docKey())
 		for i := range dkeys {
 			if dkey == dkeys[i] {
 				continue NextOp
@@ -105,8 +106,8 @@ NextOp:
 		dkeys = append(dkeys, dkey)
 	}
 	sort.Sort(dkeys)
-	t.docKeysCached = dkeys
-	return dkeys
+	t.docKeysCached = dkeys.GetKeys()
+	return t.docKeysCached
 }
 
 // tokenFor returns a unique transaction token that
@@ -462,27 +463,51 @@ type docKey struct {
 
 type docKeys []docKey
 
-func (ks docKeys) Len() int      { return len(ks) }
-func (ks docKeys) Swap(i, j int) { ks[i], ks[j] = ks[j], ks[i] }
-func (ks docKeys) Less(i, j int) bool {
+func newSortableDocKey(d docKey) sortableDocKey {
+	idv, nature := valueNature(d.Id)
+	return sortableDocKey{
+		docKey: d,
+		nature: nature,
+		idv:    idv,
+	}
+}
+
+type sortableDocKey struct {
+	docKey
+	nature typeNature
+	idv    interface{}
+}
+
+type sortableDocKeys []sortableDocKey
+
+func (ks sortableDocKeys) GetKeys() (dkeys []docKey) {
+	for _, k := range ks {
+		dkeys = append(dkeys, k.docKey)
+	}
+	return
+}
+
+func (ks sortableDocKeys) Len() int      { return len(ks) }
+func (ks sortableDocKeys) Swap(i, j int) { ks[i], ks[j] = ks[j], ks[i] }
+func (ks sortableDocKeys) Less(i, j int) bool {
 	a, b := ks[i], ks[j]
 	if a.C != b.C {
 		return a.C < b.C
 	}
-	av, an := valueNature(a.Id)
-	bv, bn := valueNature(b.Id)
-	if an != bn {
-		return an < bn
+	if a.nature != b.nature {
+		return a.nature < b.nature
 	}
-	switch an {
+	switch a.nature {
 	case natureString:
-		return av.(string) < bv.(string)
+		return a.idv.(string) < b.idv.(string)
 	case natureInt:
-		return av.(int64) < bv.(int64)
+		return a.idv.(int64) < b.idv.(int64)
 	case natureFloat:
-		return av.(float64) < bv.(float64)
+		return a.idv.(float64) < b.idv.(float64)
 	case natureBool:
-		return !av.(bool) && bv.(bool)
+		return !a.idv.(bool) && b.idv.(bool)
+	case natureStruct:
+		return bytes.Compare(a.idv.([]byte), b.idv.([]byte)) == -1
 	}
 	panic("unreachable")
 }
@@ -498,6 +523,7 @@ const (
 	natureInt
 	natureFloat
 	natureBool
+	natureStruct
 )
 
 func valueNature(v interface{}) (value interface{}, nature typeNature) {
@@ -513,6 +539,12 @@ func valueNature(v interface{}) (value interface{}, nature typeNature) {
 		return rv.Float(), natureFloat
 	case reflect.Bool:
 		return rv.Bool(), natureBool
+	case reflect.Struct:
+		mv, err := bson.Marshal(v)
+		if err != nil {
+			panic("could not marshal struct document id: " + err.Error())
+		}
+		return mv, natureStruct
 	}
 	panic("document id type unsupported by txn: " + rv.Kind().String())
 }
