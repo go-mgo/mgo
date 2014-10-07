@@ -224,9 +224,8 @@ func (f *flusher) prepare(t *transaction, force bool) (revnos []int64, err error
 	}
 	f.debugf("Preparing %s", t)
 
-	// docKeys is sorted to support stable iteration across all
-	// runners. This isn't strictly required, but reduces the chances
-	// of cycles.
+	// dkeys being sorted means stable iteration across all runners. This
+	// isn't strictly required, but reduces the chances of cycles.
 	dkeys := t.docKeys()
 
 	revno := make(map[docKey]int64)
@@ -379,7 +378,7 @@ func (f *flusher) rescan(t *transaction, force bool) (revnos []int64, err error)
 		panic(fmt.Errorf("rescanning transaction in invalid state: %q", t.State))
 	}
 
-	// docKeys is sorted to support stable iteration across all
+	// dkeys being sorted means stable iteration across all
 	// runners. This isn't strictly required, but reduces the chances
 	// of cycles.
 	dkeys := t.docKeys()
