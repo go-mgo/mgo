@@ -841,7 +841,7 @@ func isNoCmd(err error) bool {
 
 func isNotFound(err error) bool {
 	e, ok := err.(*QueryError)
-	return ok && e.Code == 11
+	return ok && e.Code == CodeUserNotFound
 }
 
 func (db *Database) runUserCmd(cmdName string, user *User) error {
@@ -1223,6 +1223,7 @@ func indexFromSpec(spec indexSpec) Index {
 }
 
 type indexSlice []Index
+
 func (idxs indexSlice) Len() int           { return len(idxs) }
 func (idxs indexSlice) Less(i, j int) bool { return idxs[i].Name < idxs[j].Name }
 func (idxs indexSlice) Swap(i, j int)      { idxs[i], idxs[j] = idxs[j], idxs[i] }
