@@ -36,7 +36,6 @@ type saslSession struct {
 
 	// Keep track of pointers we need to explicitly free
 	stringsToFree []*C.char
-	buffersToFree []C.PVOID
 }
 
 var initError error
