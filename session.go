@@ -372,7 +372,8 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 	}
 	if info.Username != "" {
 		source := session.sourcedb
-		if info.Source == "" && (info.Mechanism == "GSSAPI" || info.Mechanism == "PLAIN") {
+		if info.Source == "" &&
+			(info.Mechanism == "GSSAPI" || info.Mechanism == "PLAIN" || info.Mechanism == "MONGODB-X509") {
 			source = "$external"
 		}
 		session.dialCred = &Credential{
@@ -779,8 +780,8 @@ func (db *Database) UpsertUser(user *User) error {
 	if (user.Password != "" || user.PasswordHash != "") && user.UserSource != "" {
 		return fmt.Errorf("user has both Password/PasswordHash and UserSource set")
 	}
-	if len(user.OtherDBRoles) > 0 && db.Name != "admin" {
-		return fmt.Errorf("user with OtherDBRoles is only supported in admin database")
+	if len(user.OtherDBRoles) > 0 && db.Name != "admin" && db.Name != "$external" {
+		return fmt.Errorf("user with OtherDBRoles is only supported in the admin or $external databases")
 	}
 
 	// Attempt to run this using 2.6+ commands.
@@ -790,7 +791,8 @@ func (db *Database) UpsertUser(user *User) error {
 		rundb = db.Session.DB(user.UserSource)
 	}
 	err := rundb.runUserCmd("updateUser", user)
-	if isNotFound(err) {
+	// retry with createUser when isAuthError in order to enable the "localhost exception"
+	if isNotFound(err) || isAuthError(err) {
 		return rundb.runUserCmd("createUser", user)
 	}
 	if !isNoCmd(err) {
@@ -842,6 +844,11 @@ func isNoCmd(err error) bool {
 func isNotFound(err error) bool {
 	e, ok := err.(*QueryError)
 	return ok && e.Code == 11
+}
+
+func isAuthError(err error) bool {
+	e, ok := err.(*QueryError)
+	return ok && e.Code == 13
 }
 
 func (db *Database) runUserCmd(cmdName string, user *User) error {

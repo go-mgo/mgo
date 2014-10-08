@@ -4,7 +4,20 @@ start() {
     mkdir _testdb
     cd _testdb
     mkdir db1 db2 rs1a rs1b rs1c rs2a rs2b rs2c rs3a rs3b rs3c rs4a cfg1 cfg2 cfg3
-    ln -s ../testdb/supervisord.conf supervisord.conf
+    cp "../testdb/supervisord.conf" supervisord.conf
+    if [ -n "$1" ]; then
+        case "$1" in
+            -ssl)
+                mkdir "ssl1"
+                cat "../testdb/supervisord-ssl.conf" >> supervisord.conf
+                ;;
+            *)
+                echo "unknown setup.sh option $1"
+                exit 1
+                ;;
+        esac
+    fi
+    ln -s ../testdb/server.pem server.pem
     echo keyfile > keyfile
     chmod 600 keyfile
     echo "Running supervisord..."
@@ -42,11 +55,11 @@ fi
 case "$1" in
 
     start)
-        start
+        start $2
         ;;
 
     stop)
-        stop
+        stop $2
         ;;
 
 esac
