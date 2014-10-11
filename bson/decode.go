@@ -438,16 +438,18 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 		switch out.Kind() {
 		case reflect.Interface, reflect.Ptr, reflect.Struct, reflect.Map:
 			d.readDocTo(out)
-		default:
-			switch out.Interface().(type) {
-			case D:
-				out.Set(d.readDocElems(out.Type()))
-			case RawD:
-				out.Set(d.readRawDocElems(out.Type()))
-			default:
-				d.readDocTo(blackHole)
+			return true
+		case reflect.Slice:
+			outt := out.Type()
+			switch outt.Elem() {
+			case typeDocElem:
+				out.Set(d.readDocElems(outt))
+			case typeRawDocElem:
+				out.Set(d.readRawDocElems(outt))
 			}
+			return true
 		}
+		d.readDocTo(blackHole)
 		return true
 	}
 
