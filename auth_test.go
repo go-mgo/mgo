@@ -842,12 +842,9 @@ func (s *S) TestAuthDirectWithLogin(c *C) {
 	}
 }
 
-// TODO SCRAM-SHA-1 will become the default, and this flag will go away.
-var scramFlag = flag.String("scram", "", "Host to test SCRAM-SHA-1 authentication against (depends on custom environment)")
-
 func (s *S) TestAuthScramSha1Cred(c *C) {
-	if *scramFlag == "" {
-		c.Skip("no -plain")
+	if !s.versionAtLeast(2, 7, 7) {
+		c.Skip("SCRAM-SHA-1 tests depend on 2.7.7")
 	}
 	cred := &mgo.Credential{
 		Username:  "root",
@@ -855,8 +852,9 @@ func (s *S) TestAuthScramSha1Cred(c *C) {
 		Mechanism: "SCRAM-SHA-1",
 		Source:    "admin",
 	}
-	c.Logf("Connecting to %s...", *scramFlag)
-	session, err := mgo.Dial(*scramFlag)
+	host := "localhost:40002"
+	c.Logf("Connecting to %s...", host)
+	session, err := mgo.Dial(host)
 	c.Assert(err, IsNil)
 	defer session.Close()
 
@@ -870,6 +868,23 @@ func (s *S) TestAuthScramSha1Cred(c *C) {
 	err = session.Login(cred)
 	c.Assert(err, IsNil)
 	c.Logf("Authenticated!")
+
+	c.Logf("Connected! Testing the need for authentication...")
+	err = mycoll.Find(nil).One(nil)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+}
+
+func (s *S) TestAuthScramSha1URL(c *C) {
+	if !s.versionAtLeast(2, 7, 7) {
+		c.Skip("SCRAM-SHA-1 tests depend on 2.7.7")
+	}
+	host := "localhost:40002"
+	c.Logf("Connecting to %s...", host)
+	session, err := mgo.Dial(fmt.Sprintf("root:rapadura@%s?authMechanism=SCRAM-SHA-1", host))
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	mycoll := session.DB("admin").C("mycoll")
 
 	c.Logf("Connected! Testing the need for authentication...")
 	err = mycoll.Find(nil).One(nil)
