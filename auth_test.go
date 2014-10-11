@@ -241,7 +241,7 @@ func (s *S) TestAuthUpsertUser(c *C) {
 
 	// Can't login directly into the database using UserSource, though.
 	err = myotherdb.Login("myrwuser", "mypass")
-	c.Assert(err, ErrorMatches, "auth fail(s|ed)")
+	c.Assert(err, ErrorMatches, "auth fail(s|ed)|.*Authentication failed.")
 }
 
 func (s *S) TestAuthUpsertUserOtherDBRoles(c *C) {
@@ -386,7 +386,7 @@ func (s *S) TestAuthAddUserReplaces(c *C) {
 	admindb.Logout()
 
 	err = mydb.Login("myuser", "myoldpass")
-	c.Assert(err, ErrorMatches, "auth fail(s|ed)")
+	c.Assert(err, ErrorMatches, "auth fail(s|ed)|.*Authentication failed.")
 	err = mydb.Login("myuser", "mynewpass")
 	c.Assert(err, IsNil)
 
@@ -413,7 +413,7 @@ func (s *S) TestAuthRemoveUser(c *C) {
 	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = mydb.Login("myuser", "mypass")
-	c.Assert(err, ErrorMatches, "auth fail(s|ed)")
+	c.Assert(err, ErrorMatches, "auth fail(s|ed)|.*Authentication failed.")
 }
 
 func (s *S) TestAuthLoginTwiceDoesNothing(c *C) {
@@ -731,7 +731,7 @@ func (s *S) TestAuthURLWrongCredentials(c *C) {
 	if session != nil {
 		session.Close()
 	}
-	c.Assert(err, ErrorMatches, "auth fail(s|ed)")
+	c.Assert(err, ErrorMatches, "auth fail(s|ed)|.*Authentication failed.")
 	c.Assert(session, IsNil)
 }
 

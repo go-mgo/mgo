@@ -1793,6 +1793,12 @@ type Pipe struct {
 	pipeline   interface{}
 }
 
+type pipeCmd struct {
+	Aggregate string
+	Pipeline  interface{}
+	Explain   bool ",omitempty"
+}
+
 // Pipe prepares a pipeline to aggregate. The pipeline document
 // must be a slice built in terms of the aggregation framework language.
 //
@@ -1826,7 +1832,8 @@ func (p *Pipe) Iter() *Iter {
 	iter.gotReply.L = &iter.m
 	var result struct{ Result []bson.Raw }
 	c := p.collection
-	iter.err = c.Database.Run(bson.D{{"aggregate", c.Name}, {"pipeline", p.pipeline}}, &result)
+	cmd := pipeCmd{Aggregate: c.Name, Pipeline: p.pipeline}
+	iter.err = c.Database.Run(cmd, &result)
 	if iter.err != nil {
 		return iter
 	}
@@ -1853,6 +1860,25 @@ func (p *Pipe) One(result interface{}) error {
 		return err
 	}
 	return ErrNotFound
+}
+
+// Explain returns a number of details about how the MongoDB server would
+// execute the requested pipeline, such as the number of objects examined,
+// the number of times the read lock was yielded to allow writes to go in,
+// and so on.
+//
+// For example:
+//
+//     var m bson.M
+//     err := collection.Pipe(pipeline).Explain(&m)
+//     if err == nil {
+//         fmt.Printf("Explain: %#v\n", m)
+//     }
+//
+func (p *Pipe) Explain(result interface{}) error {
+	c := p.collection
+	cmd := pipeCmd{c.Name, p.pipeline, true}
+	return c.Database.Run(cmd, result)
 }
 
 type LastError struct {
@@ -2241,7 +2267,7 @@ func (q *Query) Sort(fields ...string) *Query {
 
 // Explain returns a number of details about how the MongoDB server would
 // execute the requested query, such as the number of objects examined,
-// the number of time the read lock was yielded to allow writes to go in,
+// the number of times the read lock was yielded to allow writes to go in,
 // and so on.
 //
 // For example:
