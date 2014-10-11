@@ -3111,6 +3111,9 @@ func (s *S) TestPipeIter(c *C) {
 
 	pipe := coll.Pipe([]M{{"$match": M{"n": M{"$gte": 42}}}})
 
+	// Ensure cursor logic is working by forcing a small batch.
+	pipe.Batch(2)
+
 	// Smoke test for AllowDiskUse.
 	pipe.AllowDiskUse()
 
@@ -3190,10 +3193,11 @@ func (s *S) TestPipeExplain(c *C) {
 
 	pipe := coll.Pipe([]M{{"$project": M{"a": 1, "b": M{"$add": []interface{}{"$b", 1}}}}})
 
-	var result bson.M
+	// The explain command result changes across versions.
+	var result struct{ Ok int }
 	err = pipe.Explain(&result)
 	c.Assert(err, IsNil)
-	c.Assert(result["stages"], NotNil)
+	c.Assert(result.Ok, Equals, 1)
 }
 
 func (s *S) TestBatch1Bug(c *C) {

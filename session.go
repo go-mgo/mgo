@@ -1793,13 +1793,19 @@ type Pipe struct {
 	collection *Collection
 	pipeline   interface{}
 	allowDisk  bool
+	batchSize  int
 }
 
 type pipeCmd struct {
 	Aggregate string
 	Pipeline  interface{}
-	AllowDisk bool "allowDiskUse,omitempty"
-	Explain   bool ",omitempty"
+	Cursor    *pipeCmdCursor ",omitempty"
+	Explain   bool           ",omitempty"
+	AllowDisk bool           "allowDiskUse,omitempty"
+}
+
+type pipeCmdCursor struct {
+	BatchSize int `bson:"batchSize,omitempty"`
 }
 
 // Pipe prepares a pipeline to aggregate. The pipeline document
@@ -1818,35 +1824,80 @@ type pipeCmd struct {
 //
 func (c *Collection) Pipe(pipeline interface{}) *Pipe {
 	session := c.Database.Session
+	session.m.Lock()
+	batchSize := int(session.queryConfig.op.limit)
+	session.m.Unlock()
 	return &Pipe{
 		session:    session,
 		collection: c,
 		pipeline:   pipeline,
+		batchSize:  batchSize,
 	}
 }
 
 // Iter executes the pipeline and returns an iterator capable of going
 // over all the generated results.
 func (p *Pipe) Iter() *Iter {
+
+	// Clone session and set it to strong mode so that the server
+	// used for the query may be safely obtained afterwards, if
+	// necessary for iteration when a cursor is received.
+	cloned := p.session.Clone()
+	cloned.SetMode(Strong, false)
+	defer cloned.Close()
+	c := p.collection.With(cloned)
+
 	iter := &Iter{
 		session: p.session,
 		timeout: -1,
 	}
 	iter.gotReply.L = &iter.m
-	var result struct{ Result []bson.Raw }
-	c := p.collection
+
+	var result struct {
+		// 2.4, no cursors.
+		Result []bson.Raw
+
+		// 2.6+, with cursors.
+		Cursor struct {
+			FirstBatch []bson.Raw "firstBatch"
+			Id         int64
+		}
+	}
+
 	cmd := pipeCmd{
-		c.Name,
-		p.pipeline,
-		p.allowDisk,
-		false,
+		Aggregate: c.Name,
+		Pipeline:  p.pipeline,
+		AllowDisk: p.allowDisk,
+		Cursor:    &pipeCmdCursor{p.batchSize},
 	}
 	iter.err = c.Database.Run(cmd, &result)
+	if e, ok := iter.err.(*QueryError); ok && e.Message == `unrecognized field "cursor` {
+		cmd.Cursor = nil
+		cmd.AllowDisk = false
+		iter.err = c.Database.Run(cmd, &result)
+	}
 	if iter.err != nil {
 		return iter
 	}
-	for i := range result.Result {
-		iter.docData.Push(result.Result[i].Data)
+	docs := result.Result
+	if docs == nil {
+		docs = result.Cursor.FirstBatch
+	}
+	for i := range docs {
+		iter.docData.Push(docs[i].Data)
+	}
+	if result.Cursor.Id != 0 {
+		socket, err := cloned.acquireSocket(true)
+		if err != nil {
+			// Cloned session is in strong mode, and the query
+			// above succeeded. Should have a reserved socket.
+			panic("internal error: " + err.Error())
+		}
+		iter.server = socket.Server()
+		socket.Release()
+		iter.op.cursorId = result.Cursor.Id
+		iter.op.collection = c.FullName
+		iter.op.replyFunc = iter.replyFunc()
 	}
 	return iter
 }
@@ -1886,10 +1937,10 @@ func (p *Pipe) One(result interface{}) error {
 func (p *Pipe) Explain(result interface{}) error {
 	c := p.collection
 	cmd := pipeCmd{
-		c.Name,
-		p.pipeline,
-		p.allowDisk,
-		true,
+		Aggregate: c.Name,
+		Pipeline:  p.pipeline,
+		AllowDisk: p.allowDisk,
+		Explain:   true,
 	}
 	return c.Database.Run(cmd, result)
 }
@@ -1898,6 +1949,16 @@ func (p *Pipe) Explain(result interface{}) error {
 // that aggregation pipelines do not have to be held entirely in memory.
 func (p *Pipe) AllowDiskUse() *Pipe {
 	p.allowDisk = true
+	return p
+}
+
+// Batch sets the batch size used when fetching documents from the database.
+// It's possible to change this setting on a per-session basis as well, using
+// the Batch method of Session.
+//
+// The default batch size is defined by the database server.
+func (p *Pipe) Batch(n int) *Pipe {
+	p.batchSize = n
 	return p
 }
 
