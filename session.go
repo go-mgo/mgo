@@ -1223,6 +1223,7 @@ func indexFromSpec(spec indexSpec) Index {
 }
 
 type indexSlice []Index
+
 func (idxs indexSlice) Len() int           { return len(idxs) }
 func (idxs indexSlice) Less(i, j int) bool { return idxs[i].Name < idxs[j].Name }
 func (idxs indexSlice) Swap(i, j int)      { idxs[i], idxs[j] = idxs[j], idxs[i] }
@@ -1791,11 +1792,13 @@ type Pipe struct {
 	session    *Session
 	collection *Collection
 	pipeline   interface{}
+	allowDisk  bool
 }
 
 type pipeCmd struct {
 	Aggregate string
 	Pipeline  interface{}
+	AllowDisk bool "allowDiskUse,omitempty"
 	Explain   bool ",omitempty"
 }
 
@@ -1832,7 +1835,12 @@ func (p *Pipe) Iter() *Iter {
 	iter.gotReply.L = &iter.m
 	var result struct{ Result []bson.Raw }
 	c := p.collection
-	cmd := pipeCmd{Aggregate: c.Name, Pipeline: p.pipeline}
+	cmd := pipeCmd{
+		c.Name,
+		p.pipeline,
+		p.allowDisk,
+		false,
+	}
 	iter.err = c.Database.Run(cmd, &result)
 	if iter.err != nil {
 		return iter
@@ -1877,8 +1885,20 @@ func (p *Pipe) One(result interface{}) error {
 //
 func (p *Pipe) Explain(result interface{}) error {
 	c := p.collection
-	cmd := pipeCmd{c.Name, p.pipeline, true}
+	cmd := pipeCmd{
+		c.Name,
+		p.pipeline,
+		p.allowDisk,
+		true,
+	}
 	return c.Database.Run(cmd, result)
+}
+
+// AllowDiskUse enables writing to the "<dbpath>/_tmp" server directory so
+// that aggregation pipelines do not have to be held entirely in memory.
+func (p *Pipe) AllowDiskUse() *Pipe {
+	p.allowDisk = true
+	return p
 }
 
 type LastError struct {

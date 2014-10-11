@@ -3109,7 +3109,12 @@ func (s *S) TestPipeIter(c *C) {
 		coll.Insert(M{"n": n})
 	}
 
-	iter := coll.Pipe([]M{{"$match": M{"n": M{"$gte": 42}}}}).Iter()
+	pipe := coll.Pipe([]M{{"$match": M{"n": M{"$gte": 42}}}})
+
+	// Smoke test for AllowDiskUse.
+	pipe.AllowDiskUse()
+
+	iter := pipe.Iter()
 	result := struct{ N int }{}
 	for i := 2; i < 7; i++ {
 		ok := iter.Next(&result)
