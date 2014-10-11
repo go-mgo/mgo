@@ -53,7 +53,7 @@ func (s *S) TestAuthLoginDatabase(c *C) {
 		admindb := session.DB("admin")
 
 		err = admindb.Login("root", "wrong")
-		c.Assert(err, ErrorMatches, "auth fail(s|ed)")
+		c.Assert(err, ErrorMatches, "auth fail(s|ed)|.*Authentication failed.")
 
 		err = admindb.Login("root", "rapadura")
 		c.Assert(err, IsNil)
@@ -79,7 +79,7 @@ func (s *S) TestAuthLoginSession(c *C) {
 			Password: "wrong",
 		}
 		err = session.Login(&cred)
-		c.Assert(err, ErrorMatches, "auth fail(s|ed)")
+		c.Assert(err, ErrorMatches, "auth fail(s|ed)|.*Authentication failed.")
 
 		cred.Password = "rapadura"
 

@@ -160,6 +160,9 @@ func (socket *mongoSocket) resetNonce() {
 
 func (socket *mongoSocket) Login(cred Credential) error {
 	socket.Lock()
+	if cred.Mechanism == "" && socket.serverInfo.MaxWireVersion >= 3 {
+		cred.Mechanism = "SCRAM-SHA-1"
+	}
 	for _, sockCred := range socket.creds {
 		if sockCred == cred {
 			debugf("Socket %p to %s: login: db=%q user=%q (already logged in)", socket, socket.addr, cred.Source, cred.Username)
