@@ -2092,6 +2092,58 @@ func (s *S) TestSortWithBadArgs(c *C) {
 	}
 }
 
+func (s *S) TestSortScoreText(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.EnsureIndex(mgo.Index{
+		Key: []string{"$text:a", "$text:b"},
+	})
+	c.Assert(err, IsNil)
+
+	err = coll.Insert(M{
+		"a": "none",
+		"b": "twice: foo foo",
+	})
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{
+		"a": "just once: foo",
+		"b": "none",
+	})
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{
+		"a": "many: foo foo foo",
+		"b": "none",
+	})
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{
+		"a": "none",
+		"b": "none",
+		"c": "ignore: foo",
+	})
+	c.Assert(err, IsNil)
+
+	query := coll.Find(M{"$text": M{"$search": "foo"}})
+	query.Select(M{"score": M{"$meta": "textScore"}})
+	query.Sort("$textScore:score")
+	iter := query.Iter()
+
+	var r struct{ A, B string }
+	var results []string
+	for iter.Next(&r) {
+		results = append(results, r.A, r.B)
+	}
+
+	c.Assert(results, DeepEquals, []string{
+		"many: foo foo foo", "none",
+		"none", "twice: foo foo",
+		"just once: foo", "none",
+	})
+}
+
 func (s *S) TestPrefetching(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
