@@ -3553,13 +3553,14 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 // internally assembled from the Version information for previous versions.
 // In both cases, VersionArray is guaranteed to have at least 4 entries.
 type BuildInfo struct {
-	Version       string
-	VersionArray  []int  `bson:"versionArray"` // On MongoDB 2.0+; assembled from Version otherwise
-	GitVersion    string `bson:"gitVersion"`
-	SysInfo       string `bson:"sysInfo"`
-	Bits          int
-	Debug         bool
-	MaxObjectSize int `bson:"maxBsonObjectSize"`
+	Version        string
+	VersionArray   []int  `bson:"versionArray"` // On MongoDB 2.0+; assembled from Version otherwise
+	GitVersion     string `bson:"gitVersion"`
+	OpenSSLVersion string `bson:"OpenSSLVersion"`
+	SysInfo        string `bson:"sysInfo"`
+	Bits           int
+	Debug          bool
+	MaxObjectSize  int `bson:"maxBsonObjectSize"`
 }
 
 // VersionAtLeast returns whether the BuildInfo version is greater than or

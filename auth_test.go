@@ -160,7 +160,7 @@ func (s *S) TestAuthUpsertUserErrors(c *C) {
 	c.Assert(err, ErrorMatches, "user has both Password/PasswordHash and UserSource set")
 
 	err = mydb.UpsertUser(&mgo.User{Username: "user", Password: "pass", OtherDBRoles: map[string][]mgo.Role{"db": nil}})
-	c.Assert(err, ErrorMatches, "user with OtherDBRoles is only supported in admin database")
+	c.Assert(err, ErrorMatches, "user with OtherDBRoles is only supported in the admin or \\$external databases")
 }
 
 func (s *S) TestAuthUpsertUser(c *C) {

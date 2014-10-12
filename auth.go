@@ -236,7 +236,7 @@ func (socket *mongoSocket) loginClassic(cred Credential) error {
 }
 
 type authX509Cmd struct {
-	Authenticate int // "authenticate" is the mongo command. The value, afaik, is not used.
+	Authenticate int
 	User         string
 	Mechanism    string
 }

@@ -2,7 +2,6 @@ package mgo_test
 
 import (
 	"crypto/tls"
-	"flag"
 	"gopkg.in/mgo.v2"
 	"io/ioutil"
 	"net"
@@ -10,21 +9,14 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-/* to run this test:
-   you need to have an ssl enabled mongod
-   you need to setup the mongod's with "testdb/setup.sh start ssl" instead of using make
-   you need to run to "go test" with the -x509 flag
-*/
-
-var (
-	x509Flag    = flag.Bool("x509", false, "Test x509 authentication (depends on having an ssl enabled mongd)")
-	x509Subject = "CN=localhost,OU=Client,O=MGO,L=MGO,ST=MGO,C=GO" // this needs to be kept in sync with client.pem
-	x509AuthUrl = "localhost:40301"
-)
-
 func (s *S) TestAuthx509Cred(c *C) {
-	if !*x509Flag {
-		c.Skip("no -x509")
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+	binfo, err := session.BuildInfo()
+	c.Assert(err, IsNil)
+	if binfo.OpenSSLVersion == "" {
+		c.Skip("server does not support SSL")
 	}
 
 	clientCertPEM, err := ioutil.ReadFile("testdb/client.pem")
@@ -39,9 +31,10 @@ func (s *S) TestAuthx509Cred(c *C) {
 		Certificates:       []tls.Certificate{clientCert},
 	}
 
-	c.Logf("Connecting to %s...", x509AuthUrl)
-	session, err := mgo.DialWithInfo(&mgo.DialInfo{
-		Addrs: []string{x509AuthUrl},
+	var host = "localhost:40003"
+	c.Logf("Connecting to %s...", host)
+	session, err = mgo.DialWithInfo(&mgo.DialInfo{
+		Addrs: []string{host},
 		DialServer: func(addr *mgo.ServerAddr) (net.Conn, error) {
 			return tls.Dial("tcp", addr.String(), tlsConfig)
 		},
@@ -49,16 +42,17 @@ func (s *S) TestAuthx509Cred(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	adminDB := session.DB("admin")
-	var adminUser mgo.User = mgo.User{Username: "Admin", Password: "AdminPassword", Roles: []mgo.Role{mgo.RoleRoot}}
-	err = adminDB.UpsertUser(&adminUser)
+	err = session.Login(&mgo.Credential{Username: "root", Password: "rapadura"})
 	c.Assert(err, IsNil)
 
-	err = session.Login(&mgo.Credential{Username: "Admin", Password: "AdminPassword"})
-	c.Assert(err, IsNil)
+	// This needs to be kept in sync with client.pem
+	x509Subject := "CN=localhost,OU=Client,O=MGO,L=MGO,ST=MGO,C=GO"
 
 	externalDB := session.DB("$external")
-	var x509User mgo.User = mgo.User{Username: x509Subject, OtherDBRoles: map[string][]mgo.Role{"admin": []mgo.Role{mgo.RoleRoot}}}
+	var x509User mgo.User = mgo.User{
+		Username:     x509Subject,
+		OtherDBRoles: map[string][]mgo.Role{"admin": []mgo.Role{mgo.RoleRoot}},
+	}
 	err = externalDB.UpsertUser(&x509User)
 	c.Assert(err, IsNil)
 
