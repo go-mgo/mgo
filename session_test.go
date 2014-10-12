@@ -2451,12 +2451,27 @@ func (s *S) TestEnsureIndex(c *C) {
 		Bits: 32,
 	}
 
-	coll := session.DB("mydb").C("mycoll")
+	index5 := mgo.Index{
+		Key: []string{"$text:a", "$text:b"},
+	}
 
-	for _, index := range []mgo.Index{index1, index2, index3, index4} {
-		err = coll.EnsureIndex(index)
+	index6 := mgo.Index{
+		Key:              []string{"$text:a"},
+		DefaultLanguage:  "portuguese",
+		LanguageOverride: "idioma",
+	}
+
+	coll1 := session.DB("mydb").C("mycoll1")
+	coll2 := session.DB("mydb").C("mycoll2")
+
+	for _, index := range []mgo.Index{index1, index2, index3, index4, index5} {
+		err = coll1.EnsureIndex(index)
 		c.Assert(err, IsNil)
 	}
+
+	// Cannot have multiple text indexes on the same collection.
+	err = coll2.EnsureIndex(index6)
+	c.Assert(err, IsNil)
 
 	sysidx := session.DB("mydb").C("system.indexes")
 
@@ -2476,11 +2491,19 @@ func (s *S) TestEnsureIndex(c *C) {
 	err = sysidx.Find(M{"name": "loc_2d"}).One(result4)
 	c.Assert(err, IsNil)
 
+	result5 := M{}
+	err = sysidx.Find(M{"name": "a_text_b_text"}).One(result5)
+	c.Assert(err, IsNil)
+
+	result6 := M{}
+	err = sysidx.Find(M{"name": "a_text"}).One(result6)
+	c.Assert(err, IsNil)
+
 	delete(result1, "v")
 	expected1 := M{
 		"name":       "a_1",
 		"key":        M{"a": 1},
-		"ns":         "mydb.mycoll",
+		"ns":         "mydb.mycoll1",
 		"background": true,
 	}
 	c.Assert(result1, DeepEquals, expected1)
@@ -2489,7 +2512,7 @@ func (s *S) TestEnsureIndex(c *C) {
 	expected2 := M{
 		"name":     "a_1_b_-1",
 		"key":      M{"a": 1, "b": -1},
-		"ns":       "mydb.mycoll",
+		"ns":       "mydb.mycoll1",
 		"unique":   true,
 		"dropDups": true,
 	}
@@ -2503,7 +2526,7 @@ func (s *S) TestEnsureIndex(c *C) {
 	expected3 := M{
 		"name": "loc_old_2d",
 		"key":  M{"loc_old": "2d"},
-		"ns":   "mydb.mycoll",
+		"ns":   "mydb.mycoll1",
 		"min":  -500,
 		"max":  500,
 		"bits": 32,
@@ -2514,17 +2537,41 @@ func (s *S) TestEnsureIndex(c *C) {
 	expected4 := M{
 		"name": "loc_2d",
 		"key":  M{"loc": "2d"},
-		"ns":   "mydb.mycoll",
+		"ns":   "mydb.mycoll1",
 		"min":  -500,
 		"max":  500,
 		"bits": 32,
 	}
 	c.Assert(result4, DeepEquals, expected4)
 
+	delete(result5, "v")
+	expected5 := M{
+		"name":              "a_text_b_text",
+		"key":               M{"_fts": "text", "_ftsx": 1},
+		"ns":                "mydb.mycoll1",
+		"weights":           M{"a": 1, "b": 1},
+		"default_language":  "english",
+		"language_override": "language",
+		"textIndexVersion":  2,
+	}
+	c.Assert(result5, DeepEquals, expected5)
+
+	delete(result6, "v")
+	expected6 := M{
+		"name":              "a_text",
+		"key":               M{"_fts": "text", "_ftsx": 1},
+		"ns":                "mydb.mycoll2",
+		"weights":           M{"a": 1},
+		"default_language":  "portuguese",
+		"language_override": "idioma",
+		"textIndexVersion":  2,
+	}
+	c.Assert(result6, DeepEquals, expected6)
+
 	// Ensure the index actually works for real.
-	err = coll.Insert(M{"a": 1, "b": 1})
+	err = coll1.Insert(M{"a": 1, "b": 1})
 	c.Assert(err, IsNil)
-	err = coll.Insert(M{"a": 1, "b": 1})
+	err = coll1.Insert(M{"a": 1, "b": 1})
 	c.Assert(err, ErrorMatches, ".*duplicate key error.*")
 	c.Assert(mgo.IsDup(err), Equals, true)
 }

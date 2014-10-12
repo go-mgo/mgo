@@ -941,13 +941,17 @@ type Index struct {
 	Background bool     // Build index in background and return immediately
 	Sparse     bool     // Only index documents containing the Key fields
 
-	ExpireAfter time.Duration // Periodically delete docs with indexed time.Time older than that.
+	// If ExpireAfter is defined the server will periodically delete
+	// documents with indexed time.Time older than the provided delta.
+	ExpireAfter time.Duration
 
-	Name string // Index name, computed by EnsureIndex
+	// Index name computed by EnsureIndex during creation.
+	Name string
 
-	Bits, Min, Max int // Properties for spatial indexes
+	// Properties for spatial indexes.
+	Bits, Min, Max int
 
-	// Properties for text indexes
+	// Properties for text indexes.
 	DefaultLanguage  string
 	LanguageOverride string
 }
