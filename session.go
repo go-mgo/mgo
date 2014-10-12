@@ -3586,6 +3586,11 @@ func (s *Session) BuildInfo() (info BuildInfo, err error) {
 	for len(info.VersionArray) < 4 {
 		info.VersionArray = append(info.VersionArray, 0)
 	}
+	if i := strings.IndexByte(info.GitVersion, ' '); i >= 0 {
+		// Strip off the " modules: enterprise" suffix. This is a _git version_.
+		// That information may be moved to another field if people need it.
+		info.GitVersion = info.GitVersion[:i]
+	}
 	return
 }
 
