@@ -603,8 +603,6 @@ func (s *S) TestTxnQueueStressTest(c *C) {
 	const runners = 4
 	const changes = 1000
 
-	txn.SetDebug(true)
-
 	var wg sync.WaitGroup
 	wg.Add(runners)
 	for n := 0; n < runners; n++ {

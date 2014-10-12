@@ -2,14 +2,9 @@ package txn
 
 import (
 	"sort"
-	"testing"
 
 	. "gopkg.in/check.v1"
 )
-
-func TestAll(t *testing.T) {
-	TestingT(t)
-}
 
 type DocKeySuite struct{}
 
