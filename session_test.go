@@ -757,8 +757,8 @@ func (s *S) TestCreateCollectionForceIndex(c *C) {
 
 func (s *S) TestIsDupValues(c *C) {
 	c.Assert(mgo.IsDup(nil), Equals, false)
-	c.Assert(mgo.IsDup(&mgo.LastError{Code: 1}), Equals, false)
-	c.Assert(mgo.IsDup(&mgo.QueryError{Code: 1}), Equals, false)
+	c.Assert(mgo.IsDup(&mgo.LastError{Code: CodeInternalError}), Equals, false)
+	c.Assert(mgo.IsDup(&mgo.QueryError{Code: CodeInternalError}), Equals, false)
 	c.Assert(mgo.IsDup(&mgo.LastError{Code: 11000}), Equals, true)
 	c.Assert(mgo.IsDup(&mgo.QueryError{Code: 11000}), Equals, true)
 	c.Assert(mgo.IsDup(&mgo.LastError{Code: 11001}), Equals, true)

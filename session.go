@@ -841,7 +841,7 @@ func isNoCmd(err error) bool {
 
 func isNotFound(err error) bool {
 	e, ok := err.(*QueryError)
-	return ok && e.Code == 11
+	return ok && e.Code == CodeUserNotFound
 }
 
 func (db *Database) runUserCmd(cmdName string, user *User) error {
