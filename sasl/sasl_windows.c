@@ -73,13 +73,14 @@ int sspi_send_client_authz_id(CtxtHandle *context, PVOID *buffer, ULONG *buffer_
 		return status;
 	}
 
-	int msgSize = 4 + 25;
+	size_t user_plus_realm_length = strlen(user_plus_realm);
+	int msgSize = 4 + user_plus_realm_length;
 	char *msg = malloc((sizes.cbSecurityTrailer + msgSize + sizes.cbBlockSize) * sizeof(char));
 	msg[sizes.cbSecurityTrailer + 0] = 1;
 	msg[sizes.cbSecurityTrailer + 1] = 0;
 	msg[sizes.cbSecurityTrailer + 2] = 0;
 	msg[sizes.cbSecurityTrailer + 3] = 0;
-	memcpy(&msg[sizes.cbSecurityTrailer + 4], user_plus_realm, 25);
+	memcpy(&msg[sizes.cbSecurityTrailer + 4], user_plus_realm, user_plus_realm_length);
 
 	SecBuffer wrapBufs[3];
 	SecBufferDesc wrapBufDesc;
@@ -101,6 +102,7 @@ int sspi_send_client_authz_id(CtxtHandle *context, PVOID *buffer, ULONG *buffer_
 
 	status = call_sspi_encrypt_message(context, SECQOP_WRAP_NO_ENCRYPT, &wrapBufDesc, 0);
 	if (status != SEC_E_OK) {
+		free(msg);
 		return status;
 	}
 
@@ -111,5 +113,6 @@ int sspi_send_client_authz_id(CtxtHandle *context, PVOID *buffer, ULONG *buffer_
 	memcpy(*buffer + wrapBufs[0].cbBuffer, wrapBufs[1].pvBuffer, wrapBufs[1].cbBuffer);
 	memcpy(*buffer + wrapBufs[0].cbBuffer + wrapBufs[1].cbBuffer, wrapBufs[2].pvBuffer, wrapBufs[2].cbBuffer);
 
+	free(msg);
 	return SEC_E_OK;
 }
