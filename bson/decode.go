@@ -511,6 +511,8 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 		in = nil
 	case 0x0B: // RegEx
 		in = d.readRegEx()
+	case 0x0C:
+		in = DBPointer{Namespace: d.readStr(), Id: ObjectId(d.readBytes(12))}
 	case 0x0D: // JavaScript without scope
 		in = JavaScript{Code: d.readStr()}
 	case 0x0E: // Symbol

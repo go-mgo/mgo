@@ -386,6 +386,14 @@ type JavaScript struct {
 	Scope interface{}
 }
 
+// DBPointer is a type that refers to a document in some namespace by wrapping
+// a string containing the namespace itself, and the ObjectId in which the _id
+// of the document is contained
+type DBPointer struct {
+	Namespace string
+	Id        ObjectId
+}
+
 const initialBufferSize = 64
 
 func handleErr(err *error) {

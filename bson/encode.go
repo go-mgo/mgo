@@ -43,6 +43,7 @@ import (
 var (
 	typeBinary         = reflect.TypeOf(Binary{})
 	typeObjectId       = reflect.TypeOf(ObjectId(""))
+	typeDBPointer      = reflect.TypeOf(DBPointer{"", ObjectId("")})
 	typeSymbol         = reflect.TypeOf(Symbol(""))
 	typeMongoTimestamp = reflect.TypeOf(MongoTimestamp(0))
 	typeOrderKey       = reflect.TypeOf(MinKey)
@@ -380,6 +381,15 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 		case Binary:
 			e.addElemName('\x05', name)
 			e.addBinary(s.Kind, s.Data)
+
+		case DBPointer:
+			e.addElemName('\x0C', name)
+			e.addStr(s.Namespace)
+			if len(s.Id) != 12 {
+				panic("ObjectIDs must be exactly 12 bytes long (got " +
+					strconv.Itoa(len(s.Id)) + ")")
+			}
+			e.addBytes([]byte(s.Id)...)
 
 		case RegEx:
 			e.addElemName('\x0B', name)
