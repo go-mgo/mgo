@@ -40,6 +40,7 @@ func (s *S) TestBulkInsert(c *C) {
 	bulk := coll.Bulk()
 	bulk.Insert(M{"n": 1})
 	bulk.Insert(M{"n": 2}, M{"n": 3})
+	c.Assert(bulk.Count(), Equals, 3)
 	r, err := bulk.Run()
 	c.Assert(err, IsNil)
 	c.Assert(r, FitsTypeOf, &mgo.BulkResult{})
