@@ -1268,10 +1268,14 @@ func (idxs indexSlice) Swap(i, j int)      { idxs[i], idxs[j] = idxs[j], idxs[i]
 func simpleIndexKey(realKey bson.D) (key []string) {
 	for i := range realKey {
 		field := realKey[i].Name
-		vi, ok := realKey[i].Value.(int)
-		if !ok {
-			vf, _ := realKey[i].Value.(float64)
-			vi = int(vf)
+		vi := 0
+		switch t := realKey[i].Value.(type) {
+		case int:
+			vi = t
+		case int64:
+			vi = int(t)
+		case float64:
+			vi = int(t)
 		}
 		if vi == 1 {
 			key = append(key, field)
