@@ -3224,10 +3224,10 @@ func (s *S) TestRepairCursor(c *C) {
 	c.Assert(repairIter.Err(), IsNil)
 	c.Assert(repairIter.Close(), IsNil)
 
-	/* Verify that the results of the repair cursor are valid.
-	The repair cursor can return multiple copies
-	of the same document, so to check correctness we only
-	need to verify that at least 1 of each document was returned. */
+	// Verify that the results of the repair cursor are valid.
+	// The repair cursor can return multiple copies
+	// of the same document, so to check correctness we only
+	// need to verify that at least 1 of each document was returned.
 
 	for _, key := range ns {
 		c.Assert(resultCounts[key] > 0, Equals, true)

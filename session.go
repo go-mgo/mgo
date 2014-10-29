@@ -1881,6 +1881,11 @@ func (c *Collection) Pipe(pipeline interface{}) *Pipe {
 	}
 }
 
+// Repair calls the 'repairCursor' command (supported in mongo 2.7.8 and later)
+// and returns an iterator to go through the results.
+// This command requests the server to perform a best-effort attempt to recover
+// all documents from the collection in cases of damaged data files, so it may
+// return multiple copies of the same document.
 func (c *Collection) Repair() *Iter {
 	// Clone session and set it to strong mode so that the server
 	// used for the query may be safely obtained afterwards, if
