@@ -1845,6 +1845,15 @@ type pipeCmdCursor struct {
 	BatchSize int `bson:"batchSize,omitempty"`
 }
 
+type repairCmd struct {
+	RepairCursor string           `bson:"repairCursor"`
+	Cursor       *repairCmdCursor ",omitempty"
+}
+
+type repairCmdCursor struct {
+	BatchSize int `bson:"batchSize,omitempty"`
+}
+
 // Pipe prepares a pipeline to aggregate. The pipeline document
 // must be a slice built in terms of the aggregation framework language.
 //
@@ -1870,6 +1879,60 @@ func (c *Collection) Pipe(pipeline interface{}) *Pipe {
 		pipeline:   pipeline,
 		batchSize:  batchSize,
 	}
+}
+
+func (c *Collection) Repair() *Iter {
+	// Clone session and set it to strong mode so that the server
+	// used for the query may be safely obtained afterwards, if
+	// necessary for iteration when a cursor is received.
+	session := c.Database.Session
+	session.m.Lock()
+	batchSize := int(session.queryConfig.op.limit)
+	session.m.Unlock()
+	cloned := session.Clone()
+	cloned.SetMode(Strong, false)
+	defer cloned.Close()
+	c = c.With(cloned)
+
+	iter := &Iter{
+		session: session,
+		timeout: -1,
+	}
+	iter.gotReply.L = &iter.m
+
+	var result struct {
+		Cursor struct {
+			FirstBatch []bson.Raw "firstBatch"
+			Id         int64
+		}
+	}
+
+	cmd := repairCmd{
+		RepairCursor: c.Name,
+		Cursor:       &repairCmdCursor{batchSize},
+	}
+	iter.err = c.Database.Run(cmd, &result)
+	if iter.err != nil {
+		return iter
+	}
+	docs := result.Cursor.FirstBatch
+	for i := range docs {
+		iter.docData.Push(docs[i].Data)
+	}
+	if result.Cursor.Id != 0 {
+		socket, err := cloned.acquireSocket(true)
+		if err != nil {
+			// Cloned session is in strong mode, and the query
+			// above succeeded. Should have a reserved socket.
+			panic("internal error: " + err.Error())
+		}
+		iter.server = socket.Server()
+		socket.Release()
+		iter.op.cursorId = result.Cursor.Id
+		iter.op.collection = c.FullName
+		iter.op.replyFunc = iter.replyFunc()
+	}
+	return iter
 }
 
 // Iter executes the pipeline and returns an iterator capable of going
