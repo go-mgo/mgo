@@ -1816,35 +1816,6 @@ func (c *Collection) Find(query interface{}) *Query {
 	return q
 }
 
-// FindId is a convenience helper equivalent to:
-//
-//     query := collection.Find(bson.M{"_id": id})
-//
-// See the Find method for more details.
-func (c *Collection) FindId(id interface{}) *Query {
-	return c.Find(bson.D{{"_id", id}})
-}
-
-type Pipe struct {
-	session    *Session
-	collection *Collection
-	pipeline   interface{}
-	allowDisk  bool
-	batchSize  int
-}
-
-type pipeCmd struct {
-	Aggregate string
-	Pipeline  interface{}
-	Cursor    *pipeCmdCursor ",omitempty"
-	Explain   bool           ",omitempty"
-	AllowDisk bool           "allowDiskUse,omitempty"
-}
-
-type pipeCmdCursor struct {
-	BatchSize int `bson:"batchSize,omitempty"`
-}
-
 type repairCmd struct {
 	RepairCursor string           `bson:"repairCursor"`
 	Cursor       *repairCmdCursor ",omitempty"
@@ -1852,33 +1823,6 @@ type repairCmd struct {
 
 type repairCmdCursor struct {
 	BatchSize int `bson:"batchSize,omitempty"`
-}
-
-// Pipe prepares a pipeline to aggregate. The pipeline document
-// must be a slice built in terms of the aggregation framework language.
-//
-// For example:
-//
-//     pipe := collection.Pipe([]bson.M{{"$match": bson.M{"name": "Otavio"}}})
-//     iter := pipe.Iter()
-//
-// Relevant documentation:
-//
-//     http://docs.mongodb.org/manual/reference/aggregation
-//     http://docs.mongodb.org/manual/applications/aggregation
-//     http://docs.mongodb.org/manual/tutorial/aggregation-examples
-//
-func (c *Collection) Pipe(pipeline interface{}) *Pipe {
-	session := c.Database.Session
-	session.m.Lock()
-	batchSize := int(session.queryConfig.op.limit)
-	session.m.Unlock()
-	return &Pipe{
-		session:    session,
-		collection: c,
-		pipeline:   pipeline,
-		batchSize:  batchSize,
-	}
 }
 
 // Repair returns an iterator that goes over all recovered documents in the
@@ -1939,6 +1883,62 @@ func (c *Collection) Repair() *Iter {
 		iter.op.replyFunc = iter.replyFunc()
 	}
 	return iter
+}
+
+// FindId is a convenience helper equivalent to:
+//
+//     query := collection.Find(bson.M{"_id": id})
+//
+// See the Find method for more details.
+func (c *Collection) FindId(id interface{}) *Query {
+	return c.Find(bson.D{{"_id", id}})
+}
+
+type Pipe struct {
+	session    *Session
+	collection *Collection
+	pipeline   interface{}
+	allowDisk  bool
+	batchSize  int
+}
+
+type pipeCmd struct {
+	Aggregate string
+	Pipeline  interface{}
+	Cursor    *pipeCmdCursor ",omitempty"
+	Explain   bool           ",omitempty"
+	AllowDisk bool           "allowDiskUse,omitempty"
+}
+
+type pipeCmdCursor struct {
+	BatchSize int `bson:"batchSize,omitempty"`
+}
+
+// Pipe prepares a pipeline to aggregate. The pipeline document
+// must be a slice built in terms of the aggregation framework language.
+//
+// For example:
+//
+//     pipe := collection.Pipe([]bson.M{{"$match": bson.M{"name": "Otavio"}}})
+//     iter := pipe.Iter()
+//
+// Relevant documentation:
+//
+//     http://docs.mongodb.org/manual/reference/aggregation
+//     http://docs.mongodb.org/manual/applications/aggregation
+//     http://docs.mongodb.org/manual/tutorial/aggregation-examples
+//
+func (c *Collection) Pipe(pipeline interface{}) *Pipe {
+	session := c.Database.Session
+	session.m.Lock()
+	batchSize := int(session.queryConfig.op.limit)
+	session.m.Unlock()
+	return &Pipe{
+		session:    session,
+		collection: c,
+		pipeline:   pipeline,
+		batchSize:  batchSize,
+	}
 }
 
 // Iter executes the pipeline and returns an iterator capable of going
