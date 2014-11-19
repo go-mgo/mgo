@@ -814,7 +814,7 @@ func (s *S) TestSyncTimeout(c *C) {
 	// Do something.
 	result := struct{ Ok bool }{}
 	err = session.Run("getLastError", &result)
-	c.Assert(err, ErrorMatches, "no reachable servers")
+	c.Assert(err, Equals, mgo.ErrNoReachableServers)
 	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
 	c.Assert(started.After(time.Now().Add(-timeout*2)), Equals, true)
 }
@@ -832,7 +832,7 @@ func (s *S) TestDialWithTimeout(c *C) {
 	if session != nil {
 		session.Close()
 	}
-	c.Assert(err, ErrorMatches, "no reachable servers")
+	c.Assert(err, Equals, mgo.ErrNoReachableServers)
 	c.Assert(session, IsNil)
 	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
 	c.Assert(started.After(time.Now().Add(-timeout*2)), Equals, true)
@@ -875,7 +875,7 @@ func (s *S) TestSocketTimeoutOnDial(c *C) {
 	started := time.Now()
 
 	session, err := mgo.DialWithTimeout("localhost:40001", timeout)
-	c.Assert(err, ErrorMatches, "no reachable servers")
+	c.Assert(err, Equals, mgo.ErrNoReachableServers)
 	c.Assert(session, IsNil)
 
 	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
@@ -907,6 +907,224 @@ func (s *S) TestSocketTimeoutOnInactiveSocket(c *C) {
 	c.Assert(session.Ping(), IsNil)
 }
 
+func (s *S) TestDialWithKnownReplPrimary(c *C) {
+	// port 40011 is used by replica set rs1's primary
+	info := mgo.DialInfo{
+		Addrs:          []string{"localhost:40011"},
+		Timeout:        5 * time.Second,
+		ReplicaSetName: "rs1",
+	}
+	connectionUrl := "mongodb://localhost:40011/?replicaSet=rs1"
+
+	runTest := func(session *mgo.Session, err error) {
+		c.Assert(err, IsNil)
+		defer session.Close()
+
+		coll := session.DB("mydb").C("mycoll")
+		coll.Insert(M{"a": 1, "b": 2})
+
+		result := struct{ Ok bool }{}
+		err = session.Run("getLastError", &result)
+		c.Assert(err, IsNil)
+		c.Assert(result.Ok, Equals, true)
+	}
+
+	session, err := mgo.DialWithInfo(&info)
+	runTest(session, err)
+	session, err = mgo.Dial(connectionUrl)
+	runTest(session, err)
+}
+
+func (s *S) TestDialWithKnownReplSecondary(c *C) {
+	// port 40012 is used by replica set rs1's secondary
+	info := mgo.DialInfo{
+		Addrs:          []string{"localhost:40012"},
+		Timeout:        5 * time.Second,
+		ReplicaSetName: "rs1",
+	}
+	connectionUrl := "mongodb://localhost:40012/?replicaSet=rs1"
+
+	runTest := func(session *mgo.Session, err error) {
+		c.Assert(err, IsNil)
+		defer session.Close()
+
+		coll := session.DB("mydb").C("mycoll")
+		coll.Insert(M{"a": 1, "b": 2})
+
+		result := struct{ Ok bool }{}
+		err = session.Run("getLastError", &result)
+		c.Assert(err, IsNil)
+		c.Assert(result.Ok, Equals, true)
+	}
+
+	session, err := mgo.DialWithInfo(&info)
+	runTest(session, err)
+	session, err = mgo.Dial(connectionUrl)
+	runTest(session, err)
+}
+
+var foreignMemberErrorRegex = ".*not part of.*"
+
+func (s *S) TestDialWithForeignReplPrimary(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
+	// port 40021 is used by replica set rs2's primary
+	info := mgo.DialInfo{
+		Addrs:          []string{"localhost:40021"},
+		Timeout:        5 * time.Second,
+		ReplicaSetName: "rs1",
+	}
+	_, err := mgo.DialWithInfo(&info)
+	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+
+	info.Direct = true
+	_, err = mgo.DialWithInfo(&info)
+	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+
+	connectionUrl := "mongodb://localhost:40021/?replicaSet=rs1"
+	_, err = mgo.Dial(connectionUrl)
+	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+
+	connectionUrl += "&connect=direct"
+	_, err = mgo.Dial(connectionUrl)
+	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+}
+
+func (s *S) TestDialWithForeignReplSecondary(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
+	// port 40022 is used by replica set rs2's secondary
+	info := mgo.DialInfo{
+		Addrs:          []string{"localhost:40022"},
+		Timeout:        5 * time.Second,
+		ReplicaSetName: "rs1",
+	}
+	_, err := mgo.DialWithInfo(&info)
+	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+
+	info.Direct = true
+	_, err = mgo.DialWithInfo(&info)
+	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+
+	connectionUrl := "mongodb://localhost:40022/?replicaSet=rs1"
+	_, err = mgo.Dial(connectionUrl)
+	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+
+	connectionUrl += "&connect=direct"
+	_, err = mgo.Dial(connectionUrl)
+	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+}
+
+func (s *S) TestDialWithMixedPrimaries(c *C) {
+	// port 40011 is used by replica set rs1's primary
+	// port 40021 is used by replica set rs2's primary
+	info := mgo.DialInfo{
+		Addrs:          []string{"localhost:40011", "localhost:40021"},
+		Timeout:        5 * time.Second,
+		ReplicaSetName: "rs1",
+	}
+
+	session, err := mgo.DialWithInfo(&info)
+	c.Assert(err, IsNil)
+	session.Close()
+
+	info.Direct = true
+	session, err = mgo.DialWithInfo(&info)
+	c.Assert(err, IsNil)
+	session.Close()
+
+	connectionUrl := "mongodb://localhost:40011,localhost:40021/?replicaSet=rs1"
+	session, err = mgo.Dial(connectionUrl)
+	c.Assert(err, IsNil)
+	session.Close()
+
+	connectionUrl += "&connect=direct"
+	session, err = mgo.Dial(connectionUrl)
+	c.Assert(err, IsNil)
+	session.Close()
+}
+
+func (s *S) TestDialWithMixedSecondaries(c *C) {
+	// port 40012 is used by replica set rs1's secondary
+	// port 40022 is used by replica set rs2's secondary
+	info := mgo.DialInfo{
+		Addrs:          []string{"localhost:40012", "localhost:40022"},
+		Timeout:        5 * time.Second,
+		ReplicaSetName: "rs1",
+	}
+
+	session, err := mgo.DialWithInfo(&info)
+	c.Assert(err, IsNil)
+	session.Close()
+
+	info.Direct = true
+	session, err = mgo.DialWithInfo(&info)
+	c.Assert(err, IsNil)
+	session.Close()
+
+	connectionUrl := "mongodb://localhost:40012,localhost:40022/?replicaSet=rs1"
+	session, err = mgo.Dial(connectionUrl)
+	c.Assert(err, IsNil)
+	session.Close()
+
+	connectionUrl += "&connect=direct"
+	session, err = mgo.Dial(connectionUrl)
+	c.Assert(err, IsNil)
+	session.Close()
+}
+
+func (s *S) TestDialWithForeignSeeds(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
+	// port 40021 is used by replica set rs2's primary
+	// port 40022 is used by replica set rs2's secondary
+	info := mgo.DialInfo{
+		Addrs:          []string{"localhost:40021", "localhost:40022"},
+		Timeout:        5 * time.Second,
+		ReplicaSetName: "rs1",
+	}
+
+	_, err := mgo.DialWithInfo(&info)
+	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+
+	info.Direct = true
+	_, err = mgo.DialWithInfo(&info)
+	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+
+	connectionUrl := "mongodb://localhost:40021,localhost:40022/?replicaSet=rs1"
+	_, err = mgo.Dial(connectionUrl)
+	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+
+	connectionUrl += "&connect=direct"
+	_, err = mgo.Dial(connectionUrl)
+	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+}
+
+func (s *S) TestDialWithUnknownSeeds(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
+	info := mgo.DialInfo{
+		Addrs:          []string{"localhost:54321", "localhost:12345"},
+		Timeout:        5 * time.Second,
+		ReplicaSetName: "rs1",
+	}
+
+	_, err := mgo.DialWithInfo(&info)
+	c.Assert(err, Equals, mgo.ErrNoReachableServers)
+
+	connectionUrl := "mongodb://localhost:54321,localhost:12345/?replicaSet=rs1"
+	_, err = mgo.Dial(connectionUrl)
+	c.Assert(err, Equals, mgo.ErrNoReachableServers)
+}
+
 func (s *S) TestDirect(c *C) {
 	session, err := mgo.Dial("localhost:40012?connect=direct")
 	c.Assert(err, IsNil)
@@ -930,7 +1148,7 @@ func (s *S) TestDirect(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"test": 1})
-	c.Assert(err, ErrorMatches, "no reachable servers")
+	c.Assert(err, Equals, mgo.ErrNoReachableServers)
 
 	// Writing to the local database is okay.
 	coll = session.DB("local").C("mycoll")
@@ -968,7 +1186,7 @@ func (s *S) TestDirectToUnknownStateMember(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"test": 1})
-	c.Assert(err, ErrorMatches, "no reachable servers")
+	c.Assert(err, Equals, mgo.ErrNoReachableServers)
 
 	// Slave is still reachable.
 	result.Host = ""
@@ -987,7 +1205,7 @@ func (s *S) TestFailFast(c *C) {
 	started := time.Now()
 
 	_, err := mgo.DialWithInfo(&info)
-	c.Assert(err, ErrorMatches, "no reachable servers")
+	c.Assert(err, Equals, mgo.ErrNoReachableServers)
 
 	c.Assert(started.After(time.Now().Add(-time.Second)), Equals, true)
 }
