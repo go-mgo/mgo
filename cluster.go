@@ -54,16 +54,11 @@ type mongoCluster struct {
 	direct       bool
 	failFast     bool
 	syncCount    uint
-	err          error
 	setName      string
 	cachedIndex  map[string]bool
 	sync         chan bool
 	dial         dialer
 }
-
-var (
-	ErrNoReachableServers = errors.New("no reachable servers")
-)
 
 func newCluster(userSeeds []string, direct, failFast bool, dial dialer, setName string) *mongoCluster {
 	cluster := &mongoCluster{
@@ -208,8 +203,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerI
 
 	if cluster.setName != "" && result.SetName != cluster.setName {
 		log("SYNC Server ", addr, " not a member of replica set ", cluster.setName)
-		cluster.err = errors.New(addr + " is not part of " + cluster.setName + " replica set")
-		return nil, nil, cluster.err
+		return nil, nil, errors.New(addr + " is not part of " + cluster.setName + " replica set")
 	}
 
 	if result.IsMaster {
@@ -270,9 +264,8 @@ func (cluster *mongoCluster) addServer(server *mongoServer, info *mongoServerInf
 			cluster.Unlock()
 			server.Close()
 			return
-		} else {
-			cluster.servers.Add(server)
 		}
+		cluster.servers.Add(server)
 		if info.Master {
 			cluster.masters.Add(server)
 			log("SYNC Adding ", server.Addr, " to cluster as a master.")
@@ -561,10 +554,7 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Durati
 				syncCount = cluster.syncCount
 			} else if syncTimeout != 0 && started.Before(time.Now().Add(-syncTimeout)) || cluster.failFast && cluster.syncCount != syncCount {
 				cluster.RUnlock()
-				if cluster.err != nil {
-					return nil, cluster.err
-				}
-				return nil, ErrNoReachableServers
+				return nil, errors.New("no reachable servers")
 			}
 			log("Waiting for servers to synchronize...")
 			cluster.syncServers()

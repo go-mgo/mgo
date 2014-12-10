@@ -814,7 +814,7 @@ func (s *S) TestSyncTimeout(c *C) {
 	// Do something.
 	result := struct{ Ok bool }{}
 	err = session.Run("getLastError", &result)
-	c.Assert(err, Equals, mgo.ErrNoReachableServers)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
 	c.Assert(started.After(time.Now().Add(-timeout*2)), Equals, true)
 }
@@ -832,7 +832,7 @@ func (s *S) TestDialWithTimeout(c *C) {
 	if session != nil {
 		session.Close()
 	}
-	c.Assert(err, Equals, mgo.ErrNoReachableServers)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 	c.Assert(session, IsNil)
 	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
 	c.Assert(started.After(time.Now().Add(-timeout*2)), Equals, true)
@@ -875,7 +875,7 @@ func (s *S) TestSocketTimeoutOnDial(c *C) {
 	started := time.Now()
 
 	session, err := mgo.DialWithTimeout("localhost:40001", timeout)
-	c.Assert(err, Equals, mgo.ErrNoReachableServers)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 	c.Assert(session, IsNil)
 
 	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
@@ -963,8 +963,6 @@ func (s *S) TestDialWithKnownReplSecondary(c *C) {
 	runTest(session, err)
 }
 
-var foreignMemberErrorRegex = ".*not part of.*"
-
 func (s *S) TestDialWithForeignReplPrimary(c *C) {
 	if *fast {
 		c.Skip("-fast")
@@ -977,19 +975,19 @@ func (s *S) TestDialWithForeignReplPrimary(c *C) {
 		ReplicaSetName: "rs1",
 	}
 	_, err := mgo.DialWithInfo(&info)
-	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 
 	info.Direct = true
 	_, err = mgo.DialWithInfo(&info)
-	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 
 	connectionUrl := "mongodb://localhost:40021/?replicaSet=rs1"
 	_, err = mgo.Dial(connectionUrl)
-	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 
 	connectionUrl += "&connect=direct"
 	_, err = mgo.Dial(connectionUrl)
-	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 }
 
 func (s *S) TestDialWithForeignReplSecondary(c *C) {
@@ -1004,19 +1002,19 @@ func (s *S) TestDialWithForeignReplSecondary(c *C) {
 		ReplicaSetName: "rs1",
 	}
 	_, err := mgo.DialWithInfo(&info)
-	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 
 	info.Direct = true
 	_, err = mgo.DialWithInfo(&info)
-	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 
 	connectionUrl := "mongodb://localhost:40022/?replicaSet=rs1"
 	_, err = mgo.Dial(connectionUrl)
-	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 
 	connectionUrl += "&connect=direct"
 	_, err = mgo.Dial(connectionUrl)
-	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 }
 
 func (s *S) TestDialWithMixedPrimaries(c *C) {
@@ -1091,19 +1089,19 @@ func (s *S) TestDialWithForeignSeeds(c *C) {
 	}
 
 	_, err := mgo.DialWithInfo(&info)
-	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 
 	info.Direct = true
 	_, err = mgo.DialWithInfo(&info)
-	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 
 	connectionUrl := "mongodb://localhost:40021,localhost:40022/?replicaSet=rs1"
 	_, err = mgo.Dial(connectionUrl)
-	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 
 	connectionUrl += "&connect=direct"
 	_, err = mgo.Dial(connectionUrl)
-	c.Assert(err, ErrorMatches, foreignMemberErrorRegex)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 }
 
 func (s *S) TestDialWithUnknownSeeds(c *C) {
@@ -1118,11 +1116,11 @@ func (s *S) TestDialWithUnknownSeeds(c *C) {
 	}
 
 	_, err := mgo.DialWithInfo(&info)
-	c.Assert(err, Equals, mgo.ErrNoReachableServers)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 
 	connectionUrl := "mongodb://localhost:54321,localhost:12345/?replicaSet=rs1"
 	_, err = mgo.Dial(connectionUrl)
-	c.Assert(err, Equals, mgo.ErrNoReachableServers)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 }
 
 func (s *S) TestDirect(c *C) {
@@ -1148,7 +1146,7 @@ func (s *S) TestDirect(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"test": 1})
-	c.Assert(err, Equals, mgo.ErrNoReachableServers)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 
 	// Writing to the local database is okay.
 	coll = session.DB("local").C("mycoll")
@@ -1186,7 +1184,7 @@ func (s *S) TestDirectToUnknownStateMember(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	err = coll.Insert(M{"test": 1})
-	c.Assert(err, Equals, mgo.ErrNoReachableServers)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 
 	// Slave is still reachable.
 	result.Host = ""
@@ -1205,7 +1203,7 @@ func (s *S) TestFailFast(c *C) {
 	started := time.Now()
 
 	_, err := mgo.DialWithInfo(&info)
-	c.Assert(err, Equals, mgo.ErrNoReachableServers)
+	c.Assert(err, ErrorMatches, "no reachable servers")
 
 	c.Assert(started.After(time.Now().Add(-time.Second)), Equals, true)
 }
