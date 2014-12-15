@@ -936,7 +936,7 @@ func (s *S) TestDialWithKnownReplPrimary(c *C) {
 }
 
 func (s *S) TestDialWithKnownReplSecondary(c *C) {
-	// port 40012 is used by replica set rs1's secondary
+	// port 40012 is used by an rs1 replica set secondary
 	info := mgo.DialInfo{
 		Addrs:          []string{"localhost:40012"},
 		Timeout:        5 * time.Second,
@@ -995,7 +995,7 @@ func (s *S) TestDialWithForeignReplSecondary(c *C) {
 		c.Skip("-fast")
 	}
 
-	// port 40022 is used by replica set rs2's secondary
+	// port 40022 is used by an rs2 replica set secondary
 	info := mgo.DialInfo{
 		Addrs:          []string{"localhost:40022"},
 		Timeout:        5 * time.Second,
@@ -1017,62 +1017,70 @@ func (s *S) TestDialWithForeignReplSecondary(c *C) {
 	c.Assert(err, ErrorMatches, "no reachable servers")
 }
 
-func (s *S) TestDialWithMixedPrimaries(c *C) {
+func (s *S) TestDialWithMixedSeedList(c *C) {
 	// port 40011 is used by replica set rs1's primary
 	// port 40021 is used by replica set rs2's primary
-	info := mgo.DialInfo{
-		Addrs:          []string{"localhost:40011", "localhost:40021"},
-		Timeout:        5 * time.Second,
-		ReplicaSetName: "rs1",
+
+	seedLists := [][]string{
+		// rs1 primary and rs2 primary
+		[]string{"localhost:40011", "localhost:40021"},
+		// rs1 primary and rs2 secondary
+		[]string{"localhost:40011", "localhost:40022"},
+		// rs1 secondary and rs2 primary
+		[]string{"localhost:40012", "localhost:40021"},
+		// rs1 secondary and rs2 secondary
+		[]string{"localhost:40012", "localhost:40022"},
 	}
 
-	session, err := mgo.DialWithInfo(&info)
-	c.Assert(err, IsNil)
-	session.Close()
+	rs2Members := []string{":40021", ":40022", ":40023"}
 
-	info.Direct = true
-	session, err = mgo.DialWithInfo(&info)
-	c.Assert(err, IsNil)
-	session.Close()
+	verifySyncedServers := func(session *mgo.Session, numServers int) {
+		// wait for the server(s) to be synced
+		for len(session.LiveServers()) != numServers {
+			c.Log("Waiting for cluster sync to finish...")
+			time.Sleep(5e8)
+		}
 
-	connectionUrl := "mongodb://localhost:40011,localhost:40021/?replicaSet=rs1"
-	session, err = mgo.Dial(connectionUrl)
-	c.Assert(err, IsNil)
-	session.Close()
-
-	connectionUrl += "&connect=direct"
-	session, err = mgo.Dial(connectionUrl)
-	c.Assert(err, IsNil)
-	session.Close()
-}
-
-func (s *S) TestDialWithMixedSecondaries(c *C) {
-	// port 40012 is used by replica set rs1's secondary
-	// port 40022 is used by replica set rs2's secondary
-	info := mgo.DialInfo{
-		Addrs:          []string{"localhost:40012", "localhost:40022"},
-		Timeout:        5 * time.Second,
-		ReplicaSetName: "rs1",
+		// ensure none of the rs2 set members are communicated with
+		for _, addr := range session.LiveServers() {
+			for _, rs2Member := range rs2Members {
+				c.Assert(strings.HasSuffix(addr, rs2Member), Equals, false)
+			}
+		}
 	}
 
-	session, err := mgo.DialWithInfo(&info)
-	c.Assert(err, IsNil)
-	session.Close()
+	// only communication with rs1 members is expected
+	for _, seedList := range seedLists {
+		info := mgo.DialInfo{
+			Addrs:          seedList,
+			Timeout:        5 * time.Second,
+			ReplicaSetName: "rs1",
+		}
 
-	info.Direct = true
-	session, err = mgo.DialWithInfo(&info)
-	c.Assert(err, IsNil)
-	session.Close()
+		session, err := mgo.DialWithInfo(&info)
+		c.Assert(err, IsNil)
+		verifySyncedServers(session, 3)
+		session.Close()
 
-	connectionUrl := "mongodb://localhost:40012,localhost:40022/?replicaSet=rs1"
-	session, err = mgo.Dial(connectionUrl)
-	c.Assert(err, IsNil)
-	session.Close()
+		info.Direct = true
+		session, err = mgo.DialWithInfo(&info)
+		c.Assert(err, IsNil)
+		verifySyncedServers(session, 1)
+		session.Close()
 
-	connectionUrl += "&connect=direct"
-	session, err = mgo.Dial(connectionUrl)
-	c.Assert(err, IsNil)
-	session.Close()
+		connectionUrl := fmt.Sprintf("mongodb://%v/?replicaSet=rs1", strings.Join(seedList, ","))
+		session, err = mgo.Dial(connectionUrl)
+		c.Assert(err, IsNil)
+		verifySyncedServers(session, 3)
+		session.Close()
+
+		connectionUrl += "&connect=direct"
+		session, err = mgo.Dial(connectionUrl)
+		c.Assert(err, IsNil)
+		verifySyncedServers(session, 1)
+		session.Close()
+	}
+
 }
 
 func (s *S) TestDialWithForeignSeeds(c *C) {
