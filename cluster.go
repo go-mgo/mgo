@@ -54,18 +54,20 @@ type mongoCluster struct {
 	direct       bool
 	failFast     bool
 	syncCount    uint
+	setName      string
 	cachedIndex  map[string]bool
 	sync         chan bool
 	dial         dialer
 }
 
-func newCluster(userSeeds []string, direct, failFast bool, dial dialer) *mongoCluster {
+func newCluster(userSeeds []string, direct, failFast bool, dial dialer, setName string) *mongoCluster {
 	cluster := &mongoCluster{
 		userSeeds:  userSeeds,
 		references: 1,
 		direct:     direct,
 		failFast:   failFast,
 		dial:       dial,
+		setName:    setName,
 	}
 	cluster.serverSynced.L = cluster.RWMutex.RLocker()
 	cluster.sync = make(chan bool, 1)
@@ -131,7 +133,8 @@ type isMasterResult struct {
 	Passives       []string
 	Tags           bson.D
 	Msg            string
-	MaxWireVersion int `bson:"maxWireVersion"`
+	SetName        string `bson:"setName"`
+	MaxWireVersion int    `bson:"maxWireVersion"`
 }
 
 func (cluster *mongoCluster) isMaster(socket *mongoSocket, result *isMasterResult) error {
@@ -198,6 +201,11 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerI
 		break
 	}
 
+	if cluster.setName != "" && result.SetName != cluster.setName {
+		log("SYNC Server ", addr, " is not a member of replica set ", cluster.setName)
+		return nil, nil, errors.New(addr + " is not a member of replica set " + cluster.setName)
+	}
+
 	if result.IsMaster {
 		debugf("SYNC %s is a master.", addr)
 		// Made an incorrect assumption above, so fix stats.
@@ -218,6 +226,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerI
 		Master:         result.IsMaster,
 		Mongos:         result.Msg == "isdbgrid",
 		Tags:           result.Tags,
+		SetName:        result.SetName,
 		MaxWireVersion: result.MaxWireVersion,
 	}
 
