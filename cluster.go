@@ -202,8 +202,8 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerI
 	}
 
 	if cluster.setName != "" && result.SetName != cluster.setName {
-		log("SYNC Server ", addr, " not a member of replica set ", cluster.setName)
-		return nil, nil, errors.New(addr + " is not part of " + cluster.setName + " replica set")
+		log("SYNC Server ", addr, " is not a member of replica set ", cluster.setName)
+		return nil, nil, errors.New(addr + " is not a member of replica set " + cluster.setName)
 	}
 
 	if result.IsMaster {
@@ -257,12 +257,6 @@ func (cluster *mongoCluster) addServer(server *mongoServer, info *mongoServerInf
 			cluster.Unlock()
 			server.Close()
 			log("SYNC Discarding unknown server ", server.Addr, " due to partial sync.")
-			return
-		}
-		if cluster.setName != "" && info.SetName != cluster.setName {
-			log("SYNC Discarding ", server.Addr, " not part of ", cluster.setName, " replica set.")
-			cluster.Unlock()
-			server.Close()
 			return
 		}
 		cluster.servers.Add(server)
