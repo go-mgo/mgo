@@ -28,6 +28,7 @@ package mgo
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -202,8 +203,8 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerI
 	}
 
 	if cluster.setName != "" && result.SetName != cluster.setName {
-		log("SYNC Server ", addr, " is not a member of replica set ", cluster.setName)
-		return nil, nil, errors.New(addr + " is not a member of replica set " + cluster.setName)
+		logf("SYNC Server %s is not a member of replica set %q", addr, cluster.setName)
+		return nil, nil, fmt.Errorf("server %s is not a member of replica set %q", addr, cluster.setName)
 	}
 
 	if result.IsMaster {

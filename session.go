@@ -301,11 +301,10 @@ type DialInfo struct {
 	// authentication if Source is unset.
 	Database string
 
-	// ReplicaSetName defines the name of the replica set to use for cluster
-	// discovery and monitoring. If specified, at least one of the seed servers
-	// must be a member of the ReplicaSetName replica set - non-members are
-	// ignored. If unspecified, the intended connection is assumed to be either
-	// with individual servers, or one or multiple mongos routers.
+	// ReplicaSetName, if specified, will prevent the obtained session from
+	// communicating with any server which is not part of a replica set
+	// with the given name. The default is to communicate with any server
+	// specified or discovered via the servers contacted.
 	ReplicaSetName string
 
 	// Source is the database used to establish credentials and privileges
