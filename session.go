@@ -2960,30 +2960,29 @@ func (iter *Iter) Err() error {
 // a *QueryError type.
 func (iter *Iter) Close() error {
 	iter.m.Lock()
-	iter.killCursor()
+	cursorId := iter.op.cursorId
+	iter.op.cursorId = 0
 	err := iter.err
 	iter.m.Unlock()
-	if err == ErrNotFound {
-		return nil
-	}
-	return err
-}
 
-func (iter *Iter) killCursor() error {
-	if iter.op.cursorId != 0 {
-		socket, err := iter.acquireSocket()
-		if err == nil {
-			// TODO Batch kills.
-			err = socket.Query(&killCursorsOp{[]int64{iter.op.cursorId}})
-			socket.Release()
-		}
-		if err != nil && (iter.err == nil || iter.err == ErrNotFound) {
-			iter.err = err
-		}
-		iter.op.cursorId = 0
+	if cursorId == 0 {
 		return err
 	}
-	return nil
+	socket, err := iter.acquireSocket()
+	if err == nil {
+		// TODO Batch kills.
+		err = socket.Query(&killCursorsOp{[]int64{cursorId}})
+		socket.Release()
+	}
+
+	iter.m.Lock()
+	if err != nil && (iter.err == nil || iter.err == ErrNotFound) {
+		iter.err = err
+	} else if iter.err != ErrNotFound {
+		err = iter.err
+	}
+	iter.m.Unlock()
+	return err
 }
 
 // Timeout returns true if Next returned false due to a timeout of
@@ -3043,6 +3042,7 @@ func (iter *Iter) Next(result interface{}) bool {
 
 	// Exhaust available data before reporting any errors.
 	if docData, ok := iter.docData.Pop().([]byte); ok {
+		close := false
 		if iter.limit > 0 {
 			iter.limit--
 			if iter.limit == 0 {
@@ -3051,19 +3051,20 @@ func (iter *Iter) Next(result interface{}) bool {
 					panic(fmt.Errorf("data remains after limit exhausted: %d", iter.docData.Len()))
 				}
 				iter.err = ErrNotFound
-				if iter.killCursor() != nil {
-					iter.m.Unlock()
-					return false
-				}
+				close = true
 			}
 		}
 		if iter.op.cursorId != 0 && iter.err == nil {
-			if iter.docsBeforeMore == 0 {
+			iter.docsBeforeMore--
+			if iter.docsBeforeMore == -1 {
 				iter.getMore()
 			}
-			iter.docsBeforeMore-- // Goes negative.
 		}
 		iter.m.Unlock()
+
+		if close {
+			iter.Close()
+		}
 		err := bson.Unmarshal(docData, result)
 		if err != nil {
 			debugf("Iter %p document unmarshaling failed: %#v", iter, err)
@@ -3188,6 +3189,12 @@ func (iter *Iter) For(result interface{}, f func() error) (err error) {
 	return iter.Err()
 }
 
+// acquireSocket acquires a socket from the same server that the iterator
+// cursor was obtained from.
+//
+// WARNING: This method must not be called with iter.m locked. Acquiring the
+// socket depends on the cluster sync loop, and the cluster sync loop might
+// attempt actions which cause replyFunc to be called, inducing a deadlock.
 func (iter *Iter) acquireSocket() (*mongoSocket, error) {
 	socket, err := iter.session.acquireSocket(true)
 	if err != nil {
@@ -3216,7 +3223,12 @@ func (iter *Iter) acquireSocket() (*mongoSocket, error) {
 }
 
 func (iter *Iter) getMore() {
+	// Increment now so that unlocking the iterator won't cause a
+	// different goroutine to get here as well.
+	iter.docsToReceive++
+	iter.m.Unlock()
 	socket, err := iter.acquireSocket()
+	iter.m.Lock()
 	if err != nil {
 		iter.err = err
 		return
@@ -3225,15 +3237,16 @@ func (iter *Iter) getMore() {
 
 	debugf("Iter %p requesting more documents", iter)
 	if iter.limit > 0 {
-		limit := iter.limit - int32(iter.docsToReceive) - int32(iter.docData.Len())
+		// The -1 below accounts for the fact docsToReceive was incremented above.
+		limit := iter.limit - int32(iter.docsToReceive - 1) - int32(iter.docData.Len())
 		if limit < iter.op.limit {
 			iter.op.limit = limit
 		}
 	}
 	if err := socket.Query(&iter.op); err != nil {
+		iter.docsToReceive--
 		iter.err = err
 	}
-	iter.docsToReceive++
 }
 
 type countCmd struct {
