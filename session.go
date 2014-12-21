@@ -2964,8 +2964,10 @@ func (iter *Iter) Close() error {
 	iter.op.cursorId = 0
 	err := iter.err
 	iter.m.Unlock()
-
 	if cursorId == 0 {
+		if err == ErrNotFound {
+			return nil
+		}
 		return err
 	}
 	socket, err := iter.acquireSocket()
@@ -3238,7 +3240,7 @@ func (iter *Iter) getMore() {
 	debugf("Iter %p requesting more documents", iter)
 	if iter.limit > 0 {
 		// The -1 below accounts for the fact docsToReceive was incremented above.
-		limit := iter.limit - int32(iter.docsToReceive - 1) - int32(iter.docData.Len())
+		limit := iter.limit - int32(iter.docsToReceive-1) - int32(iter.docData.Len())
 		if limit < iter.op.limit {
 			iter.op.limit = limit
 		}
