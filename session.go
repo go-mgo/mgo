@@ -1230,32 +1230,37 @@ func (c *Collection) DropIndex(key ...string) error {
 // See the EnsureIndex method for more details on indexes.
 func (c *Collection) Indexes() (indexes []Index, err error) {
 	// Try with a command.
-	var cmdResult struct {
-		Indexes []indexSpec
-	}
-	err = c.Database.Run(bson.D{{"listIndexes", c.Name}}, &cmdResult)
-	if err == nil {
-		for _, spec := range cmdResult.Indexes {
-			indexes = append(indexes, indexFromSpec(spec))
+	var result struct {
+		Indexes []bson.Raw
+
+		Cursor struct {
+			FirstBatch []bson.Raw "firstBatch"
+			NS         string
+			Id         int64
 		}
-		sort.Sort(indexSlice(indexes))
-		return indexes, nil
 	}
-	if err != nil && !isNoCmd(err) {
+	var iter *Iter
+	err = c.Database.Run(bson.D{{"listIndexes", c.Name}, {"cursor", bson.D{}}}, &result)
+	if err == nil {
+		firstBatch := result.Indexes
+		if firstBatch == nil {
+			firstBatch = result.Cursor.FirstBatch
+		}
+		iter = c.Database.C(result.Cursor.NS).NewIter(nil, firstBatch, result.Cursor.Id, nil)
+	} else if isNoCmd(err) {
+		// Command not yet supported. Query the database instead.
+		iter = c.Database.C("system.indexes").Find(bson.M{"ns": c.FullName}).Iter()
+	} else {
 		return nil, err
 	}
 
-	// Command not yet supported. Query the database instead.
-	query := c.Database.C("system.indexes").Find(bson.M{"ns": c.FullName})
-	iter := query.Sort("name").Iter()
-	for {
-		var spec indexSpec
-		if !iter.Next(&spec) {
-			break
-		}
+	var spec indexSpec
+	for iter.Next(&spec) {
 		indexes = append(indexes, indexFromSpec(spec))
 	}
-	err = iter.Close()
+	if err = iter.Close(); err != nil {
+		return nil, err
+	}
 	sort.Sort(indexSlice(indexes))
 	return indexes, nil
 }
@@ -2755,16 +2760,37 @@ func (s *Session) FindRef(ref *DBRef) *Query {
 
 // CollectionNames returns the collection names present in the db database.
 func (db *Database) CollectionNames() (names []string, err error) {
+	// Clone session and set it to strong mode so that the server
+	// used for the query may be safely obtained afterwards, if
+	// necessary for iteration when a cursor is received.
+	session := db.Session
+	cloned := session.Clone()
+	cloned.SetMode(Strong, false)
+	defer cloned.Close()
+
 	// Try with a command.
-	var cmdResult struct {
-		Collections []struct {
-			Name string
+	var result struct {
+		Collections []bson.Raw
+
+		Cursor struct {
+			FirstBatch []bson.Raw "firstBatch"
+			NS         string
+			Id         int64
 		}
 	}
-	err = db.Run(bson.D{{"listCollections", 1}}, &cmdResult)
+	err = db.Run(bson.D{{"listCollections", 1}, {"cursor", bson.D{}}}, &result)
 	if err == nil {
-		for _, coll := range cmdResult.Collections {
+		firstBatch := result.Collections
+		if firstBatch == nil {
+			firstBatch = result.Cursor.FirstBatch
+		}
+		iter := db.C(result.Cursor.NS).NewIter(nil, firstBatch, result.Cursor.Id, nil)
+		var coll struct{ Name string }
+		for iter.Next(&coll) {
 			names = append(names, coll.Name)
+		}
+		if err := iter.Close(); err != nil {
+			return nil, err
 		}
 		sort.Strings(names)
 		return names, err
@@ -2776,10 +2802,10 @@ func (db *Database) CollectionNames() (names []string, err error) {
 	// Command not yet supported. Query the database instead.
 	nameIndex := len(db.Name) + 1
 	iter := db.C("system.namespaces").Find(nil).Iter()
-	var result *struct{ Name string }
-	for iter.Next(&result) {
-		if strings.Index(result.Name, "$") < 0 || strings.Index(result.Name, ".oplog.$") >= 0 {
-			names = append(names, result.Name[nameIndex:])
+	var coll struct{ Name string }
+	for iter.Next(&coll) {
+		if strings.Index(coll.Name, "$") < 0 || strings.Index(coll.Name, ".oplog.$") >= 0 {
+			names = append(names, coll.Name[nameIndex:])
 		}
 	}
 	if err := iter.Close(); err != nil {
