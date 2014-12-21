@@ -1855,13 +1855,6 @@ func (c *Collection) Repair() *Iter {
 	cloned := session.Clone()
 	cloned.SetMode(Strong, false)
 	defer cloned.Close()
-	c = c.With(cloned)
-
-	iter := &Iter{
-		session: session,
-		timeout: -1,
-	}
-	iter.gotReply.L = &iter.m
 
 	var result struct {
 		Cursor struct {
@@ -1874,28 +1867,10 @@ func (c *Collection) Repair() *Iter {
 		RepairCursor: c.Name,
 		Cursor:       &repairCmdCursor{batchSize},
 	}
-	iter.err = c.Database.Run(cmd, &result)
-	if iter.err != nil {
-		return iter
-	}
-	docs := result.Cursor.FirstBatch
-	for i := range docs {
-		iter.docData.Push(docs[i].Data)
-	}
-	if result.Cursor.Id != 0 {
-		socket, err := cloned.acquireSocket(true)
-		if err != nil {
-			// Cloned session is in strong mode, and the query
-			// above succeeded. Should have a reserved socket.
-			panic("internal error: " + err.Error())
-		}
-		iter.server = socket.Server()
-		socket.Release()
-		iter.op.cursorId = result.Cursor.Id
-		iter.op.collection = c.FullName
-		iter.op.replyFunc = iter.replyFunc()
-	}
-	return iter
+
+	clonedc := c.With(cloned)
+	err := clonedc.Database.Run(cmd, &result)
+	return clonedc.NewIter(session, result.Cursor.FirstBatch, result.Cursor.Id, err)
 }
 
 // FindId is a convenience helper equivalent to:
@@ -1957,7 +1932,6 @@ func (c *Collection) Pipe(pipeline interface{}) *Pipe {
 // Iter executes the pipeline and returns an iterator capable of going
 // over all the generated results.
 func (p *Pipe) Iter() *Iter {
-
 	// Clone session and set it to strong mode so that the server
 	// used for the query may be safely obtained afterwards, if
 	// necessary for iteration when a cursor is received.
@@ -1965,12 +1939,6 @@ func (p *Pipe) Iter() *Iter {
 	cloned.SetMode(Strong, false)
 	defer cloned.Close()
 	c := p.collection.With(cloned)
-
-	iter := &Iter{
-		session: p.session,
-		timeout: -1,
-	}
-	iter.gotReply.L = &iter.m
 
 	var result struct {
 		// 2.4, no cursors.
@@ -1989,34 +1957,84 @@ func (p *Pipe) Iter() *Iter {
 		AllowDisk: p.allowDisk,
 		Cursor:    &pipeCmdCursor{p.batchSize},
 	}
-	iter.err = c.Database.Run(cmd, &result)
-	if e, ok := iter.err.(*QueryError); ok && e.Message == `unrecognized field "cursor` {
+	err := c.Database.Run(cmd, &result)
+	if e, ok := err.(*QueryError); ok && e.Message == `unrecognized field "cursor` {
 		cmd.Cursor = nil
 		cmd.AllowDisk = false
-		iter.err = c.Database.Run(cmd, &result)
+		err = c.Database.Run(cmd, &result)
 	}
-	if iter.err != nil {
-		return iter
+	firstBatch := result.Result
+	if firstBatch == nil {
+		firstBatch = result.Cursor.FirstBatch
 	}
-	docs := result.Result
-	if docs == nil {
-		docs = result.Cursor.FirstBatch
+	return c.NewIter(p.session, firstBatch, result.Cursor.Id, err)
+}
+
+// NewIter returns a newly created iterator with the provided parameters.
+// Using this method is not recommended unless the desired functionality
+// is not yet exposed via a more convenient interface (Find, Pipe, etc).
+//
+// The optional session parameter associates the lifetime of the returned
+// iterator to an arbitrary session. If nil, the iterator will be bound to
+// c's session.
+//
+// Documents in firstBatch will be individually provided by the returned
+// iterator before documents from cursorId are made available. If cursorId
+// is zero, only the documents in firstBatch are provided.
+//
+// If err is not nil, the iterator's Err method will report it after
+// exhausting documents in firstBatch.
+//
+// NewIter must be called right after the cursor id is obtained, and must not
+// be called on a collection in Eventual mode, because the cursor id is
+// associated with the specific server that returned it. The session parameter
+// may be in any mode or state, though.
+//
+func (c *Collection) NewIter(session *Session, firstBatch []bson.Raw, cursorId int64, err error) *Iter {
+	var server *mongoServer
+	csession := c.Database.Session
+	csession.m.RLock()
+	socket := csession.masterSocket
+	if socket == nil {
+		socket = csession.slaveSocket
 	}
-	for i := range docs {
-		iter.docData.Push(docs[i].Data)
+	if socket != nil {
+		server = socket.Server()
 	}
-	if result.Cursor.Id != 0 {
-		socket, err := cloned.acquireSocket(true)
-		if err != nil {
-			// Cloned session is in strong mode, and the query
-			// above succeeded. Should have a reserved socket.
-			panic("internal error: " + err.Error())
+	csession.m.RUnlock()
+
+	if server == nil {
+		if csession.Mode() == Eventual {
+			panic("Collection.NewIter called in Eventual mode")
 		}
-		iter.server = socket.Server()
-		socket.Release()
-		iter.op.cursorId = result.Cursor.Id
-		iter.op.collection = c.FullName
-		iter.op.replyFunc = iter.replyFunc()
+		panic("Collection.NewIter called on a fresh session with no associated server")
+	}
+
+	if session == nil {
+		session = csession
+	}
+
+	iter := &Iter{
+		session: session,
+		server:  server,
+		timeout: -1,
+		err:     err,
+	}
+	iter.gotReply.L = &iter.m
+	for _, doc := range firstBatch {
+		iter.docData.Push(doc.Data)
+	}
+	if cursorId != 0 {
+		socket, err := c.Database.Session.acquireSocket(true)
+		if err == nil {
+			iter.server = socket.Server()
+			socket.Release()
+			iter.op.cursorId = cursorId
+			iter.op.collection = c.FullName
+			iter.op.replyFunc = iter.replyFunc()
+		} else if iter.err == nil {
+			iter.err = err
+		}
 	}
 	return iter
 }
