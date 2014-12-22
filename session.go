@@ -1229,6 +1229,11 @@ func (c *Collection) DropIndex(key ...string) error {
 //
 // See the EnsureIndex method for more details on indexes.
 func (c *Collection) Indexes() (indexes []Index, err error) {
+	session := c.Database.Session
+	session.m.RLock()
+	batchSize := int(session.queryConfig.op.limit)
+	session.m.RUnlock()
+
 	// Try with a command.
 	var result struct {
 		Indexes []bson.Raw
@@ -1240,13 +1245,17 @@ func (c *Collection) Indexes() (indexes []Index, err error) {
 		}
 	}
 	var iter *Iter
-	err = c.Database.Run(bson.D{{"listIndexes", c.Name}, {"cursor", bson.D{}}}, &result)
+	err = c.Database.Run(bson.D{{"listIndexes", c.Name}, {"cursor", bson.D{{"batchSize", batchSize}}}}, &result)
 	if err == nil {
 		firstBatch := result.Indexes
 		if firstBatch == nil {
 			firstBatch = result.Cursor.FirstBatch
 		}
-		iter = c.Database.C(result.Cursor.NS).NewIter(nil, firstBatch, result.Cursor.Id, nil)
+		ns := strings.SplitN(result.Cursor.NS, ".", 2)
+		if len(ns) < 2 {
+			panic("server returned invalid cursor.ns result on listIndexes")
+		}
+		iter = session.DB(ns[0]).C(ns[1]).NewIter(nil, firstBatch, result.Cursor.Id, nil)
 	} else if isNoCmd(err) {
 		// Command not yet supported. Query the database instead.
 		iter = c.Database.C("system.indexes").Find(bson.M{"ns": c.FullName}).Iter()
@@ -1854,9 +1863,9 @@ func (c *Collection) Repair() *Iter {
 	// used for the query may be safely obtained afterwards, if
 	// necessary for iteration when a cursor is received.
 	session := c.Database.Session
-	session.m.Lock()
+	session.m.RLock()
 	batchSize := int(session.queryConfig.op.limit)
-	session.m.Unlock()
+	session.m.RUnlock()
 	cloned := session.Clone()
 	cloned.SetMode(Strong, false)
 	defer cloned.Close()
@@ -1923,9 +1932,9 @@ type pipeCmdCursor struct {
 //
 func (c *Collection) Pipe(pipeline interface{}) *Pipe {
 	session := c.Database.Session
-	session.m.Lock()
+	session.m.RLock()
 	batchSize := int(session.queryConfig.op.limit)
-	session.m.Unlock()
+	session.m.RUnlock()
 	return &Pipe{
 		session:    session,
 		collection: c,
@@ -2030,16 +2039,9 @@ func (c *Collection) NewIter(session *Session, firstBatch []bson.Raw, cursorId i
 		iter.docData.Push(doc.Data)
 	}
 	if cursorId != 0 {
-		socket, err := c.Database.Session.acquireSocket(true)
-		if err == nil {
-			iter.server = socket.Server()
-			socket.Release()
-			iter.op.cursorId = cursorId
-			iter.op.collection = c.FullName
-			iter.op.replyFunc = iter.replyFunc()
-		} else if iter.err == nil {
-			iter.err = err
-		}
+		iter.op.cursorId = cursorId
+		iter.op.collection = c.FullName
+		iter.op.replyFunc = iter.replyFunc()
 	}
 	return iter
 }
@@ -2764,6 +2766,9 @@ func (db *Database) CollectionNames() (names []string, err error) {
 	// used for the query may be safely obtained afterwards, if
 	// necessary for iteration when a cursor is received.
 	session := db.Session
+	session.m.RLock()
+	batchSize := int(session.queryConfig.op.limit)
+	session.m.RUnlock()
 	cloned := session.Clone()
 	cloned.SetMode(Strong, false)
 	defer cloned.Close()
@@ -2778,13 +2783,17 @@ func (db *Database) CollectionNames() (names []string, err error) {
 			Id         int64
 		}
 	}
-	err = db.Run(bson.D{{"listCollections", 1}, {"cursor", bson.D{}}}, &result)
+	err = db.Run(bson.D{{"listCollections", 1}, {"cursor", bson.D{{"batchSize", batchSize}}}}, &result)
 	if err == nil {
 		firstBatch := result.Collections
 		if firstBatch == nil {
 			firstBatch = result.Cursor.FirstBatch
 		}
-		iter := db.C(result.Cursor.NS).NewIter(nil, firstBatch, result.Cursor.Id, nil)
+		ns := strings.SplitN(result.Cursor.NS, ".", 2)
+		if len(ns) < 2 {
+			panic("server returned invalid cursor.ns result on listCollections")
+		}
+		iter := session.DB(ns[0]).C(ns[1]).NewIter(nil, firstBatch, result.Cursor.Id, nil)
 		var coll struct{ Name string }
 		for iter.Next(&coll) {
 			names = append(names, coll.Name)

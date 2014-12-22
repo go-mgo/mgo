@@ -282,6 +282,9 @@ func (s *S) TestDatabaseAndCollectionNames(c *C) {
 		c.Assert(names, DeepEquals, []string{"db1", "db2", "local"})
 	}
 
+	// Try to exercise cursor logic. 2.8.0-rc3 still ignores this.
+	session.SetBatch(2)
+
 	names, err = db1.CollectionNames()
 	c.Assert(err, IsNil)
 	c.Assert(names, DeepEquals, []string{"col1", "col2", "system.indexes"})
@@ -2806,6 +2809,9 @@ func (s *S) TestEnsureIndexGetIndexes(c *C) {
 
 	err = coll.EnsureIndexKey("$2d:d")
 	c.Assert(err, IsNil)
+
+	// Try to exercise cursor logic. 2.8.0-rc3 still ignores this.
+	session.SetBatch(2)
 
 	indexes, err := coll.Indexes()
 	c.Assert(err, IsNil)
