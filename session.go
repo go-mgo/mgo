@@ -1867,7 +1867,7 @@ func (c *Collection) Repair() *Iter {
 	batchSize := int(session.queryConfig.op.limit)
 	session.m.RUnlock()
 	cloned := session.Clone()
-	cloned.SetMode(Strong, false)
+	cloned.SetMode(Monotonic, false)
 	defer cloned.Close()
 
 	var result struct {
@@ -1950,7 +1950,7 @@ func (p *Pipe) Iter() *Iter {
 	// used for the query may be safely obtained afterwards, if
 	// necessary for iteration when a cursor is received.
 	cloned := p.session.Clone()
-	cloned.SetMode(Strong, false)
+	cloned.SetMode(Monotonic, false)
 	defer cloned.Close()
 	c := p.collection.With(cloned)
 
@@ -2770,7 +2770,7 @@ func (db *Database) CollectionNames() (names []string, err error) {
 	batchSize := int(session.queryConfig.op.limit)
 	session.m.RUnlock()
 	cloned := session.Clone()
-	cloned.SetMode(Strong, false)
+	cloned.SetMode(Monotonic, false)
 	defer cloned.Close()
 
 	// Try with a command.
@@ -2783,7 +2783,7 @@ func (db *Database) CollectionNames() (names []string, err error) {
 			Id         int64
 		}
 	}
-	err = db.Run(bson.D{{"listCollections", 1}, {"cursor", bson.D{{"batchSize", batchSize}}}}, &result)
+	err = db.With(cloned).Run(bson.D{{"listCollections", 1}, {"cursor", bson.D{{"batchSize", batchSize}}}}, &result)
 	if err == nil {
 		firstBatch := result.Collections
 		if firstBatch == nil {
@@ -2793,7 +2793,7 @@ func (db *Database) CollectionNames() (names []string, err error) {
 		if len(ns) < 2 {
 			panic("server returned invalid cursor.ns result on listCollections")
 		}
-		iter := session.DB(ns[0]).C(ns[1]).NewIter(nil, firstBatch, result.Cursor.Id, nil)
+		iter := cloned.DB(ns[0]).C(ns[1]).NewIter(session, firstBatch, result.Cursor.Id, nil)
 		var coll struct{ Name string }
 		for iter.Next(&coll) {
 			names = append(names, coll.Name)
