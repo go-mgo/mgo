@@ -57,6 +57,11 @@ func (b *Bulk) Insert(docs ...interface{}) {
 	b.inserts = append(b.inserts, docs...)
 }
 
+// Count returns the number of operations queued up.
+func (b *Bulk) Count() int {
+	return len(b.inserts)
+}
+
 // Run runs all the operations queued up.
 func (b *Bulk) Run() (*BulkResult, error) {
 	op := &insertOp{b.c.FullName, b.inserts, 0}
