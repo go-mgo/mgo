@@ -1,5 +1,13 @@
 package mgo
 
+import "gopkg.in/mgo.v2/bson"
+
+const (
+	// maxMessageSize is the maximum size of a single message
+	// that is supported by Mongo
+	maxMessageSize = 48000000
+)
+
 // Bulk represents an operation that can be prepared with several
 // orthogonal changes before being delivered to the server.
 //
@@ -13,6 +21,7 @@ type Bulk struct {
 	c       *Collection
 	ordered bool
 	inserts []interface{}
+	size    int
 }
 
 // BulkError holds an error returned from running a Bulk operation.
@@ -43,6 +52,12 @@ func (c *Collection) Bulk() *Bulk {
 	return &Bulk{c: c, ordered: true}
 }
 
+// reset resets the queued operations
+func (b *Bulk) reset() {
+	b.inserts = nil
+	b.size = 0
+}
+
 // Unordered puts the bulk operation in unordered mode.
 //
 // In unordered mode the indvidual operations may be sent
@@ -53,8 +68,26 @@ func (b *Bulk) Unordered() {
 }
 
 // Insert queues up the provided documents for insertion.
-func (b *Bulk) Insert(docs ...interface{}) {
-	b.inserts = append(b.inserts, docs...)
+func (b *Bulk) Insert(docs ...interface{}) error {
+	for _, doc := range docs {
+		bytes, err := bson.Marshal(doc)
+		if err != nil {
+			return err
+		}
+
+		if b.size+len(bytes) > maxMessageSize {
+			_, err = b.Run()
+			if err != nil {
+				return err
+			}
+			b.reset()
+		}
+
+		b.size += len(bytes)
+		b.inserts = append(b.inserts, doc)
+	}
+
+	return nil
 }
 
 // Run runs all the operations queued up.
