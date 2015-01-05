@@ -131,7 +131,7 @@ func finalizeFile(file *GridFile) {
 //     }
 //     file, err := db.GridFS("fs").Create("myfile.txt")
 //     check(err)
-//     n, err := file.Write([]byte("Hello world!")
+//     n, err := file.Write([]byte("Hello world!"))
 //     check(err)
 //     err = file.Close()
 //     check(err)
