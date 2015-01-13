@@ -39,7 +39,7 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2-unstable"
 )
 
 func (s *S) TestAuthLoginDatabase(c *C) {
@@ -1021,7 +1021,6 @@ var (
 
 	winKerberosPasswordEnv = "MGO_KERBEROS_PASSWORD"
 )
-
 
 // Kerberos has its own suite because it talks to a remote server
 // that is prepared to authenticate against a kerberos deployment.
