@@ -1296,6 +1296,9 @@ var oneWayCrossItems = []crossTypeItem{
 
 	// Would get decoded into a int32 too in the opposite direction.
 	{&shortIface{int64(1) << 30}, map[string]interface{}{"v": 1 << 30}},
+
+	// Ensure omitempty on struct with private fields works properly.
+	{&struct{ V struct { v time.Time } ",omitempty" }{}, map[string]interface{}{}},
 }
 
 func testCrossPair(c *C, dump interface{}, load interface{}) {
