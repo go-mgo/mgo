@@ -2026,7 +2026,9 @@ func (c *Collection) NewIter(session *Session, firstBatch []bson.Raw, cursorId i
 		if csession.Mode() == Eventual {
 			panic("Collection.NewIter called in Eventual mode")
 		}
-		panic("Collection.NewIter called on a fresh session with no associated server")
+		if err == nil {
+			err = errors.New("server not available")
+		}
 	}
 
 	if session == nil {
