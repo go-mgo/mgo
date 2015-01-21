@@ -2512,6 +2512,7 @@ func (s *S) TestEnsureIndex(c *C) {
 
 	index5 := mgo.Index{
 		Key: []string{"$text:a", "$text:b"},
+		Weights: map[string]int{"b": 42},
 	}
 
 	index6 := mgo.Index{
@@ -2608,7 +2609,7 @@ func (s *S) TestEnsureIndex(c *C) {
 		"name":              "a_text_b_text",
 		"key":               M{"_fts": "text", "_ftsx": 1},
 		"ns":                "mydb.mycoll1",
-		"weights":           M{"a": 1, "b": 1},
+		"weights":           M{"a": 1, "b": 42},
 		"default_language":  "english",
 		"language_override": "language",
 		"textIndexVersion":  2,

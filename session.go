@@ -974,6 +974,12 @@ type Index struct {
 	// Properties for text indexes.
 	DefaultLanguage  string
 	LanguageOverride string
+
+	// Weights defines the significance of provided fields relative to other
+	// fields in a text index. The score for a given word in a document is derived
+	// from the weighted sum of the frequency for each of the indexed fields in
+	// that document. The default field weight is 1.
+	Weights map[string]int
 }
 
 type indexKeyInfo struct {
@@ -1156,6 +1162,17 @@ func (c *Collection) EnsureIndex(index Index) error {
 		Weights:          keyInfo.weights,
 		DefaultLanguage:  index.DefaultLanguage,
 		LanguageOverride: index.LanguageOverride,
+	}
+
+NextField:
+	for name, weight := range index.Weights {
+		for i, elem := range spec.Weights {
+			if elem.Name == name {
+				spec.Weights[i].Value = weight
+				continue NextField
+			}
+		}
+		panic("weight provided for field that is not part of index key: " + name)
 	}
 
 	session = session.Clone()
