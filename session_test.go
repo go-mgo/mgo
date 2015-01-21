@@ -3531,6 +3531,27 @@ func (s *S) TestNewIterNoServer(c *C) {
 	c.Assert(iter.Err(), ErrorMatches, "server not available")
 }
 
+func (s *S) TestNewIterNoServerPresetErr(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	data, err := bson.Marshal(bson.M{"a": 1})
+
+	coll := session.DB("mydb").C("mycoll")
+	iter := coll.NewIter(nil, []bson.Raw{{3, data}}, 42, fmt.Errorf("my error"))
+
+	var result struct{ A int }
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, true)
+	c.Assert(result.A, Equals, 1)
+
+	ok = iter.Next(&result)
+	c.Assert(ok, Equals, false)
+
+	c.Assert(iter.Err(), ErrorMatches, "my error")
+}
+
 // --------------------------------------------------------------------------
 // Some benchmarks that require a running database.
 
