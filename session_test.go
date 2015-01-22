@@ -2511,7 +2511,7 @@ func (s *S) TestEnsureIndex(c *C) {
 	}
 
 	index5 := mgo.Index{
-		Key: []string{"$text:a", "$text:b"},
+		Key:     []string{"$text:a", "$text:b"},
 		Weights: map[string]int{"b": 42},
 	}
 
@@ -2521,10 +2521,15 @@ func (s *S) TestEnsureIndex(c *C) {
 		LanguageOverride: "idioma",
 	}
 
+	index7 := mgo.Index{
+		Key:  []string{"cn"},
+		Name: "CustomName",
+	}
+
 	coll1 := session.DB("mydb").C("mycoll1")
 	coll2 := session.DB("mydb").C("mycoll2")
 
-	for _, index := range []mgo.Index{index1, index2, index3, index4, index5} {
+	for _, index := range []mgo.Index{index1, index2, index3, index4, index5, index7} {
 		err = coll1.EnsureIndex(index)
 		c.Assert(err, IsNil)
 	}
@@ -2557,6 +2562,10 @@ func (s *S) TestEnsureIndex(c *C) {
 
 	result6 := M{}
 	err = sysidx.Find(M{"name": "a_text"}).One(result6)
+	c.Assert(err, IsNil)
+
+	result7 := M{}
+	err = sysidx.Find(M{"name": "CustomName"}).One(result7)
 	c.Assert(err, IsNil)
 
 	delete(result1, "v")
@@ -2627,6 +2636,14 @@ func (s *S) TestEnsureIndex(c *C) {
 		"textIndexVersion":  2,
 	}
 	c.Assert(result6, DeepEquals, expected6)
+
+	delete(result7, "v")
+	expected7 := M{
+		"name":       "CustomName",
+		"key":        M{"cn": 1},
+		"ns":         "mydb.mycoll1",
+	}
+	c.Assert(result7, DeepEquals, expected7)
 
 	// Ensure the index actually works for real.
 	err = coll1.Insert(M{"a": 1, "b": 1})

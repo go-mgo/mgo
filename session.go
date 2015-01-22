@@ -965,7 +965,7 @@ type Index struct {
 	// documents with indexed time.Time older than the provided delta.
 	ExpireAfter time.Duration
 
-	// Index name computed by EnsureIndex during creation.
+	// Name holds the index name. On creation it is automatically computed by EnsureIndex if unset.
 	Name string
 
 	// Properties for spatial indexes.
@@ -1069,7 +1069,8 @@ func (c *Collection) EnsureIndexKey(key ...string) error {
 }
 
 // EnsureIndex ensures an index with the given key exists, creating it with
-// the provided parameters if necessary.
+// the provided parameters if necessary. EnsureIndex does not modify a previously
+// existent index with a matching key. The old index must be dropped first instead.
 //
 // Once EnsureIndex returns successfully, following requests for the same index
 // will not contact the server unless Collection.DropIndex is used to drop the
@@ -1088,9 +1089,13 @@ func (c *Collection) EnsureIndexKey(key ...string) error {
 //
 // The Key value determines which fields compose the index. The index ordering
 // will be ascending by default.  To obtain an index with a descending order,
-// the field name should be prefixed by a dash (e.g. []string{"-time"}).
+// the field name should be prefixed by a dash (e.g. []string{"-time"}). It can
+// also be optionally prefixed by an index kind, as in "$text:summary" or
+// "$2d:-point". The key string format is:
 //
-// If Unique is true, the index must necessarily contain only a single
+//     [$<kind>:][-]<field name>
+//
+// If the Unique field is true, the index must necessarily contain only a single
 // document per Key.  With DropDups set to true, documents with the same key
 // as a previously indexed one will be dropped rather than an error returned.
 //
@@ -1162,6 +1167,10 @@ func (c *Collection) EnsureIndex(index Index) error {
 		Weights:          keyInfo.weights,
 		DefaultLanguage:  index.DefaultLanguage,
 		LanguageOverride: index.LanguageOverride,
+	}
+
+	if index.Name != "" {
+		spec.Name = index.Name
 	}
 
 NextField:
