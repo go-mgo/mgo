@@ -2565,6 +2565,19 @@ var indexTests = []struct {
 		"language_override": "idioma",
 		"textIndexVersion":  2,
 	},
+}, {
+	mgo.Index{
+		Key:              []string{"$text:$**"},
+	},
+	M{
+		"name":              "$**_text",
+		"key":               M{"_fts": "text", "_ftsx": 1},
+		"ns":                "mydb.mycoll",
+		"weights":           M{"$**": 1},
+		"default_language":  "english",
+		"language_override": "language",
+		"textIndexVersion":  2,
+	},
 }}
 
 func (s *S) TestEnsureIndex(c *C) {

@@ -1005,10 +1005,12 @@ func parseIndexKey(key []string) (*indexKeyInfo, error) {
 					kind = field[1:c]
 					field = field[c+1:]
 					keyInfo.name += field + "_" + kind
+				} else {
+					field = "\x00"
 				}
 			}
 			switch field[0] {
-			case '$':
+			case 0:
 				// Logic above failed. Reset and error.
 				field = ""
 			case '@':
