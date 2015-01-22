@@ -965,7 +965,8 @@ type Index struct {
 	// documents with indexed time.Time older than the provided delta.
 	ExpireAfter time.Duration
 
-	// Name holds the index name. On creation it is automatically computed by EnsureIndex if unset.
+	// Name holds the stored index name. On creation this field is ignored and the index name
+	// is automatically computed by EnsureIndex based on the index key
 	Name string
 
 	// Properties for spatial indexes.
@@ -1167,10 +1168,6 @@ func (c *Collection) EnsureIndex(index Index) error {
 		Weights:          keyInfo.weights,
 		DefaultLanguage:  index.DefaultLanguage,
 		LanguageOverride: index.LanguageOverride,
-	}
-
-	if index.Name != "" {
-		spec.Name = index.Name
 	}
 
 NextField:
