@@ -28,7 +28,7 @@ package mgo_test
 
 import (
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2-unstable"
+	"gopkg.in/mgo.v2"
 )
 
 func (s *S) TestBulkInsert(c *C) {

@@ -38,8 +38,8 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2-unstable"
-	"gopkg.in/mgo.v2-unstable/bson"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 func (s *S) TestRunString(c *C) {
@@ -2567,7 +2567,7 @@ var indexTests = []struct {
 	},
 }, {
 	mgo.Index{
-		Key:              []string{"$text:$**"},
+		Key: []string{"$text:$**"},
 	},
 	M{
 		"name":              "$**_text",
