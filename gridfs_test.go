@@ -32,8 +32,8 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	"gopkg.in/mgo.v2-unstable"
+	"gopkg.in/mgo.v2-unstable/bson"
 )
 
 func (s *S) TestGridFSCreate(c *C) {
@@ -325,6 +325,34 @@ func (s *S) TestGridFSAbort(c *C) {
 	c.Assert(err, ErrorMatches, "write aborted")
 
 	count, err = db.C("fs.chunks").Count()
+	c.Assert(err, IsNil)
+	c.Assert(count, Equals, 0)
+}
+
+func (s *S) TestGridFSCloseConflict(c *C) {
+	session, err := mgo.Dial("localhost:40011")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	db := session.DB("mydb")
+
+	db.C("fs.files").EnsureIndex(mgo.Index{Key: []string{"filename"}, Unique: true})
+
+	// For a closing-time conflict
+	err = db.C("fs.files").Insert(M{"filename": "foo.txt"})
+	c.Assert(err, IsNil)
+
+	gfs := db.GridFS("fs")
+	file, err := gfs.Create("foo.txt")
+	c.Assert(err, IsNil)
+
+	_, err = file.Write([]byte("some data"))
+	c.Assert(err, IsNil)
+
+	err = file.Close()
+	c.Assert(mgo.IsDup(err), Equals, true)
+
+	count, err := db.C("fs.chunks").Count()
 	c.Assert(err, IsNil)
 	c.Assert(count, Equals, 0)
 }

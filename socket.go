@@ -32,7 +32,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/mgo.v2/bson"
+	"gopkg.in/mgo.v2-unstable/bson"
 )
 
 type replyFunc func(err error, reply *replyOp, docNum int, docData []byte)

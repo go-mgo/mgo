@@ -33,7 +33,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/mgo.v2/bson"
+	"gopkg.in/mgo.v2-unstable/bson"
 )
 
 // ---------------------------------------------------------------------------
@@ -71,6 +71,7 @@ type mongoServerInfo struct {
 	Mongos         bool
 	Tags           bson.D
 	MaxWireVersion int
+	SetName        string
 }
 
 var defaultServerInfo mongoServerInfo
