@@ -2765,6 +2765,33 @@ func (s *S) TestEnsureIndexCaching(c *C) {
 	c.Assert(stats.SentOps, Equals, 2)
 }
 
+func (s *S) TestEnsureIndexWithCachingDisabled(c *C) {
+	addr := []string{"localhost:40001", "dolo"}
+	info := mgo.DialInfo{
+		Addrs:                  addr,
+		Timeout:                10*time.Second,
+		DisableIndexCaching:    true,
+	}
+	session, err := mgo.DialWithInfo(&info)
+	c.Assert(err, IsNil)
+
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.EnsureIndexKey("a")
+	c.Assert(err, IsNil)
+
+	mgo.ResetStats()
+
+	// Second EnsureIndex should not be cached and do nothing contact the server again.
+	err = coll.EnsureIndexKey("a")
+	c.Assert(err, IsNil)
+
+	stats := mgo.GetStats()
+	c.Assert(stats.SentOps, Equals, 2)
+}
+
 func (s *S) TestEnsureIndexGetIndexes(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
