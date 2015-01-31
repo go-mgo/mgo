@@ -56,21 +56,22 @@ const (
 // need to be updated too.
 
 type Session struct {
-	m            sync.RWMutex
-	cluster_     *mongoCluster
-	slaveSocket  *mongoSocket
-	masterSocket *mongoSocket
-	slaveOk      bool
-	consistency  mode
-	queryConfig  query
-	safeOp       *queryOp
-	syncTimeout  time.Duration
-	sockTimeout  time.Duration
-	defaultdb    string
-	sourcedb     string
-	dialCred     *Credential
-	creds        []Credential
-	poolLimit    int
+	m                       sync.RWMutex
+	cluster_                *mongoCluster
+	slaveSocket             *mongoSocket
+	masterSocket            *mongoSocket
+	slaveOk                 bool
+	consistency             mode
+	queryConfig             query
+	safeOp                  *queryOp
+	syncTimeout             time.Duration
+	sockTimeout             time.Duration
+	defaultdb               string
+	sourcedb                string
+	dialCred                *Credential
+	creds                   []Credential
+	poolLimit               int
+	disableIndexCaching 	bool
 }
 
 type Database struct {
@@ -334,6 +335,10 @@ type DialInfo struct {
 	// See Session.SetPoolLimit for details.
 	PoolLimit int
 
+	// DisableIndexCaching will disable index caching and always contact the 
+	// server when doing index-related commands like EnsureIndex and EnsureIndexKey
+	DisableIndexCaching bool
+
 	// DialServer optionally specifies the dial function for establishing
 	// connections with the MongoDB servers.
 	DialServer func(addr *ServerAddr) (net.Conn, error)
@@ -372,6 +377,7 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 	}
 	cluster := newCluster(addrs, info.Direct, info.FailFast, dialer{info.Dial, info.DialServer}, info.ReplicaSetName)
 	session := newSession(Eventual, cluster, info.Timeout)
+	session.disableIndexCaching = info.DisableIndexCaching
 	session.defaultdb = info.Database
 	if session.defaultdb == "" {
 		session.defaultdb = "test"
@@ -481,6 +487,7 @@ func newSession(consistency mode, cluster *mongoCluster, timeout time.Duration) 
 	session.SetMode(consistency, true)
 	session.SetSafe(&Safe{})
 	session.queryConfig.prefetch = defaultPrefetch
+	session.disableIndexCaching = false
 	return session
 }
 
@@ -1150,9 +1157,13 @@ func (c *Collection) EnsureIndex(index Index) error {
 	}
 
 	session := c.Database.Session
-	cacheKey := c.FullName + "\x00" + keyInfo.name
-	if session.cluster().HasCachedIndex(cacheKey) {
-		return nil
+
+	var cacheKey string
+	if !session.disableIndexCaching {
+		cacheKey = c.FullName + "\x00" + keyInfo.name
+		if session.cluster().HasCachedIndex(cacheKey) {
+			return nil
+		}		
 	}
 
 	spec := indexSpec{
@@ -1190,7 +1201,7 @@ NextField:
 
 	db := c.Database.With(session)
 	err = db.C("system.indexes").Insert(&spec)
-	if err == nil {
+	if err == nil && !session.disableIndexCaching {
 		session.cluster().CacheIndex(cacheKey, true)
 	}
 	session.Close()
