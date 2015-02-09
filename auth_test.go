@@ -262,7 +262,7 @@ func (s *S) TestAuthUpsertUserOtherDBRoles(c *C) {
 	ruser := &mgo.User{
 		Username:     "myruser",
 		Password:     "mypass",
-		OtherDBRoles: map[string][]mgo.Role{"mydb": []mgo.Role{mgo.RoleRead}},
+		OtherDBRoles: map[string][]mgo.Role{"mydb": {mgo.RoleRead}},
 	}
 
 	err = admindb.UpsertUser(ruser)
@@ -936,7 +936,7 @@ func (s *S) TestAuthX509Cred(c *C) {
 	externalDB := session.DB("$external")
 	var x509User mgo.User = mgo.User{
 		Username:     x509Subject,
-		OtherDBRoles: map[string][]mgo.Role{"admin": []mgo.Role{mgo.RoleRoot}},
+		OtherDBRoles: map[string][]mgo.Role{"admin": {mgo.RoleRoot}},
 	}
 	err = externalDB.UpsertUser(&x509User)
 	c.Assert(err, IsNil)

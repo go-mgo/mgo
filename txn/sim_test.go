@@ -2,12 +2,13 @@ package txn_test
 
 import (
 	"flag"
+	"math/rand"
+	"time"
+
+	. "gopkg.in/check.v1"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/mgo.v2/txn"
-	. "gopkg.in/check.v1"
-	"math/rand"
-	"time"
 )
 
 var (

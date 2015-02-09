@@ -2,10 +2,11 @@ package txn_test
 
 import (
 	"bytes"
-	"gopkg.in/mgo.v2"
-	. "gopkg.in/check.v1"
 	"os/exec"
 	"time"
+
+	. "gopkg.in/check.v1"
+	"gopkg.in/mgo.v2"
 )
 
 // ----------------------------------------------------------------------------

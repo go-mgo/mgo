@@ -910,13 +910,13 @@ func (s *S) TestSocketTimeoutOnInactiveSocket(c *C) {
 func (s *S) TestDialWithReplicaSetName(c *C) {
 	seedLists := [][]string{
 		// rs1 primary and rs2 primary
-		[]string{"localhost:40011", "localhost:40021"},
+		{"localhost:40011", "localhost:40021"},
 		// rs1 primary and rs2 secondary
-		[]string{"localhost:40011", "localhost:40022"},
+		{"localhost:40011", "localhost:40022"},
 		// rs1 secondary and rs2 primary
-		[]string{"localhost:40012", "localhost:40021"},
+		{"localhost:40012", "localhost:40021"},
 		// rs1 secondary and rs2 secondary
-		[]string{"localhost:40012", "localhost:40022"},
+		{"localhost:40012", "localhost:40022"},
 	}
 
 	rs2Members := []string{":40021", ":40022", ":40023"}
