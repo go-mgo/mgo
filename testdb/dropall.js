@@ -3,7 +3,7 @@ var ports = [40001, 40002, 40011, 40012, 40013, 40021, 40022, 40023, 40041, 4010
 var auth = [40002, 40103, 40203, 40031]
 var db1 = new Mongo("localhost:40001")
 
-if (db1.getDB("admin").serverBuildInfo().OpenSSLVersion != "") {
+if (db1.getDB("admin").serverBuildInfo().OpenSSLVersion) {
     ports.push(40003)
     auth.push(40003)
 }

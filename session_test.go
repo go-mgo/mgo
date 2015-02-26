@@ -2589,6 +2589,11 @@ func (s *S) TestEnsureIndex(c *C) {
 	idxs := session.DB("mydb").C("system.indexes")
 
 	for _, test := range indexTests {
+		if !s.versionAtLeast(2, 4) && test.expected["weights"] != nil {
+			// No text indexes until 2.4.
+			continue
+		}
+
 		err = coll.EnsureIndex(test.index)
 		c.Assert(err, IsNil)
 
@@ -2750,7 +2755,7 @@ func (s *S) TestEnsureIndexCaching(c *C) {
 	c.Assert(err, IsNil)
 
 	stats = mgo.GetStats()
-	c.Assert(stats.SentOps >= 1 && stats.SentOps <= 2, Equals, true)
+	c.Assert(stats.SentOps > 0, Equals, true)
 
 	// Dropping the index should also drop the cached index key.
 	err = coll.DropIndex("a")
@@ -2762,7 +2767,7 @@ func (s *S) TestEnsureIndexCaching(c *C) {
 	c.Assert(err, IsNil)
 
 	stats = mgo.GetStats()
-	c.Assert(stats.SentOps >= 1 && stats.SentOps <= 2, Equals, true)
+	c.Assert(stats.SentOps > 0, Equals, true)
 }
 
 func (s *S) TestEnsureIndexGetIndexes(c *C) {
@@ -2813,9 +2818,9 @@ func (s *S) TestEnsureIndexEvalGetIndexes(c *C) {
 	c.Assert(err, IsNil)
 	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({a: 1})"}}, nil)
 	c.Assert(err, IsNil)
-	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({c: '2d'})"}}, nil)
+	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({c: -1, e: 1})"}}, nil)
 	c.Assert(err, IsNil)
-	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({d: -1, e: 1})"}}, nil)
+	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({d: '2d'})"}}, nil)
 	c.Assert(err, IsNil)
 
 	indexes, err := coll.Indexes()
@@ -2826,10 +2831,15 @@ func (s *S) TestEnsureIndexEvalGetIndexes(c *C) {
 	c.Assert(indexes[1].Key, DeepEquals, []string{"a"})
 	c.Assert(indexes[2].Name, Equals, "b_-1")
 	c.Assert(indexes[2].Key, DeepEquals, []string{"-b"})
-	c.Assert(indexes[3].Name, Equals, "c_2d")
-	c.Assert(indexes[3].Key, DeepEquals, []string{"$2d:c"})
-	c.Assert(indexes[4].Name, Equals, "d_-1_e_1")
-	c.Assert(indexes[4].Key, DeepEquals, []string{"-d", "e"})
+	c.Assert(indexes[3].Name, Equals, "c_-1_e_1")
+	c.Assert(indexes[3].Key, DeepEquals, []string{"-c", "e"})
+	if s.versionAtLeast(2, 2) {
+		c.Assert(indexes[4].Name, Equals, "d_2d")
+		c.Assert(indexes[4].Key, DeepEquals, []string{"$2d:d"})
+	} else {
+		c.Assert(indexes[4].Name, Equals, "d_")
+		c.Assert(indexes[4].Key, DeepEquals, []string{"$2d:d"})
+	}
 }
 
 var testTTL = flag.Bool("test-ttl", false, "test TTL collections (may take 1 minute)")
