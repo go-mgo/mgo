@@ -2750,7 +2750,7 @@ func (s *S) TestEnsureIndexCaching(c *C) {
 	c.Assert(err, IsNil)
 
 	stats = mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 2)
+	c.Assert(stats.SentOps >= 1 && stats.SentOps <= 2, Equals, true)
 
 	// Dropping the index should also drop the cached index key.
 	err = coll.DropIndex("a")
@@ -2762,7 +2762,7 @@ func (s *S) TestEnsureIndexCaching(c *C) {
 	c.Assert(err, IsNil)
 
 	stats = mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 2)
+	c.Assert(stats.SentOps >= 1 && stats.SentOps <= 2, Equals, true)
 }
 
 func (s *S) TestEnsureIndexGetIndexes(c *C) {

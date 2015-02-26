@@ -1183,17 +1183,21 @@ NextField:
 		panic("weight provided for field that is not part of index key: " + name)
 	}
 
-	session = session.Clone()
-	defer session.Close()
-	session.SetMode(Strong, false)
-	session.EnsureSafe(&Safe{})
+	cloned := session.Clone()
+	defer cloned.Close()
+	cloned.SetMode(Strong, false)
+	cloned.EnsureSafe(&Safe{})
+	db := c.Database.With(cloned)
 
-	db := c.Database.With(session)
-	err = db.C("system.indexes").Insert(&spec)
+	// Try with a command first.
+	err = db.Run(bson.D{{"createIndexes", c.Name}, {"indexes", []indexSpec{spec}}}, nil)
+	if isNoCmd(err) {
+		// Command not yet supported. Insert into the indexes collection instead.
+		err = db.C("system.indexes").Insert(&spec)
+	}
 	if err == nil {
 		session.cluster().CacheIndex(cacheKey, true)
 	}
-	session.Close()
 	return err
 }
 
