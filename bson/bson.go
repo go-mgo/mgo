@@ -283,6 +283,20 @@ func (id *ObjectId) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalText turns *bson.ObjectId into an encoding.TextMarshaler.
+func (id *ObjectId) MarshalText() (text []byte, err error) {
+	return []byte(id.Hex()), nil
+}
+
+// UnmarshalText turns *bson.ObjectId into an encoding.TextUnmarshaler.
+func (id *ObjectId) UnmarshalText(text []byte) error {
+	if !IsObjectIdHex(string(text)) {
+		return errors.New("invalid bson.ObjectId value")
+	}
+	*id = ObjectIdHex(string(text))
+	return nil
+}
+
 // Valid returns true if id is valid. A valid id must contain exactly 12 bytes.
 func (id ObjectId) Valid() bool {
 	return len(id) == 12
