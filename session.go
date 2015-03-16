@@ -594,10 +594,14 @@ func (db *Database) GridFS(prefix string) *GridFS {
 //     http://www.mongodb.org/display/DOCS/List+of+Database+CommandSkips
 //
 func (db *Database) Run(cmd interface{}, result interface{}) error {
-	if name, ok := cmd.(string); ok {
-		cmd = bson.D{{name, 1}}
+	socket, err := db.Session.acquireSocket(true)
+	if err != nil {
+		return err
 	}
-	return db.C("$cmd").Find(cmd).One(result)
+	defer socket.Release()
+
+	// This is an optimized form of db.C("$cmd").Find(cmd).One(result).
+	return db.run(socket, cmd, result)
 }
 
 // Credential holds details to authenticate with a MongoDB server.
@@ -2732,6 +2736,46 @@ func (q *Query) One(result interface{}) (err error) {
 			debugf("Query %p document unmarshaled: %#v", q, result)
 		} else {
 			debugf("Query %p document unmarshaling failed: %#v", q, err)
+			return err
+		}
+	}
+	return checkQueryError(op.collection, data)
+}
+
+// run duplicates the behavior of collection.Find(query).One(&result)
+// as performed by Database.Run, specializing the logic for running
+// database commands on a given socket.
+func (db *Database) run(socket *mongoSocket, cmd, result interface{}) (err error) {
+	// Database.Run:
+	if name, ok := cmd.(string); ok {
+		cmd = bson.D{{name, 1}}
+	}
+
+	// Collection.Find:
+        session := db.Session
+        session.m.RLock()
+        op := session.queryConfig.op // Copy.
+        session.m.RUnlock()
+        op.query = cmd
+        op.collection = db.Name + ".$cmd"
+
+	// Query.One:
+	op.flags |= session.slaveOkFlag()
+	op.limit = -1
+
+	data, err := socket.SimpleQuery(&op)
+	if err != nil {
+		return err
+	}
+	if data == nil {
+		return ErrNotFound
+	}
+	if result != nil {
+		err = bson.Unmarshal(data, result)
+		if err == nil {
+			debugf("Run command unmarshaled: %#v", op, result)
+		} else {
+			debugf("Run command unmarshaling failed: %#v", op, err)
 			return err
 		}
 	}
