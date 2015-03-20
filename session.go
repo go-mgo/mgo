@@ -2612,6 +2612,22 @@ func (q *Query) SetMaxScan(n int) *Query {
 	return q
 }
 
+// SetMaxTimeMS constrains the query to stop after running for the specified
+// time.
+//
+// This modifier is better at stopping queries from running too long than a
+// socket timeout since mongo will continue to finish the query even after
+// the socket has been closed by the client.
+//
+// http://blog.mongodb.org/post/83621787773/maxtimems-and-query-optimizer-introspection-in
+func (q *Query) SetMaxTimeMS(n int) *Query {
+	q.m.Lock()
+	q.op.options.MaxTimeMS = n
+	q.op.hasOptions = true
+	q.m.Unlock()
+	return q
+}
+
 // Snapshot will force the performed query to make use of an available
 // index on the _id field to prevent the same document from being returned
 // more than once in a single iteration. This might happen without this
