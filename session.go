@@ -97,7 +97,7 @@ type query struct {
 }
 
 type getLastError struct {
-	CmdName  int         "getLastError"
+	CmdName  int         "getLastError,omitempty"
 	W        interface{} "w,omitempty"
 	WTimeout int         "wtimeout,omitempty"
 	FSync    bool        "fsync,omitempty"
@@ -2752,12 +2752,12 @@ func (db *Database) run(socket *mongoSocket, cmd, result interface{}) (err error
 	}
 
 	// Collection.Find:
-        session := db.Session
-        session.m.RLock()
-        op := session.queryConfig.op // Copy.
-        session.m.RUnlock()
-        op.query = cmd
-        op.collection = db.Name + ".$cmd"
+	session := db.Session
+	session.m.RLock()
+	op := session.queryConfig.op // Copy.
+	session.m.RUnlock()
+	op.query = cmd
+	op.collection = db.Name + ".$cmd"
 
 	// Query.One:
 	op.flags |= session.slaveOkFlag()
@@ -2773,7 +2773,9 @@ func (db *Database) run(socket *mongoSocket, cmd, result interface{}) (err error
 	if result != nil {
 		err = bson.Unmarshal(data, result)
 		if err == nil {
-			debugf("Run command unmarshaled: %#v", op, result)
+			var res bson.M
+			bson.Unmarshal(data, &res)
+			debugf("Run command unmarshaled: %#v, result: %#v", op, res)
 		} else {
 			debugf("Run command unmarshaling failed: %#v", op, err)
 			return err
@@ -3964,6 +3966,27 @@ func (iter *Iter) replyFunc() replyFunc {
 	}
 }
 
+type writeCmdResult struct {
+	Ok        bool
+	N         int
+	NModified int `bson:"nModified"`
+	Upserted  []struct {
+		Index int
+		Id    interface{} `_id`
+	}
+	Errors []struct {
+		Ok     bool
+		Index  int
+		Code   int
+		N      int
+		ErrMsg string
+	} `bson:"writeErrors"`
+	ConcernError struct {
+		Code   int
+		ErrMsg string
+	} `bson:"writeConcernError"`
+}
+
 // writeQuery runs the given modifying operation, potentially followed up
 // by a getLastError command in case the session is in safe mode.  The
 // LastError result is made available in lerr, and if lerr.Err is set it
@@ -3981,44 +4004,112 @@ func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
 	safeOp := s.safeOp
 	s.m.RUnlock()
 
+	if socket.ServerInfo().MaxWireVersion >= 2 {
+		// Servers with the write protocol >= 2 benefit from write commands.
+
+		var writeConcern interface{}
+		if safeOp == nil {
+			writeConcern = bson.D{{"w", 0}}
+		} else {
+			writeConcern = s.safeOp.query.(*getLastError)
+		}
+
+		var cmd bson.D
+		switch op := op.(type) {
+		case *insertOp:
+			// http://docs.mongodb.org/manual/reference/command/insert
+			cmd = bson.D{
+				{"insert", c.Name},
+				{"documents", op.documents},
+				{"writeConcern", writeConcern},
+				{"ordered", op.flags&1 == 0},
+			}
+		case *updateOp:
+			// http://docs.mongodb.org/manual/reference/command/update
+			selector := op.selector
+			if selector == nil {
+				selector = bson.D{}
+			}
+			cmd = bson.D{
+				{"update", c.Name},
+				{"updates", []bson.D{{{"q", selector}, {"u", op.update}, {"upsert", op.flags&1 != 0}, {"multi", op.flags&2 != 0}}}},
+				{"writeConcern", writeConcern},
+				//{"ordered", <bool>},
+			}
+		case *deleteOp:
+			// http://docs.mongodb.org/manual/reference/command/delete
+			selector := op.selector
+			if selector == nil {
+				selector = bson.D{}
+			}
+			cmd = bson.D{
+				{"delete", c.Name},
+				{"deletes", []bson.D{{{"q", selector}, {"limit", op.flags & 1}}}},
+				{"writeConcern", writeConcern},
+				//{"ordered", <bool>},
+			}
+		}
+		var result writeCmdResult
+		err := c.Database.run(socket, cmd, &result)
+		debugf("Write command result: %#v (err=%v)", result, err)
+		// TODO Should lerr.N be result.NModified on updates?
+		lerr := &LastError{UpdatedExisting: result.NModified != 0, N: result.N}
+		if len(result.Upserted) > 0 {
+			lerr.UpsertedId = result.Upserted[0].Id
+		}
+		if len(result.Errors) > 0 {
+			e := result.Errors[0]
+			if !e.Ok {
+				lerr.Code = e.Code
+				lerr.Err = e.ErrMsg
+				err = lerr
+			}
+		} else if result.ConcernError.Code != 0 {
+			e := result.ConcernError
+			lerr.Code = e.Code
+			lerr.Err = e.ErrMsg
+			err = lerr
+		}
+		return lerr, err
+	}
+
 	if safeOp == nil {
 		return nil, socket.Query(op)
-	} else {
-		var mutex sync.Mutex
-		var replyData []byte
-		var replyErr error
-		mutex.Lock()
-		query := *safeOp // Copy the data.
-		query.collection = dbname + ".$cmd"
-		query.replyFunc = func(err error, reply *replyOp, docNum int, docData []byte) {
-			replyData = docData
-			replyErr = err
-			mutex.Unlock()
-		}
-		err = socket.Query(op, &query)
+	}
+
+	var mutex sync.Mutex
+	var replyData []byte
+	var replyErr error
+	mutex.Lock()
+	query := *safeOp // Copy the data.
+	query.collection = dbname + ".$cmd"
+	query.replyFunc = func(err error, reply *replyOp, docNum int, docData []byte) {
+		replyData = docData
+		replyErr = err
+		mutex.Unlock()
+	}
+	err = socket.Query(op, &query)
+	if err != nil {
+		return nil, err
+	}
+	mutex.Lock() // Wait.
+	if replyErr != nil {
+		return nil, replyErr // XXX TESTME
+	}
+	if hasErrMsg(replyData) {
+		// Looks like getLastError itself failed.
+		err = checkQueryError(query.collection, replyData)
 		if err != nil {
 			return nil, err
 		}
-		mutex.Lock() // Wait.
-		if replyErr != nil {
-			return nil, replyErr // XXX TESTME
-		}
-		if hasErrMsg(replyData) {
-			// Looks like getLastError itself failed.
-			err = checkQueryError(query.collection, replyData)
-			if err != nil {
-				return nil, err
-			}
-		}
-		result := &LastError{}
-		bson.Unmarshal(replyData, &result)
-		debugf("Result from writing query: %#v", result)
-		if result.Err != "" {
-			return result, result
-		}
-		return result, nil
 	}
-	panic("unreachable")
+	result := &LastError{}
+	bson.Unmarshal(replyData, &result)
+	debugf("Result from writing query: %#v", result)
+	if result.Err != "" {
+		return result, result
+	}
+	return result, nil
 }
 
 func hasErrMsg(d []byte) bool {

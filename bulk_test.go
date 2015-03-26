@@ -58,7 +58,7 @@ func (s *S) TestBulkInsertError(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 	bulk := coll.Bulk()
-	bulk.Insert(M{"_id": 1}, M{"_id": 2}, M{"_id": 2}, M{"n": 3})
+	bulk.Insert(M{"_id": 1}, M{"_id": 2}, M{"_id": 2}, M{"_id": 3})
 	_, err = bulk.Run()
 	c.Assert(err, ErrorMatches, ".*duplicate key.*")
 

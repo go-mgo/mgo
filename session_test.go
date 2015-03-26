@@ -425,7 +425,6 @@ func (s *S) TestUpdateNil(c *C) {
 	err = coll.Find(M{"k": 45}).One(result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 46)
-
 }
 
 func (s *S) TestUpsert(c *C) {
@@ -632,6 +631,16 @@ func (s *S) TestRemoveAll(c *C) {
 
 	err = coll.Find(M{"n": 44}).One(result)
 	c.Assert(err, Equals, mgo.ErrNotFound)
+
+	info, err = coll.RemoveAll(nil)
+	c.Assert(err, IsNil)
+	c.Assert(info.Updated, Equals, 0)
+	c.Assert(info.Removed, Equals, 3)
+	c.Assert(info.UpsertedId, IsNil)
+
+	n, err := coll.Find(nil).Count()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 0)
 }
 
 func (s *S) TestDropDatabase(c *C) {
@@ -1369,15 +1378,16 @@ func (s *S) TestFindIterLimitWithMore(c *C) {
 
 	// Should amount to more than 4MB bson payload,
 	// the default limit per result chunk.
-	const total = 4096
+	const total = 5000
 	var d struct{ A [1024]byte }
-	docs := make([]interface{}, total)
-	for i := 0; i < total; i++ {
+	docs := make([]interface{}, 1000)
+	for i := 0; i < 1000; i++ {
 		docs[i] = &d
 	}
-	err = coll.Insert(docs...)
-	c.Assert(err, IsNil)
-
+	for i := 0; i < total/1000; i++ {
+		err = coll.Insert(docs...)
+		c.Assert(err, IsNil)
+	}
 	n, err := coll.Count()
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, total)
@@ -1589,7 +1599,11 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	// 1*QUERY for nonce + 1*GET_MORE_OP on Next + 1*GET_MORE_OP on Next after sleep +
 	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 5)
+	if s.versionAtLeast(2, 6) {
+		c.Assert(stats.SentOps, Equals, 4)
+	} else {
+		c.Assert(stats.SentOps, Equals, 5)
+	}
 	c.Assert(stats.ReceivedOps, Equals, 4)  // REPLY_OPs for 1*QUERY_OP for nonce + 2*GET_MORE_OPs + 1*QUERY_OP
 	c.Assert(stats.ReceivedDocs, Equals, 3) // nonce + N=47 result + getLastError response
 
@@ -1682,7 +1696,11 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	// 1*QUERY_OP for nonce + 1*GET_MORE_OP on Next +
 	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 4)
+	if s.versionAtLeast(2, 6) {
+		c.Assert(stats.SentOps, Equals, 3)
+	} else {
+		c.Assert(stats.SentOps, Equals, 4)
+	}
 	c.Assert(stats.ReceivedOps, Equals, 3)  // REPLY_OPs for 1*QUERY_OP for nonce + 1*GET_MORE_OPs and 1*QUERY_OP
 	c.Assert(stats.ReceivedDocs, Equals, 3) // nonce + N=47 result + getLastError response
 
@@ -1774,7 +1792,11 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	// 1*QUERY_OP for nonce + 1*GET_MORE_OP on Next +
 	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 4)
+	if s.versionAtLeast(2, 6) {
+		c.Assert(stats.SentOps, Equals, 3)
+	} else {
+		c.Assert(stats.SentOps, Equals, 4)
+	}
 	c.Assert(stats.ReceivedOps, Equals, 3)  // REPLY_OPs for 1*QUERY_OP for nonce + 1*GET_MORE_OPs and 1*QUERY_OP
 	c.Assert(stats.ReceivedDocs, Equals, 3) // nonce + N=47 result + getLastError response
 
@@ -2210,12 +2232,14 @@ func (s *S) TestPrefetching(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
+	const total = 600
 	mgo.SetDebug(false)
-	docs := make([]interface{}, 800)
-	for i := 0; i != 600; i++ {
+	docs := make([]interface{}, total)
+	for i := 0; i != total; i++ {
 		docs[i] = bson.D{{"n", i}}
 	}
-	coll.Insert(docs...)
+	err = coll.Insert(docs...)
+	c.Assert(err, IsNil)
 
 	for testi := 0; testi < 5; testi++ {
 		mgo.ResetStats()
@@ -2392,7 +2416,11 @@ func (s *S) TestSafeInsert(c *C) {
 
 	// It must have sent two operations (INSERT_OP + getLastError QUERY_OP)
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 2)
+	if s.versionAtLeast(2, 6) {
+		c.Assert(stats.SentOps, Equals, 1)
+	} else {
+		c.Assert(stats.SentOps, Equals, 2)
+	}
 
 	mgo.ResetStats()
 
@@ -2416,7 +2444,7 @@ func (s *S) TestSafeParameters(c *C) {
 	// Tweak the safety parameters to something unachievable.
 	session.SetSafe(&mgo.Safe{W: 4, WTimeout: 100})
 	err = coll.Insert(M{"_id": 1})
-	c.Assert(err, ErrorMatches, "timeout|timed out waiting for slaves|Not enough data-bearing nodes")
+	c.Assert(err, ErrorMatches, "timeout|timed out waiting for slaves|Not enough data-bearing nodes|waiting for replication timed out") // :-(
 	if !s.versionAtLeast(2, 6) {
 		// 2.6 turned it into a query error.
 		c.Assert(err.(*mgo.LastError).WTimeout, Equals, true)

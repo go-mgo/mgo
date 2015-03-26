@@ -32,12 +32,12 @@ for (var i in ports) {
     }
     var result = admin.runCommand({"listDatabases": 1})
     for (var j = 0; j != 100; j++) {
-        if (typeof result.databases != "undefined" || result.errmsg == "not master") {
+        if (typeof result.databases != "undefined" || notMaster(result)) {
             break
         }
         result = admin.runCommand({"listDatabases": 1})
     }
-    if (result.errmsg == "not master") {
+    if (notMaster(result)) {
         continue
     }
     if (typeof result.databases == "undefined") {
@@ -57,6 +57,10 @@ for (var i in ports) {
             mongo.getDB(db.name).dropDatabase()
         }
     }
+}
+
+function notMaster(result) {
+        return typeof result.errmsg != "undefined" && result.errmsg.indexOf("not master") >= 0
 }
 
 // vim:ts=4:sw=4:et
