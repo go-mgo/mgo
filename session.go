@@ -855,7 +855,7 @@ func (db *Database) UpsertUser(user *User) error {
 
 func isNoCmd(err error) bool {
 	e, ok := err.(*QueryError)
-	return ok && strings.HasPrefix(e.Message, "no such cmd:")
+	return ok && (e.Code == 59 || e.Code == 13390 || strings.HasPrefix(e.Message, "no such cmd:"))
 }
 
 func isNotFound(err error) bool {
