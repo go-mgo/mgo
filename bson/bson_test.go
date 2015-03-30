@@ -1056,6 +1056,25 @@ func (i *getterSetterInt) SetBSON(raw bson.Raw) error {
 	return err
 }
 
+type ifaceType interface {
+	Hello()
+}
+
+type ifaceSlice []ifaceType
+
+func (s *ifaceSlice) SetBSON(raw bson.Raw) error {
+	var ns []int
+	if err := raw.Unmarshal(&ns); err != nil {
+		return err
+	}
+	*s = make(ifaceSlice, ns[0])
+	return nil
+}
+
+func (s ifaceSlice) GetBSON() (interface{}, error) {
+	return []int{len(s)}, nil
+}
+
 type (
 	MyString string
 	MyBytes  []byte
@@ -1281,6 +1300,9 @@ var twoWayCrossItems = []crossTypeItem{
 	// bson.D <=> non-struct getter/setter
 	{&bson.D{{"a", 1}}, &getterSetterD{{"a", 1}, {"suffix", true}}},
 	{&bson.D{{"a", 42}}, &gsintvar},
+
+	// Interface slice setter.
+	{&struct{ V ifaceSlice }{ifaceSlice{nil, nil, nil}}, bson.M{"v": []interface{}{3}}},
 }
 
 // Same thing, but only one way (obj1 => obj2).
@@ -1476,14 +1498,14 @@ var jsonIdTests = []struct {
 	marshal:   false,
 	unmarshal: true,
 }, {
-	json: `{"Id":"4d88e15b60f486e428412dc9A"}`,
-	error: `Invalid ObjectId in JSON: "4d88e15b60f486e428412dc9A"`,
-	marshal: false,
+	json:      `{"Id":"4d88e15b60f486e428412dc9A"}`,
+	error:     `Invalid ObjectId in JSON: "4d88e15b60f486e428412dc9A"`,
+	marshal:   false,
 	unmarshal: true,
 }, {
-	json: `{"Id":"4d88e15b60f486e428412dcZ"}`,
-	error: `Invalid ObjectId in JSON: "4d88e15b60f486e428412dcZ" .*`,
-	marshal: false,
+	json:      `{"Id":"4d88e15b60f486e428412dcZ"}`,
+	error:     `Invalid ObjectId in JSON: "4d88e15b60f486e428412dcZ" .*`,
+	marshal:   false,
 	unmarshal: true,
 }}
 
