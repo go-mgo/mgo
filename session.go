@@ -3429,9 +3429,7 @@ type distinctCmd struct {
 	Query      interface{} ",omitempty"
 }
 
-// Distinct returns a list of distinct values for the given key within
-// the result set.  The list of distinct values will be unmarshalled
-// in the "values" key of the provided result parameter.
+// Distinct unmarshals into result the list of distinct values for the given key.
 //
 // For example:
 //
