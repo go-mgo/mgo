@@ -229,6 +229,7 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 	source := ""
 	setName := ""
 	poolLimit := 0
+	var dialServer func(addr *ServerAddr) (net.Conn, error) = nil
 	for k, v := range uinfo.options {
 		switch k {
 		case "authSource":
@@ -245,7 +246,7 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 				return nil, errors.New("bad value for maxPoolSize: " + v)
 			}
 		case "ssl":
-			dialServer = func(addr *mgo.ServerAddr) (net.Conn, error) {
+			dialServer = func(addr *ServerAddr) (net.Conn, error) {
 				return tls.Dial("tcp", addr.String(), &tls.Config{})
 			}
 		case "connect":
@@ -273,6 +274,7 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 		Source:         source,
 		PoolLimit:      poolLimit,
 		ReplicaSetName: setName,
+		DialServer:     dialServer,
 	}
 	return DialWithInfo(&info)
 }
