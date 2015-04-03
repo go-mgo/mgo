@@ -28,6 +28,7 @@ package mgo
 
 import (
 	"crypto/md5"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -242,6 +243,10 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 			poolLimit, err = strconv.Atoi(v)
 			if err != nil {
 				return nil, errors.New("bad value for maxPoolSize: " + v)
+			}
+		case "ssl":
+			dialServer = func(addr *mgo.ServerAddr) (net.Conn, error) {
+				return tls.Dial("tcp", addr.String(), &tls.Config{})
 			}
 		case "connect":
 			if v == "direct" {
