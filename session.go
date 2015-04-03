@@ -218,7 +218,7 @@ func Dial(url string) (*Session, error) {
 //
 // See SetSyncTimeout for customizing the timeout for the session.
 func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
-	uinfo, err := parseURL(url)
+	uinfo, err := ParseURL(url)
 	if err != nil {
 		return nil, err
 	}
@@ -428,7 +428,7 @@ type urlInfo struct {
 	options map[string]string
 }
 
-func parseURL(s string) (*urlInfo, error) {
+func ParseURL(s string) (*urlInfo, error) {
 	if strings.HasPrefix(s, "mongodb://") {
 		s = s[10:]
 	}
