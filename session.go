@@ -947,15 +947,16 @@ func (db *Database) RemoveUser(user string) error {
 type indexSpec struct {
 	Name, NS         string
 	Key              bson.D
-	Unique           bool   ",omitempty"
-	DropDups         bool   "dropDups,omitempty"
-	Background       bool   ",omitempty"
-	Sparse           bool   ",omitempty"
-	Bits, Min, Max   int    ",omitempty"
-	ExpireAfter      int    "expireAfterSeconds,omitempty"
-	Weights          bson.D ",omitempty"
-	DefaultLanguage  string "default_language,omitempty"
-	LanguageOverride string "language_override,omitempty"
+	Unique           bool    ",omitempty"
+	DropDups         bool    "dropDups,omitempty"
+	Background       bool    ",omitempty"
+	Sparse           bool    ",omitempty"
+	Bits, Min, Max   int     ",omitempty"
+	BucketSize       float64 "bucketSize,omitempty"
+	ExpireAfter      int     "expireAfterSeconds,omitempty"
+	Weights          bson.D  ",omitempty"
+	DefaultLanguage  string  "default_language,omitempty"
+	LanguageOverride string  "language_override,omitempty"
 }
 
 type Index struct {
@@ -975,6 +976,7 @@ type Index struct {
 
 	// Properties for spatial indexes.
 	Bits, Min, Max int
+	BucketSize     float64
 
 	// Properties for text indexes.
 	DefaultLanguage  string
@@ -1170,6 +1172,7 @@ func (c *Collection) EnsureIndex(index Index) error {
 		Bits:             index.Bits,
 		Min:              index.Min,
 		Max:              index.Max,
+		BucketSize:       index.BucketSize,
 		ExpireAfter:      int(index.ExpireAfter / time.Second),
 		Weights:          keyInfo.weights,
 		DefaultLanguage:  index.DefaultLanguage,

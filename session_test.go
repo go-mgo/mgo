@@ -2566,6 +2566,17 @@ var indexTests = []struct {
 	},
 }, {
 	mgo.Index{
+		Key:        []string{"$geoHaystack:loc", "type"},
+		BucketSize: 1,
+	},
+	M{
+		"name":       "loc_geoHaystack_type_1",
+		"key":        M{"loc": "geoHaystack", "type": 1},
+		"ns":         "mydb.mycoll",
+		"bucketSize": 1,
+	},
+}, {
+	mgo.Index{
 		Key:     []string{"$text:a", "$text:b"},
 		Weights: map[string]int{"b": 42},
 	},
