@@ -4003,72 +4003,25 @@ func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
 	s.m.RUnlock()
 
 	if socket.ServerInfo().MaxWireVersion >= 2 {
-		// Servers with the write protocol >= 2 benefit from write commands.
-
-		var writeConcern interface{}
-		if safeOp == nil {
-			writeConcern = bson.D{{"w", 0}}
-		} else {
-			writeConcern = s.safeOp.query.(*getLastError)
+		// Servers with a more recent write protocol benefit from write commands.
+		if op, ok := op.(*insertOp); ok && len(op.documents) > 1000 {
+			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
+			all := op.documents
+			for i := 0; i < len(all); i += 1000 {
+				l := i+1000
+				if l > len(all) {
+					l = len(all)
+				}
+				op.documents = all[i:l]
+				_, err := c.writeCommand(socket, safeOp, op)
+				if err != nil {
+					// TODO: Handle unordered.
+					return nil, err
+				}
+			}
+			return nil, nil
 		}
-
-		var cmd bson.D
-		switch op := op.(type) {
-		case *insertOp:
-			// http://docs.mongodb.org/manual/reference/command/insert
-			cmd = bson.D{
-				{"insert", c.Name},
-				{"documents", op.documents},
-				{"writeConcern", writeConcern},
-				{"ordered", op.flags&1 == 0},
-			}
-		case *updateOp:
-			// http://docs.mongodb.org/manual/reference/command/update
-			selector := op.selector
-			if selector == nil {
-				selector = bson.D{}
-			}
-			cmd = bson.D{
-				{"update", c.Name},
-				{"updates", []bson.D{{{"q", selector}, {"u", op.update}, {"upsert", op.flags&1 != 0}, {"multi", op.flags&2 != 0}}}},
-				{"writeConcern", writeConcern},
-				//{"ordered", <bool>},
-			}
-		case *deleteOp:
-			// http://docs.mongodb.org/manual/reference/command/delete
-			selector := op.selector
-			if selector == nil {
-				selector = bson.D{}
-			}
-			cmd = bson.D{
-				{"delete", c.Name},
-				{"deletes", []bson.D{{{"q", selector}, {"limit", op.flags & 1}}}},
-				{"writeConcern", writeConcern},
-				//{"ordered", <bool>},
-			}
-		}
-		var result writeCmdResult
-		err := c.Database.run(socket, cmd, &result)
-		debugf("Write command result: %#v (err=%v)", result, err)
-		// TODO Should lerr.N be result.NModified on updates?
-		lerr := &LastError{UpdatedExisting: result.NModified != 0, N: result.N}
-		if len(result.Upserted) > 0 {
-			lerr.UpsertedId = result.Upserted[0].Id
-		}
-		if len(result.Errors) > 0 {
-			e := result.Errors[0]
-			if !e.Ok {
-				lerr.Code = e.Code
-				lerr.Err = e.ErrMsg
-				err = lerr
-			}
-		} else if result.ConcernError.Code != 0 {
-			e := result.ConcernError
-			lerr.Code = e.Code
-			lerr.Err = e.ErrMsg
-			err = lerr
-		}
-		return lerr, err
+		return c.writeCommand(socket, safeOp, op)
 	}
 
 	if safeOp == nil {
@@ -4108,6 +4061,78 @@ func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
 		return result, result
 	}
 	return result, nil
+}
+
+func (c *Collection) writeCommand(socket *mongoSocket, safeOp *queryOp, op interface{}) (lerr *LastError, err error) {
+	var writeConcern interface{}
+	if safeOp == nil {
+		writeConcern = bson.D{{"w", 0}}
+	} else {
+		writeConcern = safeOp.query.(*getLastError)
+	}
+
+	var cmd bson.D
+	switch op := op.(type) {
+	case *insertOp:
+		// http://docs.mongodb.org/manual/reference/command/insert
+		cmd = bson.D{
+			{"insert", c.Name},
+			{"documents", op.documents},
+			{"writeConcern", writeConcern},
+			{"ordered", op.flags&1 == 0},
+		}
+	case *updateOp:
+		// http://docs.mongodb.org/manual/reference/command/update
+		selector := op.selector
+		if selector == nil {
+			selector = bson.D{}
+		}
+		cmd = bson.D{
+			{"update", c.Name},
+			{"updates", []bson.D{{{"q", selector}, {"u", op.update}, {"upsert", op.flags&1 != 0}, {"multi", op.flags&2 != 0}}}},
+			{"writeConcern", writeConcern},
+			//{"ordered", <bool>},
+		}
+	case *deleteOp:
+		// http://docs.mongodb.org/manual/reference/command/delete
+		selector := op.selector
+		if selector == nil {
+			selector = bson.D{}
+		}
+		cmd = bson.D{
+			{"delete", c.Name},
+			{"deletes", []bson.D{{{"q", selector}, {"limit", op.flags & 1}}}},
+			{"writeConcern", writeConcern},
+			//{"ordered", <bool>},
+		}
+	}
+
+	var result writeCmdResult
+	err = c.Database.run(socket, cmd, &result)
+	debugf("Write command result: %#v (err=%v)", result, err)
+	// TODO Should lerr.N be result.NModified on updates?
+	lerr = &LastError{UpdatedExisting: result.NModified != 0, N: result.N}
+	if len(result.Upserted) > 0 {
+		lerr.UpsertedId = result.Upserted[0].Id
+	}
+	if len(result.Errors) > 0 {
+		e := result.Errors[0]
+		if !e.Ok {
+			lerr.Code = e.Code
+			lerr.Err = e.ErrMsg
+			err = lerr
+		}
+	} else if result.ConcernError.Code != 0 {
+		e := result.ConcernError
+		lerr.Code = e.Code
+		lerr.Err = e.ErrMsg
+		err = lerr
+	}
+
+	if err == nil && safeOp == nil {
+		return nil, nil
+	}
+	return lerr, err
 }
 
 func hasErrMsg(d []byte) bool {

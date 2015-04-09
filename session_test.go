@@ -602,6 +602,26 @@ func (s *S) TestRemoveId(c *C) {
 	c.Assert(coll.FindId(42).One(nil), IsNil)
 }
 
+func (s *S) TestRemoveUnsafe(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	session.SetSafe(nil)
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"_id": 40}, M{"_id": 41}, M{"_id": 42})
+	c.Assert(err, IsNil)
+
+	err = coll.RemoveId(41)
+	c.Assert(err, IsNil)
+
+	c.Assert(coll.FindId(40).One(nil), IsNil)
+	c.Assert(coll.FindId(41).One(nil), Equals, mgo.ErrNotFound)
+	c.Assert(coll.FindId(42).One(nil), IsNil)
+}
+
 func (s *S) TestRemoveAll(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
@@ -1378,16 +1398,15 @@ func (s *S) TestFindIterLimitWithMore(c *C) {
 
 	// Should amount to more than 4MB bson payload,
 	// the default limit per result chunk.
-	const total = 5000
+	const total = 4096
 	var d struct{ A [1024]byte }
-	docs := make([]interface{}, 1000)
-	for i := 0; i < 1000; i++ {
+	docs := make([]interface{}, total)
+	for i := 0; i < total; i++ {
 		docs[i] = &d
 	}
-	for i := 0; i < total/1000; i++ {
-		err = coll.Insert(docs...)
-		c.Assert(err, IsNil)
-	}
+	err = coll.Insert(docs...)
+	c.Assert(err, IsNil)
+
 	n, err := coll.Count()
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, total)
