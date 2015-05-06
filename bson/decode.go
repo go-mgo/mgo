@@ -543,6 +543,11 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 		return true
 	}
 
+	if in == nil {
+		out.Set(reflect.Zero(outt))
+		return true
+	}
+
 	if setter := getSetter(outt, out); setter != nil {
 		err := setter.SetBSON(Raw{kind, d.in[start:d.i]})
 		if err == SetZero {
@@ -556,11 +561,6 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 			panic(err)
 		}
 		return false
-	}
-
-	if in == nil {
-		out.Set(reflect.Zero(outt))
-		return true
 	}
 
 	outk := outt.Kind()
