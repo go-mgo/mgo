@@ -4005,6 +4005,7 @@ func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
 	if socket.ServerInfo().MaxWireVersion >= 2 {
 		// Servers with a more recent write protocol benefit from write commands.
 		if op, ok := op.(*insertOp); ok && len(op.documents) > 1000 {
+			var firstErr error
 			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
 			all := op.documents
 			for i := 0; i < len(all); i += 1000 {
@@ -4015,11 +4016,16 @@ func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
 				op.documents = all[i:l]
 				_, err := c.writeCommand(socket, safeOp, op)
 				if err != nil {
-					// TODO: Handle unordered.
-					return nil, err
+					if op.flags&1 != 0 {
+						if firstErr == nil {
+							firstErr = err
+						}
+					} else {
+						return nil, err
+					}
 				}
 			}
-			return nil, nil
+			return nil, firstErr
 		}
 		return c.writeCommand(socket, safeOp, op)
 	}
