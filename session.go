@@ -218,9 +218,21 @@ func Dial(url string) (*Session, error) {
 //
 // See SetSyncTimeout for customizing the timeout for the session.
 func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
-	uinfo, err := parseURL(url)
+	info, err := ParseURL(url)
 	if err != nil {
 		return nil, err
+	}
+	info.Timeout = timeout
+	return DialWithInfo(&info)
+}
+
+// ParseURL parses a MongoDB connection string into a DialInfo struct.
+func ParseURL(url string) (DialInfo, error) {
+	fail := DialInfo{}
+
+	uinfo, err := parseURL(url)
+	if err != nil {
+		return fail, err
 	}
 	direct := false
 	mechanism := ""
@@ -241,7 +253,7 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 		case "maxPoolSize":
 			poolLimit, err = strconv.Atoi(v)
 			if err != nil {
-				return nil, errors.New("bad value for maxPoolSize: " + v)
+				return fail, errors.New("bad value for maxPoolSize: " + v)
 			}
 		case "connect":
 			if v == "direct" {
@@ -253,13 +265,12 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 			}
 			fallthrough
 		default:
-			return nil, errors.New("unsupported connection URL option: " + k + "=" + v)
+			return fail, errors.New("unsupported connection URL option: " + k + "=" + v)
 		}
 	}
-	info := DialInfo{
+	return DialInfo{
 		Addrs:          uinfo.addrs,
 		Direct:         direct,
-		Timeout:        timeout,
 		Database:       uinfo.db,
 		Username:       uinfo.user,
 		Password:       uinfo.pass,
@@ -268,8 +279,7 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 		Source:         source,
 		PoolLimit:      poolLimit,
 		ReplicaSetName: setName,
-	}
-	return DialWithInfo(&info)
+	}, nil
 }
 
 // DialInfo holds options for establishing a session with a MongoDB cluster.
