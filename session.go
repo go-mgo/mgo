@@ -218,7 +218,18 @@ func Dial(url string) (*Session, error) {
 //
 // See SetSyncTimeout for customizing the timeout for the session.
 func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
-	uinfo, err := parseURL(url)
+	info, err := ParseURL(url)
+	if err != nil {
+		return nil, err
+	}
+	info.Timeout = timeout
+	return DialWithInfo(info)
+}
+
+// ParseURL parses a MongoDB URL as accepted by the Dial function and returns
+// a value suitable for providing into DialWithInfo.
+func ParseURL(url string) (*DialInfo, error) {
+	uinfo, err := extractURL(url)
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +270,6 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 	info := DialInfo{
 		Addrs:          uinfo.addrs,
 		Direct:         direct,
-		Timeout:        timeout,
 		Database:       uinfo.db,
 		Username:       uinfo.user,
 		Password:       uinfo.pass,
@@ -269,7 +279,7 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 		PoolLimit:      poolLimit,
 		ReplicaSetName: setName,
 	}
-	return DialWithInfo(&info)
+	return &info, nil
 }
 
 // DialInfo holds options for establishing a session with a MongoDB cluster.
@@ -428,7 +438,7 @@ type urlInfo struct {
 	options map[string]string
 }
 
-func parseURL(s string) (*urlInfo, error) {
+func extractURL(s string) (*urlInfo, error) {
 	if strings.HasPrefix(s, "mongodb://") {
 		s = s[10:]
 	}
