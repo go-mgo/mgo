@@ -395,7 +395,6 @@ func (r *Runner) PurgeMissing(collections ...string) error {
 	}
 
 	found := make(map[bson.ObjectId]bool)
-	colls := make(map[string]bool)
 
 	sort.Strings(collections)
 	for _, collection := range collections {
@@ -420,7 +419,6 @@ func (r *Runner) PurgeMissing(collections ...string) error {
 		if err := iter.Close(); err != nil {
 			return fmt.Errorf("transaction queue iteration error for collection %s: %v", collection, err)
 		}
-		colls[collection] = true
 	}
 
 	type StashTRef struct {
