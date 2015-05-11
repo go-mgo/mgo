@@ -531,10 +531,10 @@ func (s *S) TestPurgeMissing(c *C) {
 
 	again := bson.NewObjectId()
 	c.Logf("---- Running ops2 again under transaction %q, to fail for missing transaction", again.Hex())
-	err = s.runner.Run(ops2, "", nil)
+	err = s.runner.Run(ops2, again, nil)
 	c.Assert(err, ErrorMatches, "cannot find transaction .*")
 
-	c.Logf("---- Puring missing transactions")
+	c.Logf("---- Purging missing transactions")
 	err = s.runner.PurgeMissing("accounts")
 	c.Assert(err, IsNil)
 

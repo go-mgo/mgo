@@ -395,7 +395,6 @@ func (r *Runner) PurgeMissing(collections ...string) error {
 	}
 
 	found := make(map[bson.ObjectId]bool)
-	colls := make(map[string]bool)
 
 	sort.Strings(collections)
 	for _, collection := range collections {
@@ -417,7 +416,9 @@ func (r *Runner) PurgeMissing(collections ...string) error {
 				return fmt.Errorf("error purging missing transaction %s: %v", txnId.Hex(), err)
 			}
 		}
-		colls[collection] = true
+		if err := iter.Close(); err != nil {
+			return fmt.Errorf("transaction queue iteration error for collection %s: %v", collection, err)
+		}
 	}
 
 	type StashTRef struct {
@@ -441,6 +442,9 @@ func (r *Runner) PurgeMissing(collections ...string) error {
 		if err != nil {
 			return fmt.Errorf("error purging missing transaction %s: %v", txnId.Hex(), err)
 		}
+	}
+	if err := iter.Close(); err != nil {
+		return fmt.Errorf("transaction stash iteration error: %v", err)
 	}
 
 	return nil
