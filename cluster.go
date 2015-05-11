@@ -209,9 +209,12 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerI
 
 	if result.IsMaster {
 		debugf("SYNC %s is a master.", addr)
-		// Made an incorrect assumption above, so fix stats.
-		stats.conn(-1, false)
-		stats.conn(+1, true)
+		if !server.info.Master {
+			// Made an incorrect assumption above, so fix stats.
+			stats.conn(-1, false)
+			stats.conn(+1, true)
+			server.info.Master = true
+		}
 	} else if result.Secondary {
 		debugf("SYNC %s is a slave.", addr)
 	} else if cluster.direct {
