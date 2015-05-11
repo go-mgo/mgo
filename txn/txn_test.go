@@ -534,7 +534,7 @@ func (s *S) TestPurgeMissing(c *C) {
 	err = s.runner.Run(ops2, "", nil)
 	c.Assert(err, ErrorMatches, "cannot find transaction .*")
 
-	c.Logf("---- Puring missing transactions")
+	c.Logf("---- Purging missing transactions")
 	err = s.runner.PurgeMissing("accounts")
 	c.Assert(err, IsNil)
 
