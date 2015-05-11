@@ -1078,7 +1078,7 @@ func (s *S) TestQueryExplain(c *C) {
 	c.Assert(n, Equals, 2)
 }
 
-func (s *S) TestQueryMaxScan(c *C) {
+func (s *S) TestQuerySetMaxScan(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -1095,6 +1095,29 @@ func (s *S) TestQueryMaxScan(c *C) {
 	err = query.All(&result)
 	c.Assert(err, IsNil)
 	c.Assert(result, HasLen, 2)
+}
+
+func (s *S) TestQuerySetMaxTime(c *C) {
+	if !s.versionAtLeast(2, 6) {
+		c.Skip("SetMaxTime only supported in 2.6+")
+	}
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+	coll := session.DB("mydb").C("mycoll")
+
+	for i := 0; i < 1000; i++ {
+		err := coll.Insert(M{"n": i})
+		c.Assert(err, IsNil)
+	}
+
+	query := coll.Find(nil)
+	query.SetMaxTime(1*time.Millisecond)
+	query.Batch(2)
+	var result []M
+	err = query.All(&result)
+	c.Assert(err, ErrorMatches, "operation exceeded time limit")
 }
 
 func (s *S) TestQueryHint(c *C) {

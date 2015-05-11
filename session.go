@@ -2616,17 +2616,39 @@ func (q *Query) SetMaxScan(n int) *Query {
 	return q
 }
 
-// SetMaxTimeMS constrains the query to stop after running for the specified
-// time.
+// SetMaxTime constrains the query to stop after running for the specified time.
 //
-// This modifier is better at stopping queries from running too long than a
-// socket timeout since mongo will continue to finish the query even after
-// the socket has been closed by the client.
+// When the time limit is reached MongoDB automatically cancels the query.
+// This can be used to efficiently prevent and identify unexpectedly slow queries.
 //
-// http://blog.mongodb.org/post/83621787773/maxtimems-and-query-optimizer-introspection-in
-func (q *Query) SetMaxTimeMS(n int) *Query {
+// A few important notes about the mechanism enforcing this limit:
+// 
+//  - Requests can block behind locking operations on the server, and that blocking
+//    time is not accounted for. In other words, the timer starts ticking only after
+//    the actual start of the query when it initially acquires the appropriate lock;
+//
+//  - Operations are interrupted only at interrupt points where an operation can be
+//    safely aborted – the total execution time may exceed the specified value;
+//
+//  - The limit can be applied to both CRUD operations and commands, but not all
+//    commands are interruptible;
+//
+//  - While iterating over results, computing follow up batches is included in the
+//    total time and the iteration continues until the alloted time is over, but
+//    network roundtrips are not taken into account for the limit.
+//
+//  - This limit does not override the inactive cursor timeout for idle cursors
+//    (default is 10 min).
+// 
+// This mechanism was introduced in MongoDB 2.6.
+//
+// Relevant documentation:
+//
+//   http://blog.mongodb.org/post/83621787773/maxtimems-and-query-optimizer-introspection-in
+//
+func (q *Query) SetMaxTime(d time.Duration) *Query {
 	q.m.Lock()
-	q.op.options.MaxTimeMS = n
+	q.op.options.MaxTimeMS = int(d/time.Millisecond)
 	q.op.hasOptions = true
 	q.m.Unlock()
 	return q
