@@ -1143,6 +1143,38 @@ func (s *S) TestQueryHint(c *C) {
 	}
 }
 
+func (s *S) TestQueryComment(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	db := session.DB("mydb")
+	coll := db.C("mycoll")
+
+	err = db.Run(bson.M{"profile": 2}, nil)
+	c.Assert(err, IsNil)
+
+	ns := []int{40, 41, 42}
+	for _, n := range ns {
+		err := coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
+	}
+
+	query := coll.Find(bson.M{"n": 41})
+	query.Comment("some comment")
+	err = query.One(nil)
+	c.Assert(err, IsNil)
+
+	query = coll.Find(bson.M{"n": 41})
+	query.Comment("another comment")
+	err = query.One(nil)
+	c.Assert(err, IsNil)
+
+	n, err := session.DB("mydb").C("system.profile").Find(bson.M{"query.$query.n": 41, "query.$comment": "some comment"}).Count()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 1)
+}
+
 func (s *S) TestFindOneNotFound(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)

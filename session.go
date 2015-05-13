@@ -2698,6 +2698,22 @@ func (q *Query) Snapshot() *Query {
 	return q
 }
 
+// Comment adds a comment to the query to identify it in the database profiler output.
+//
+// Relevant documentation:
+//
+//     http://docs.mongodb.org/manual/reference/operator/meta/comment
+//     http://docs.mongodb.org/manual/reference/command/profile
+//     http://docs.mongodb.org/manual/administration/analyzing-mongodb-performance/#database-profiling
+//
+func (q *Query) Comment(comment string) *Query {
+	q.m.Lock()
+	q.op.options.Comment = comment
+	q.op.hasOptions = true
+	q.m.Unlock()
+	return q
+}
+
 // LogReplay enables an option that optimizes queries that are typically
 // made on the MongoDB oplog for replaying it. This is an internal
 // implementation aspect and most likely uninteresting for other uses.
