@@ -298,7 +298,7 @@ func (id *ObjectId) UnmarshalText(data []byte) error {
 		return errors.New(fmt.Sprintf("Invalid ObjectId in Text: %s", string(data)))
 	}
 	var buf [12]byte
-	_, err := hex.Decode(buf[:], data[0:24])
+	_, err := hex.Decode(buf[:], data[:])
 	if err != nil {
 		return errors.New(fmt.Sprintf("Invalid ObjectId in Text: %s (%s)", string(data), err))
 	}
