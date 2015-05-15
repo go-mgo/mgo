@@ -285,20 +285,20 @@ func (id *ObjectId) UnmarshalJSON(data []byte) error {
 
 // MarshalText turns bson.ObjectId into an encoding.TextMarshaler.
 func (id ObjectId) MarshalText() ([]byte, error) {
-	return []byte(fmt.Sprintf(`"%x"`, string(id))), nil
+	return []byte(fmt.Sprintf("%x", string(id))), nil
 }
 
 // UnmarshalText turns *bson.ObjectId into an encoding.TextUnmarshaler.
 func (id *ObjectId) UnmarshalText(data []byte) error {
-	if len(data) == 2 && data[0] == '"' && data[1] == '"' || bytes.Equal(data, nullBytes) {
+	if len(data) == 1 && data[0] == ' ' || bytes.Equal(data, nullBytes) {
 		*id = ""
 		return nil
 	}
-	if len(data) != 26 || data[0] != '"' || data[25] != '"' {
+	if len(data) != 24 {
 		return errors.New(fmt.Sprintf("Invalid ObjectId in Text: %s", string(data)))
 	}
 	var buf [12]byte
-	_, err := hex.Decode(buf[:], data[1:25])
+	_, err := hex.Decode(buf[:], data[0:24])
 	if err != nil {
 		return errors.New(fmt.Sprintf("Invalid ObjectId in Text: %s (%s)", string(data), err))
 	}
