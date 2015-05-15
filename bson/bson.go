@@ -283,17 +283,26 @@ func (id *ObjectId) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// MarshalText turns *bson.ObjectId into an encoding.TextMarshaler.
-func (id *ObjectId) MarshalText() (text []byte, err error) {
-	return []byte(id.Hex()), nil
+// MarshalText turns bson.ObjectId into an encoding.TextMarshaler.
+func (id ObjectId) MarshalText() ([]byte, error) {
+	return []byte(fmt.Sprintf(`"%x"`, string(id))), nil
 }
 
 // UnmarshalText turns *bson.ObjectId into an encoding.TextUnmarshaler.
-func (id *ObjectId) UnmarshalText(text []byte) error {
-	if !IsObjectIdHex(string(text)) {
-		return errors.New("invalid bson.ObjectId value")
+func (id *ObjectId) UnmarshalText(data []byte) error {
+	if len(data) == 2 && data[0] == '"' && data[1] == '"' || bytes.Equal(data, nullBytes) {
+		*id = ""
+		return nil
 	}
-	*id = ObjectIdHex(string(text))
+	if len(data) != 26 || data[0] != '"' || data[25] != '"' {
+		return errors.New(fmt.Sprintf("Invalid ObjectId in Text: %s", string(data)))
+	}
+	var buf [12]byte
+	_, err := hex.Decode(buf[:], data[1:25])
+	if err != nil {
+		return errors.New(fmt.Sprintf("Invalid ObjectId in Text: %s (%s)", string(data), err))
+	}
+	*id = ObjectId(string(buf[:]))
 	return nil
 }
 
