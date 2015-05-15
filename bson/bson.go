@@ -290,7 +290,7 @@ func (id ObjectId) MarshalText() ([]byte, error) {
 
 // UnmarshalText turns *bson.ObjectId into an encoding.TextUnmarshaler.
 func (id *ObjectId) UnmarshalText(data []byte) error {
-	if len(data) == 1 && data[0] == ' ' || bytes.Equal(data, nullBytes) {
+	if len(data) == 1 && data[0] == ' ' || len(data) == 0 {
 		*id = ""
 		return nil
 	}
