@@ -213,7 +213,6 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerI
 			// Made an incorrect assumption above, so fix stats.
 			stats.conn(-1, false)
 			stats.conn(+1, true)
-			server.info.Master = true
 		}
 	} else if result.Secondary {
 		debugf("SYNC %s is a slave.", addr)
@@ -221,8 +220,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerI
 		logf("SYNC %s in unknown state. Pretending it's a slave due to direct connection.", addr)
 	} else {
 		logf("SYNC %s is neither a master nor a slave.", addr)
-		// Made an incorrect assumption above, so fix stats.
-		stats.conn(-1, false)
+		// Let stats track it as whatever was known before.
 		return nil, nil, errors.New(addr + " is not a master nor slave")
 	}
 
