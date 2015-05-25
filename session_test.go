@@ -2647,7 +2647,7 @@ var indexTests = []struct {
 		"name":       "loc_geoHaystack_type_1",
 		"key":        M{"loc": "geoHaystack", "type": 1},
 		"ns":         "mydb.mycoll",
-		"bucketSize": 1,
+		"bucketSize": 1.0,
 	},
 }, {
 	mgo.Index{
