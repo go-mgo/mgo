@@ -228,6 +228,8 @@ func DialWithTimeout(url string, timeout time.Duration) (*Session, error) {
 
 // ParseURL parses a MongoDB URL as accepted by the Dial function and returns
 // a value suitable for providing into DialWithInfo.
+//
+// See Dial for more details on the format of url.
 func ParseURL(url string) (*DialInfo, error) {
 	uinfo, err := extractURL(url)
 	if err != nil {
