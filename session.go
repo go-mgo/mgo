@@ -2637,7 +2637,7 @@ func (q *Query) SetMaxScan(n int) *Query {
 // This can be used to efficiently prevent and identify unexpectedly slow queries.
 //
 // A few important notes about the mechanism enforcing this limit:
-// 
+//
 //  - Requests can block behind locking operations on the server, and that blocking
 //    time is not accounted for. In other words, the timer starts ticking only after
 //    the actual start of the query when it initially acquires the appropriate lock;
@@ -2654,7 +2654,7 @@ func (q *Query) SetMaxScan(n int) *Query {
 //
 //  - This limit does not override the inactive cursor timeout for idle cursors
 //    (default is 10 min).
-// 
+//
 // This mechanism was introduced in MongoDB 2.6.
 //
 // Relevant documentation:
@@ -2663,7 +2663,7 @@ func (q *Query) SetMaxScan(n int) *Query {
 //
 func (q *Query) SetMaxTime(d time.Duration) *Query {
 	q.m.Lock()
-	q.op.options.MaxTimeMS = int(d/time.Millisecond)
+	q.op.options.MaxTimeMS = int(d / time.Millisecond)
 	q.op.hasOptions = true
 	q.m.Unlock()
 	return q
@@ -4071,14 +4071,15 @@ func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
 	safeOp := s.safeOp
 	s.m.RUnlock()
 
-	if socket.ServerInfo().MaxWireVersion >= 2 {
+	// TODO Enable this path for wire version 2 as well.
+	if socket.ServerInfo().MaxWireVersion >= 3 {
 		// Servers with a more recent write protocol benefit from write commands.
 		if op, ok := op.(*insertOp); ok && len(op.documents) > 1000 {
 			var firstErr error
 			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
 			all := op.documents
 			for i := 0; i < len(all); i += 1000 {
-				l := i+1000
+				l := i + 1000
 				if l > len(all) {
 					l = len(all)
 				}
