@@ -1,6 +1,7 @@
 package txn_test
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -531,10 +532,10 @@ func (s *S) TestPurgeMissing(c *C) {
 
 	again := bson.NewObjectId()
 	c.Logf("---- Running ops2 again under transaction %q, to fail for missing transaction", again.Hex())
-	err = s.runner.Run(ops2, "", nil)
+	err = s.runner.Run(ops2, again, nil)
 	c.Assert(err, ErrorMatches, "cannot find transaction .*")
 
-	c.Logf("---- Puring missing transactions")
+	c.Logf("---- Purging missing transactions")
 	err = s.runner.PurgeMissing("accounts")
 	c.Assert(err, IsNil)
 
@@ -560,6 +561,50 @@ func (s *S) TestPurgeMissing(c *C) {
 		} else if got.Balance != want.Balance {
 			c.Errorf("Account %d should have balance of %d, got %d", want.Id, want.Balance, got.Balance)
 		}
+	}
+}
+
+func (s *S) TestTxnQueueStashStressTest(c *C) {
+	txn.SetChaos(txn.Chaos{
+		SlowdownChance: 0.3,
+		Slowdown:       50 * time.Millisecond,
+	})
+	defer txn.SetChaos(txn.Chaos{})
+
+	// So we can run more iterations of the test in less time.
+	txn.SetDebug(false)
+
+	const runners = 10
+	const inserts = 10
+	const repeat = 100
+
+	for r := 0; r < repeat; r++ {
+		var wg sync.WaitGroup
+		wg.Add(runners)
+		for i := 0; i < runners; i++ {
+			go func(i, r int) {
+				defer wg.Done()
+
+				session := s.session.New()
+				defer session.Close()
+				runner := txn.NewRunner(s.tc.With(session))
+
+				for j := 0; j < inserts; j++ {
+					ops := []txn.Op{{
+						C:  "accounts",
+						Id: fmt.Sprintf("insert-%d-%d", r, j),
+						Insert: bson.M{
+							"added-by": i,
+						},
+					}}
+					err := runner.Run(ops, "", nil)
+					if err != txn.ErrAborted {
+						c.Check(err, IsNil)
+					}
+				}
+			}(i, r)
+		}
+		wg.Wait()
 	}
 }
 

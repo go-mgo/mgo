@@ -425,7 +425,6 @@ func (s *S) TestUpdateNil(c *C) {
 	err = coll.Find(M{"k": 45}).One(result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 46)
-
 }
 
 func (s *S) TestUpsert(c *C) {
@@ -603,6 +602,26 @@ func (s *S) TestRemoveId(c *C) {
 	c.Assert(coll.FindId(42).One(nil), IsNil)
 }
 
+func (s *S) TestRemoveUnsafe(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	session.SetSafe(nil)
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"_id": 40}, M{"_id": 41}, M{"_id": 42})
+	c.Assert(err, IsNil)
+
+	err = coll.RemoveId(41)
+	c.Assert(err, IsNil)
+
+	c.Assert(coll.FindId(40).One(nil), IsNil)
+	c.Assert(coll.FindId(41).One(nil), Equals, mgo.ErrNotFound)
+	c.Assert(coll.FindId(42).One(nil), IsNil)
+}
+
 func (s *S) TestRemoveAll(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
@@ -632,6 +651,16 @@ func (s *S) TestRemoveAll(c *C) {
 
 	err = coll.Find(M{"n": 44}).One(result)
 	c.Assert(err, Equals, mgo.ErrNotFound)
+
+	info, err = coll.RemoveAll(nil)
+	c.Assert(err, IsNil)
+	c.Assert(info.Updated, Equals, 0)
+	c.Assert(info.Removed, Equals, 3)
+	c.Assert(info.UpsertedId, IsNil)
+
+	n, err := coll.Find(nil).Count()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 0)
 }
 
 func (s *S) TestDropDatabase(c *C) {
@@ -1049,7 +1078,7 @@ func (s *S) TestQueryExplain(c *C) {
 	c.Assert(n, Equals, 2)
 }
 
-func (s *S) TestQueryMaxScan(c *C) {
+func (s *S) TestQuerySetMaxScan(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -1066,6 +1095,29 @@ func (s *S) TestQueryMaxScan(c *C) {
 	err = query.All(&result)
 	c.Assert(err, IsNil)
 	c.Assert(result, HasLen, 2)
+}
+
+func (s *S) TestQuerySetMaxTime(c *C) {
+	if !s.versionAtLeast(2, 6) {
+		c.Skip("SetMaxTime only supported in 2.6+")
+	}
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+	coll := session.DB("mydb").C("mycoll")
+
+	for i := 0; i < 1000; i++ {
+		err := coll.Insert(M{"n": i})
+		c.Assert(err, IsNil)
+	}
+
+	query := coll.Find(nil)
+	query.SetMaxTime(1*time.Millisecond)
+	query.Batch(2)
+	var result []M
+	err = query.All(&result)
+	c.Assert(err, ErrorMatches, "operation exceeded time limit")
 }
 
 func (s *S) TestQueryHint(c *C) {
@@ -1089,6 +1141,38 @@ func (s *S) TestQueryHint(c *C) {
 		c.Assert(m["indexBounds"], NotNil)
 		c.Assert(m["indexBounds"].(M)["a"], NotNil)
 	}
+}
+
+func (s *S) TestQueryComment(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	db := session.DB("mydb")
+	coll := db.C("mycoll")
+
+	err = db.Run(bson.M{"profile": 2}, nil)
+	c.Assert(err, IsNil)
+
+	ns := []int{40, 41, 42}
+	for _, n := range ns {
+		err := coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
+	}
+
+	query := coll.Find(bson.M{"n": 41})
+	query.Comment("some comment")
+	err = query.One(nil)
+	c.Assert(err, IsNil)
+
+	query = coll.Find(bson.M{"n": 41})
+	query.Comment("another comment")
+	err = query.One(nil)
+	c.Assert(err, IsNil)
+
+	n, err := session.DB("mydb").C("system.profile").Find(bson.M{"query.$query.n": 41, "query.$comment": "some comment"}).Count()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 1)
 }
 
 func (s *S) TestFindOneNotFound(c *C) {
@@ -1589,7 +1673,11 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	// 1*QUERY for nonce + 1*GET_MORE_OP on Next + 1*GET_MORE_OP on Next after sleep +
 	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 5)
+	if s.versionAtLeast(2, 6) {
+		c.Assert(stats.SentOps, Equals, 4)
+	} else {
+		c.Assert(stats.SentOps, Equals, 5)
+	}
 	c.Assert(stats.ReceivedOps, Equals, 4)  // REPLY_OPs for 1*QUERY_OP for nonce + 2*GET_MORE_OPs + 1*QUERY_OP
 	c.Assert(stats.ReceivedDocs, Equals, 3) // nonce + N=47 result + getLastError response
 
@@ -1682,7 +1770,11 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	// 1*QUERY_OP for nonce + 1*GET_MORE_OP on Next +
 	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 4)
+	if s.versionAtLeast(2, 6) {
+		c.Assert(stats.SentOps, Equals, 3)
+	} else {
+		c.Assert(stats.SentOps, Equals, 4)
+	}
 	c.Assert(stats.ReceivedOps, Equals, 3)  // REPLY_OPs for 1*QUERY_OP for nonce + 1*GET_MORE_OPs and 1*QUERY_OP
 	c.Assert(stats.ReceivedDocs, Equals, 3) // nonce + N=47 result + getLastError response
 
@@ -1774,7 +1866,11 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	// 1*QUERY_OP for nonce + 1*GET_MORE_OP on Next +
 	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 4)
+	if s.versionAtLeast(2, 6) {
+		c.Assert(stats.SentOps, Equals, 3)
+	} else {
+		c.Assert(stats.SentOps, Equals, 4)
+	}
 	c.Assert(stats.ReceivedOps, Equals, 3)  // REPLY_OPs for 1*QUERY_OP for nonce + 1*GET_MORE_OPs and 1*QUERY_OP
 	c.Assert(stats.ReceivedDocs, Equals, 3) // nonce + N=47 result + getLastError response
 
@@ -2210,12 +2306,14 @@ func (s *S) TestPrefetching(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
+	const total = 600
 	mgo.SetDebug(false)
-	docs := make([]interface{}, 800)
-	for i := 0; i != 600; i++ {
+	docs := make([]interface{}, total)
+	for i := 0; i != total; i++ {
 		docs[i] = bson.D{{"n", i}}
 	}
-	coll.Insert(docs...)
+	err = coll.Insert(docs...)
+	c.Assert(err, IsNil)
 
 	for testi := 0; testi < 5; testi++ {
 		mgo.ResetStats()
@@ -2392,7 +2490,11 @@ func (s *S) TestSafeInsert(c *C) {
 
 	// It must have sent two operations (INSERT_OP + getLastError QUERY_OP)
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 2)
+	if s.versionAtLeast(2, 6) {
+		c.Assert(stats.SentOps, Equals, 1)
+	} else {
+		c.Assert(stats.SentOps, Equals, 2)
+	}
 
 	mgo.ResetStats()
 
@@ -2416,7 +2518,7 @@ func (s *S) TestSafeParameters(c *C) {
 	// Tweak the safety parameters to something unachievable.
 	session.SetSafe(&mgo.Safe{W: 4, WTimeout: 100})
 	err = coll.Insert(M{"_id": 1})
-	c.Assert(err, ErrorMatches, "timeout|timed out waiting for slaves|Not enough data-bearing nodes")
+	c.Assert(err, ErrorMatches, "timeout|timed out waiting for slaves|Not enough data-bearing nodes|waiting for replication timed out") // :-(
 	if !s.versionAtLeast(2, 6) {
 		// 2.6 turned it into a query error.
 		c.Assert(err.(*mgo.LastError).WTimeout, Equals, true)
@@ -2538,6 +2640,17 @@ var indexTests = []struct {
 	},
 }, {
 	mgo.Index{
+		Key:        []string{"$geoHaystack:loc", "type"},
+		BucketSize: 1,
+	},
+	M{
+		"name":       "loc_geoHaystack_type_1",
+		"key":        M{"loc": "geoHaystack", "type": 1},
+		"ns":         "mydb.mycoll",
+		"bucketSize": 1.0,
+	},
+}, {
+	mgo.Index{
 		Key:     []string{"$text:a", "$text:b"},
 		Weights: map[string]int{"b": 42},
 	},
@@ -2589,6 +2702,11 @@ func (s *S) TestEnsureIndex(c *C) {
 	idxs := session.DB("mydb").C("system.indexes")
 
 	for _, test := range indexTests {
+		if !s.versionAtLeast(2, 4) && test.expected["weights"] != nil {
+			// No text indexes until 2.4.
+			continue
+		}
+
 		err = coll.EnsureIndex(test.index)
 		c.Assert(err, IsNil)
 
@@ -2750,7 +2868,7 @@ func (s *S) TestEnsureIndexCaching(c *C) {
 	c.Assert(err, IsNil)
 
 	stats = mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 2)
+	c.Assert(stats.SentOps > 0, Equals, true)
 
 	// Dropping the index should also drop the cached index key.
 	err = coll.DropIndex("a")
@@ -2762,7 +2880,7 @@ func (s *S) TestEnsureIndexCaching(c *C) {
 	c.Assert(err, IsNil)
 
 	stats = mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 2)
+	c.Assert(stats.SentOps > 0, Equals, true)
 }
 
 func (s *S) TestEnsureIndexGetIndexes(c *C) {
@@ -2813,9 +2931,9 @@ func (s *S) TestEnsureIndexEvalGetIndexes(c *C) {
 	c.Assert(err, IsNil)
 	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({a: 1})"}}, nil)
 	c.Assert(err, IsNil)
-	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({c: '2d'})"}}, nil)
+	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({c: -1, e: 1})"}}, nil)
 	c.Assert(err, IsNil)
-	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({d: -1, e: 1})"}}, nil)
+	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({d: '2d'})"}}, nil)
 	c.Assert(err, IsNil)
 
 	indexes, err := coll.Indexes()
@@ -2826,10 +2944,15 @@ func (s *S) TestEnsureIndexEvalGetIndexes(c *C) {
 	c.Assert(indexes[1].Key, DeepEquals, []string{"a"})
 	c.Assert(indexes[2].Name, Equals, "b_-1")
 	c.Assert(indexes[2].Key, DeepEquals, []string{"-b"})
-	c.Assert(indexes[3].Name, Equals, "c_2d")
-	c.Assert(indexes[3].Key, DeepEquals, []string{"$2d:c"})
-	c.Assert(indexes[4].Name, Equals, "d_-1_e_1")
-	c.Assert(indexes[4].Key, DeepEquals, []string{"-d", "e"})
+	c.Assert(indexes[3].Name, Equals, "c_-1_e_1")
+	c.Assert(indexes[3].Key, DeepEquals, []string{"-c", "e"})
+	if s.versionAtLeast(2, 2) {
+		c.Assert(indexes[4].Name, Equals, "d_2d")
+		c.Assert(indexes[4].Key, DeepEquals, []string{"$2d:d"})
+	} else {
+		c.Assert(indexes[4].Name, Equals, "d_")
+		c.Assert(indexes[4].Key, DeepEquals, []string{"$2d:d"})
+	}
 }
 
 var testTTL = flag.Bool("test-ttl", false, "test TTL collections (may take 1 minute)")
