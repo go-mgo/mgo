@@ -1113,7 +1113,7 @@ func (s *S) TestQuerySetMaxTime(c *C) {
 	}
 
 	query := coll.Find(nil)
-	query.SetMaxTime(1*time.Millisecond)
+	query.SetMaxTime(1 * time.Millisecond)
 	query.Batch(2)
 	var result []M
 	err = query.All(&result)
@@ -1673,7 +1673,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	// 1*QUERY for nonce + 1*GET_MORE_OP on Next + 1*GET_MORE_OP on Next after sleep +
 	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
 	stats := mgo.GetStats()
-	if s.versionAtLeast(2, 6) {
+	if s.versionAtLeast(3, 0) { // TODO Will be 2.6 when write commands are enabled for it.
 		c.Assert(stats.SentOps, Equals, 4)
 	} else {
 		c.Assert(stats.SentOps, Equals, 5)
@@ -1770,7 +1770,7 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	// 1*QUERY_OP for nonce + 1*GET_MORE_OP on Next +
 	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
 	stats := mgo.GetStats()
-	if s.versionAtLeast(2, 6) {
+	if s.versionAtLeast(3, 0) { // TODO Will be 2.6 when write commands are enabled for it.
 		c.Assert(stats.SentOps, Equals, 3)
 	} else {
 		c.Assert(stats.SentOps, Equals, 4)
@@ -1866,7 +1866,7 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	// 1*QUERY_OP for nonce + 1*GET_MORE_OP on Next +
 	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
 	stats := mgo.GetStats()
-	if s.versionAtLeast(2, 6) {
+	if s.versionAtLeast(3, 0) { // TODO Will be 2.6 when write commands are enabled for it.
 		c.Assert(stats.SentOps, Equals, 3)
 	} else {
 		c.Assert(stats.SentOps, Equals, 4)
@@ -2490,7 +2490,9 @@ func (s *S) TestSafeInsert(c *C) {
 
 	// It must have sent two operations (INSERT_OP + getLastError QUERY_OP)
 	stats := mgo.GetStats()
-	if s.versionAtLeast(2, 6) {
+
+	// TODO Will be 2.6 when write commands are enabled for it.
+	if s.versionAtLeast(3, 0) {
 		c.Assert(stats.SentOps, Equals, 1)
 	} else {
 		c.Assert(stats.SentOps, Equals, 2)
@@ -2680,7 +2682,7 @@ var indexTests = []struct {
 	},
 }, {
 	mgo.Index{
-		Key:              []string{"$text:$**"},
+		Key: []string{"$text:$**"},
 	},
 	M{
 		"name":              "$**_text",
