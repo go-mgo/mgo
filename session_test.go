@@ -354,6 +354,10 @@ func (s *S) TestUpdate(c *C) {
 		c.Assert(err, IsNil)
 	}
 
+	// No changes is a no-op and shouldn't return an error.
+	err = coll.Update(M{"k": 42}, M{"$set": M{"n": 42}})
+	c.Assert(err, IsNil)
+
 	err = coll.Update(M{"k": 42}, M{"$inc": M{"n": 1}})
 	c.Assert(err, IsNil)
 
@@ -530,7 +534,12 @@ func (s *S) TestUpdateAll(c *C) {
 		c.Assert(err, IsNil)
 	}
 
-	info, err := coll.UpdateAll(M{"k": M{"$gt": 42}}, M{"$inc": M{"n": 1}})
+	// Don't actually modify the documents. Should still report 4 matching updates.
+	info, err := coll.UpdateAll(M{"k": M{"$gt": 42}}, M{"$unset": M{"missing": 1}})
+	c.Assert(err, IsNil)
+	c.Assert(info.Updated, Equals, 4)
+
+	info, err = coll.UpdateAll(M{"k": M{"$gt": 42}}, M{"$inc": M{"n": 1}})
 	c.Assert(err, IsNil)
 	c.Assert(info.Updated, Equals, 4)
 
@@ -895,6 +904,13 @@ func (s *S) TestFindAndModify(c *C) {
 	info, err := coll.Find(M{"n": 42}).Apply(mgo.Change{Update: M{"$inc": M{"n": 1}}}, result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 42)
+	c.Assert(info.Updated, Equals, 1)
+	c.Assert(info.Removed, Equals, 0)
+	c.Assert(info.UpsertedId, IsNil)
+
+	// A nil result parameter should be acceptable.
+	info, err = coll.Find(M{"n": 43}).Apply(mgo.Change{Update: M{"$unset": M{"missing": 1}}}, nil)
+	c.Assert(err, IsNil)
 	c.Assert(info.Updated, Equals, 1)
 	c.Assert(info.Removed, Equals, 0)
 	c.Assert(info.UpsertedId, IsNil)

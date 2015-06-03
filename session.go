@@ -3829,7 +3829,7 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 	if doc.LastError.N == 0 {
 		return nil, ErrNotFound
 	}
-	if doc.Value.Kind != 0x0A {
+	if doc.Value.Kind != 0x0A && result != nil {
 		err = doc.Value.Unmarshal(result)
 		if err != nil {
 			return nil, err
@@ -4186,8 +4186,10 @@ func (c *Collection) writeCommand(socket *mongoSocket, safeOp *queryOp, op inter
 	var result writeCmdResult
 	err = c.Database.run(socket, cmd, &result)
 	debugf("Write command result: %#v (err=%v)", result, err)
-	// TODO Should lerr.N be result.NModified on updates?
-	lerr = &LastError{UpdatedExisting: result.NModified != 0, N: result.N}
+	lerr = &LastError{
+		UpdatedExisting: result.N > 0 && len(result.Upserted) == 0,
+		N: result.N,
+	}
 	if len(result.Upserted) > 0 {
 		lerr.UpsertedId = result.Upserted[0].Id
 	}
