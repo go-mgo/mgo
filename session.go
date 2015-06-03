@@ -2174,6 +2174,10 @@ func (err *LastError) Error() string {
 	return err.Err
 }
 
+func (err *LastError) Found() bool {
+	return err.N > 0
+}
+
 type queryError struct {
 	Err           string "$err"
 	ErrMsg        string
@@ -2230,7 +2234,7 @@ func (c *Collection) Insert(docs ...interface{}) error {
 //
 func (c *Collection) Update(selector interface{}, update interface{}) error {
 	lerr, err := c.writeQuery(&updateOp{c.FullName, selector, update, 0})
-	if err == nil && lerr != nil && !lerr.UpdatedExisting {
+	if err == nil && lerr != nil && !lerr.Found() {
 		return ErrNotFound
 	}
 	return err
