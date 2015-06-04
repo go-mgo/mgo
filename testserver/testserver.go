@@ -1,3 +1,4 @@
+// WARNING: This package was replaced by mgo.v2/dbtest.
 package testserver
 
 import (
@@ -13,15 +14,7 @@ import (
 	"gopkg.in/tomb.v2"
 )
 
-// TestServer controls a MongoDB server process to be used within test suites.
-//
-// The test server is started when Session is called the first time and should
-// remain running for the duration of all tests, with the Wipe method being
-// called between tests (before each of them) to clear stored data. After all tests
-// are done, the Stop method should be called to stop the test server.
-//
-// Before the TestServer is used the SetPath method must be called to define
-// the location for the database files to be stored.
+// WARNING: This package was replaced by mgo.v2/dbtest.
 type TestServer struct {
 	session *mgo.Session
 	output  bytes.Buffer
@@ -31,9 +24,7 @@ type TestServer struct {
 	tomb    tomb.Tomb
 }
 
-// SetPath defines the path to the directory where the database files will be
-// stored if it is started. The directory path itself is not created or removed
-// by the test helper.
+// WARNING: This package was replaced by mgo.v2/dbtest.
 func (ts *TestServer) SetPath(dbpath string) {
 	ts.dbpath = dbpath
 }
@@ -93,14 +84,7 @@ func (ts *TestServer) monitor() error {
 	return nil
 }
 
-// Stop stops the test server process, if it is running.
-//
-// It's okay to call Stop multiple times. After the test server is
-// stopped it cannot be restarted.
-//
-// All database sessions must be closed before or while the Stop method
-// is running. Otherwise Stop will panic after a timeout informing that
-// there is a session leak.
+// WARNING: This package was replaced by mgo.v2/dbtest.
 func (ts *TestServer) Stop() {
 	if ts.session != nil {
 		ts.checkSessions()
@@ -121,10 +105,7 @@ func (ts *TestServer) Stop() {
 	}
 }
 
-// Session returns a new session to the server. The returned session
-// must be closed after the test is done with it.
-//
-// The first Session obtained from a TestServer will start it.
+// WARNING: This package was replaced by mgo.v2/dbtest.
 func (ts *TestServer) Session() *mgo.Session {
 	if ts.server == nil {
 		ts.start()
@@ -140,9 +121,7 @@ func (ts *TestServer) Session() *mgo.Session {
 	return ts.session.Copy()
 }
 
-// checkSessions ensures all mgo sessions opened were properly closed.
-// For slightly faster tests, it may be disabled setting the
-// environmnet variable CHECK_SESSIONS to 0.
+// WARNING: This package was replaced by mgo.v2/dbtest.
 func (ts *TestServer) checkSessions() {
 	if check := os.Getenv("CHECK_SESSIONS"); check == "0" || ts.server == nil || ts.session == nil {
 		return
@@ -159,14 +138,7 @@ func (ts *TestServer) checkSessions() {
 	panic("There are mgo sessions still alive.")
 }
 
-// Wipe drops all created databases and their data.
-//
-// The MongoDB server remains running if it was prevoiusly running,
-// or stopped if it was previously stopped.
-//
-// All database sessions must be closed before or while the Wipe method
-// is running. Otherwise Wipe will panic after a timeout informing that
-// there is a session leak.
+// WARNING: This package was replaced by mgo.v2/dbtest.
 func (ts *TestServer) Wipe() {
 	if ts.server == nil || ts.session == nil {
 		return
