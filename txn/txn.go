@@ -183,6 +183,41 @@ type Op struct {
 	Remove bool        `bson:"r,omitempty"`
 }
 
+func (op *Op) SetBSON(raw bson.Raw) error {
+	// Read into an internal structure with bson.Raw, to preserve the
+	// Assert, Insert and Update values. Otherwise maps, which might
+	// correspond to structs, may be reordered.
+	var opInternal struct {
+		C      string      `bson:"c"`
+		Id     interface{} `bson:"d"`
+		Assert *bson.Raw   `bson:"a,omitempty"`
+		Insert *bson.Raw   `bson:"i,omitempty"`
+		Update *bson.Raw   `bson:"u,omitempty"`
+		Remove bool        `bson:"r,omitempty"`
+	}
+	if err := raw.Unmarshal(&opInternal); err != nil {
+		return err
+	}
+	*op = Op{
+		opInternal.C,
+		opInternal.Id,
+		nil,
+		nil,
+		nil,
+		opInternal.Remove,
+	}
+	if opInternal.Assert != nil {
+		op.Assert = *opInternal.Assert
+	}
+	if opInternal.Insert != nil {
+		op.Insert = opInternal.Insert
+	}
+	if opInternal.Update != nil {
+		op.Update = opInternal.Update
+	}
+	return nil
+}
+
 func (op *Op) isChange() bool {
 	return op.Update != nil || op.Insert != nil || op.Remove
 }

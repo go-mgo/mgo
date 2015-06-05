@@ -300,6 +300,47 @@ func (s *S) TestQueueStashing(c *C) {
 	c.Assert(account.Balance, Equals, 300)
 }
 
+func (s *S) TestQueueStashingPreservesOps(c *C) {
+	// Many fields to trigger map order randomisation.
+	type S struct {
+		F1  int
+		F2  int
+		F3  int
+		F4  int
+		F5  int
+		F6  int
+		F7  int
+		F8  int
+		F9  int
+		F10 int
+	}
+
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Insert: M{"balance": 100, "extra": S{}},
+	}}
+	err := s.runner.Run(ops, bson.NewObjectId(), nil)
+	c.Assert(err, IsNil)
+
+	txn.SetChaos(txn.Chaos{
+		KillChance: 1,
+		Breakpoint: "set-applying",
+	})
+	txnId := bson.NewObjectId()
+	ops = []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Assert: bson.D{{"extra", S{}}},
+	}}
+	err = s.runner.Run(ops, txnId, nil)
+	c.Assert(err, Equals, txn.ErrChaos)
+
+	txn.SetChaos(txn.Chaos{})
+	err = s.runner.Resume(txnId)
+	c.Assert(err, IsNil)
+}
+
 func (s *S) TestInfo(c *C) {
 	ops := []txn.Op{{
 		C:      "accounts",
