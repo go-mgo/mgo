@@ -816,9 +816,12 @@ func (d *decoder) readByte() byte {
 }
 
 func (d *decoder) readBytes(length int32) []byte {
+	if length < 0 {
+		corrupted()
+	}
 	start := d.i
 	d.i += int(length)
-	if d.i > len(d.in) {
+	if d.i < start || d.i > len(d.in) {
 		corrupted()
 	}
 	return d.in[start : start+int(length)]
