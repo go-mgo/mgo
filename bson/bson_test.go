@@ -709,8 +709,15 @@ var corruptedData = []string{
 	// String with corrupted end.
 	wrapInDoc("\x02\x00\x03\x00\x00\x00yo\xFF"),
 
-	// Random data causing slice out of bounds per issue #116.
-	"!\x00\x00\x00\f000000000000000\x00000\xdf0000000\x00",
+	// String with negative length (issue #116).
+	"\x0c\x00\x00\x00\x02x\x00\xff\xff\xff\xff\x00",
+
+	// String with zero length (must include trailing '\x00')
+	"\x0c\x00\x00\x00\x02x\x00\x00\x00\x00\x00\x00",
+
+	// Binary with negative length.
+	"\r\x00\x00\x00\x05x\x00\xff\xff\xff\xff\x00\x00",
+
 }
 
 func (s *S) TestUnmarshalMapDocumentTooShort(c *C) {
