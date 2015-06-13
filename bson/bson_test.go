@@ -1337,6 +1337,9 @@ var oneWayCrossItems = []crossTypeItem{
 	{&struct {
 		V struct{ v time.Time } ",omitempty"
 	}{}, map[string]interface{}{}},
+
+	// Attempt to marshal slice into RawD (issue #120).
+	{bson.M{"x": []int{1, 2, 3}}, &struct{ X bson.RawD }{}},
 }
 
 func testCrossPair(c *C, dump interface{}, load interface{}) {

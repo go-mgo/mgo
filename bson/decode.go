@@ -325,6 +325,10 @@ func (d *decoder) readArrayDocTo(out reflect.Value) {
 func (d *decoder) readSliceDoc(t reflect.Type) interface{} {
 	tmp := make([]reflect.Value, 0, 8)
 	elemType := t.Elem()
+	if elemType == typeRawDocElem {
+		d.dropElem(0x04)
+		return reflect.Zero(t).Interface()
+	}
 
 	end := int(d.readInt32())
 	end += d.i - 4
@@ -437,7 +441,7 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 
 	start := d.i
 
-	if kind == '\x03' {
+	if kind == 0x03 {
 		// Delegate unmarshaling of documents.
 		outt := out.Type()
 		outk := out.Kind()
