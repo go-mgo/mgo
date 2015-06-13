@@ -37,7 +37,7 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2-unstable/bson"
+	"gopkg.in/mgo.v2/bson"
 )
 
 func TestAll(t *testing.T) {
@@ -1476,14 +1476,14 @@ var jsonIdTests = []struct {
 	marshal:   false,
 	unmarshal: true,
 }, {
-	json: `{"Id":"4d88e15b60f486e428412dc9A"}`,
-	error: `Invalid ObjectId in JSON: "4d88e15b60f486e428412dc9A"`,
-	marshal: false,
+	json:      `{"Id":"4d88e15b60f486e428412dc9A"}`,
+	error:     `Invalid ObjectId in JSON: "4d88e15b60f486e428412dc9A"`,
+	marshal:   false,
 	unmarshal: true,
 }, {
-	json: `{"Id":"4d88e15b60f486e428412dcZ"}`,
-	error: `Invalid ObjectId in JSON: "4d88e15b60f486e428412dcZ" .*`,
-	marshal: false,
+	json:      `{"Id":"4d88e15b60f486e428412dcZ"}`,
+	error:     `Invalid ObjectId in JSON: "4d88e15b60f486e428412dcZ" .*`,
+	marshal:   false,
 	unmarshal: true,
 }}
 
