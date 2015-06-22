@@ -318,12 +318,13 @@ func (d *decoder) readArrayDocTo(out reflect.Value) {
 }
 
 func (d *decoder) readSliceDoc(t reflect.Type) interface{} {
-	tmp := make([]reflect.Value, 0, 8)
 	elemType := t.Elem()
 	if elemType == typeRawDocElem {
 		d.dropElem(0x04)
 		return reflect.Zero(t).Interface()
 	}
+
+	slice := reflect.MakeSlice(t, 0, 8)
 
 	end := int(d.readInt32())
 	end += d.i - 4
@@ -341,7 +342,7 @@ func (d *decoder) readSliceDoc(t reflect.Type) interface{} {
 		d.i++
 		e := reflect.New(elemType).Elem()
 		if d.readElemTo(e, kind) {
-			tmp = append(tmp, e)
+			slice = reflect.Append(slice, e)
 		}
 		if d.i >= end {
 			corrupted()
@@ -352,11 +353,6 @@ func (d *decoder) readSliceDoc(t reflect.Type) interface{} {
 		corrupted()
 	}
 
-	n := len(tmp)
-	slice := reflect.MakeSlice(t, n, n)
-	for i := 0; i != n; i++ {
-		slice.Index(i).Set(tmp[i])
-	}
 	return slice.Interface()
 }
 
@@ -364,8 +360,8 @@ var typeSlice = reflect.TypeOf([]interface{}{})
 var typeIface = typeSlice.Elem()
 
 func (d *decoder) readDocElems(out reflect.Value, outt reflect.Type) bool {
-	et := outt.Elem()
-	if et != typeDocElem && et != typeRawDocElem {
+	elemType := outt.Elem()
+	if elemType != typeDocElem && elemType != typeRawDocElem {
 		return false
 	}
 
@@ -385,7 +381,7 @@ func (d *decoder) readDocElems(out reflect.Value, outt reflect.Type) bool {
 			corrupted()
 		}
 
-		e := reflect.New(et).Elem()
+		e := reflect.New(elemType).Elem()
 		if d.readElemTo(e.FieldByName("Value"), kind) {
 			e.FieldByName("Name").SetString(name)
 			slice = reflect.Append(slice, e)
