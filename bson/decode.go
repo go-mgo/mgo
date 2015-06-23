@@ -172,16 +172,10 @@ func (d *decoder) readDocTo(out reflect.Value) {
 	}
 
 	docType := d.docType
-	keyType := typeString
-	convertKey := false
 	switch outk {
 	case reflect.Map:
-		keyType = outt.Key()
-		if keyType.Kind() != reflect.String {
+		if outt.Key().Kind() != reflect.String {
 			panic("BSON map must have string keys. Got: " + outt.String())
-		}
-		if keyType != typeString {
-			convertKey = true
 		}
 		elemType = outt.Elem()
 		if elemType == typeIface {
@@ -237,8 +231,8 @@ func (d *decoder) readDocTo(out reflect.Value) {
 			e := reflect.New(elemType).Elem()
 			if d.readElemTo(e, kind) {
 				k := reflect.ValueOf(name)
-				if convertKey {
-					k = k.Convert(keyType)
+				if t := outt.Key(); t != k.Type() {
+					k = k.Convert(t)
 				}
 				out.SetMapIndex(k, e)
 			}
