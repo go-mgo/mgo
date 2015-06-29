@@ -424,7 +424,7 @@ func (servers *mongoServers) BestFit(serverTags []bson.D) *mongoServer {
 			// Prefer nearest server.
 			swap = next.pingValue < best.pingValue
 		case len(next.liveSockets)-len(next.unusedSockets) < len(best.liveSockets)-len(best.unusedSockets):
-			// Prefer servers with less connections.
+			// Prefer servers with fewer connections.
 			swap = true
 		}
 		if swap {
