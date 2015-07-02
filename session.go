@@ -3356,6 +3356,22 @@ func (iter *Iter) All(result interface{}) error {
 	return iter.Close()
 }
 
+// CursorID retrieves the cursor ID associated with the iterator.
+//
+// The CursorID is only set once the first document is retrieved from the result
+// set.
+func (iter *Iter) CursorID() int64 {
+	return iter.op.cursorId
+}
+
+// SetBatch sets the batch size used for this iterator when fetching documents from the
+// database.
+func (iter *Iter) SetBatch(n int) {
+	iter.m.Lock()
+	iter.op.limit = int32(n)
+	iter.m.Unlock()
+}
+
 // All works like Iter.All.
 func (q *Query) All(result interface{}) error {
 	return q.Iter().All(result)
