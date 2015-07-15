@@ -780,10 +780,14 @@ func (d *decoder) readCStr() string {
 }
 
 func (d *decoder) readBool() bool {
-	if d.readByte() == 1 {
+	b := d.readByte()
+	if b == 0 {
+		return false
+	}
+	if b == 1 {
 		return true
 	}
-	return false
+	panic(fmt.Sprintf("encoded boolean must be 1 or 0, found %d", b))
 }
 
 func (d *decoder) readFloat64() float64 {

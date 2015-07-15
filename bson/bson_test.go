@@ -29,15 +29,18 @@ package bson_test
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/mgo.v2-unstable/bson"
+	"gopkg.in/yaml.v2"
 )
 
 func TestAll(t *testing.T) {
@@ -639,6 +642,10 @@ var unmarshalErrorItems = []unmarshalErrorType{
 	{123,
 		"\x10name\x00\x08\x00\x00\x00",
 		"Unmarshal needs a map or a pointer to a struct."},
+
+	{nil,
+		"\x08\x62\x00\x02",
+		"encoded boolean must be 1 or 0, found 2"},
 }
 
 func (s *S) TestUnmarshalErrorItems(c *C) {
@@ -691,7 +698,7 @@ func (s *S) TestUnmarshalRawErrorItems(c *C) {
 }
 
 var corruptedData = []string{
-	"\x04\x00\x00\x00\x00",         // Shorter than minimum
+	"\x04\x00\x00\x00\x00",         // Document shorter than minimum
 	"\x06\x00\x00\x00\x00",         // Not enough data
 	"\x05\x00\x00",                 // Broken length
 	"\x05\x00\x00\x00\xff",         // Corrupted termination
@@ -717,7 +724,6 @@ var corruptedData = []string{
 
 	// Binary with negative length.
 	"\r\x00\x00\x00\x05x\x00\xff\xff\xff\xff\x00\x00",
-
 }
 
 func (s *S) TestUnmarshalMapDocumentTooShort(c *C) {
@@ -1554,6 +1560,62 @@ func (s *S) TestObjectIdJSONMarshaling(c *C) {
 			} else {
 				c.Assert(err, ErrorMatches, test.error)
 			}
+		}
+	}
+}
+
+type specTest struct {
+	Description string
+	Documents   []struct {
+		Decoded    map[string]interface{}
+		Encoded    string
+		DecodeOnly bool `yaml:"decodeOnly"`
+		Error      interface{}
+	}
+}
+
+func (s *S) TestSpecTests(c *C) {
+	for _, data := range specTests {
+		var test specTest
+		err := yaml.Unmarshal([]byte(data), &test)
+		c.Assert(err, IsNil)
+
+		c.Logf("Running spec test set %q", test.Description)
+
+		for _, doc := range test.Documents {
+			if doc.Error != nil {
+				continue
+			}
+			c.Logf("Ensuring %q decodes as %v", doc.Encoded, doc.Decoded)
+			var decoded map[string]interface{}
+			encoded, err := hex.DecodeString(doc.Encoded)
+			c.Assert(err, IsNil)
+			err = bson.Unmarshal(encoded, &decoded)
+			c.Assert(err, IsNil)
+			c.Assert(decoded, DeepEquals, doc.Decoded)
+		}
+
+		for _, doc := range test.Documents {
+			if doc.DecodeOnly || doc.Error != nil {
+				continue
+			}
+			c.Logf("Ensuring %v encodes as %q", doc.Decoded, doc.Encoded)
+			encoded, err := bson.Marshal(doc.Decoded)
+			c.Assert(err, IsNil)
+			c.Assert(strings.ToUpper(hex.EncodeToString(encoded)), Equals, doc.Encoded)
+		}
+
+		for _, doc := range test.Documents {
+			if doc.Error == nil {
+				continue
+			}
+			c.Logf("Ensuring %q errors when decoded: %s", doc.Encoded, doc.Error)
+			var decoded map[string]interface{}
+			encoded, err := hex.DecodeString(doc.Encoded)
+			c.Assert(err, IsNil)
+			err = bson.Unmarshal(encoded, &decoded)
+			c.Assert(err, NotNil)
+			c.Logf("Failed with: %v", err)
 		}
 	}
 }
