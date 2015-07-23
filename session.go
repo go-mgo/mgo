@@ -205,6 +205,7 @@ const defaultPrefetch = 0.25
 //        Defines the service name to use when authenticating with the GSSAPI
 //        mechanism. Defaults to "mongodb".
 //
+//
 //     maxPoolSize=<limit>
 //
 //        Defines the per-server socket pool limit. Defaults to 4096.
