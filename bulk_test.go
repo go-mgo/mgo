@@ -61,6 +61,7 @@ func (s *S) TestBulkInsertError(c *C) {
 	bulk.Insert(M{"_id": 1}, M{"_id": 2}, M{"_id": 2}, M{"_id": 3})
 	_, err = bulk.Run()
 	c.Assert(err, ErrorMatches, ".*duplicate key.*")
+	c.Assert(mgo.IsDup(err), Equals, true)
 
 	type doc struct {
 		N int `_id`
@@ -82,6 +83,7 @@ func (s *S) TestBulkInsertErrorUnordered(c *C) {
 	bulk.Insert(M{"_id": 1}, M{"_id": 2}, M{"_id": 2}, M{"_id": 3})
 	_, err = bulk.Run()
 	c.Assert(err, ErrorMatches, ".*duplicate key.*")
+	c.Assert(mgo.IsDup(err), Equals, true)
 
 	type doc struct {
 		N int `_id`
@@ -119,6 +121,7 @@ func (s *S) TestBulkInsertErrorUnorderedSplitBatch(c *C) {
 	bulk.Insert(docs...)
 	_, err = bulk.Run()
 	c.Assert(err, ErrorMatches, ".*duplicate key.*")
+	c.Assert(mgo.IsDup(err), Equals, true)
 
 	n, err := coll.Count()
 	c.Assert(err, IsNil)
