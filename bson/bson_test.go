@@ -993,6 +993,12 @@ type condMap struct {
 type namedCondStr struct {
 	V string "myv,omitempty"
 }
+type jsonNamedCondStr struct {
+	V string `json:"myv,omitempty"`
+}
+type jsonOmitNamedCondStr struct {
+	V string `bson:"myv,omitempty", json:"-"`
+}
 type condTime struct {
 	V time.Time ",omitempty"
 }
@@ -1260,6 +1266,10 @@ var twoWayCrossItems = []crossTypeItem{
 
 	{&namedCondStr{"yo"}, map[string]string{"myv": "yo"}},
 	{&namedCondStr{}, map[string]string{}},
+
+	{&jsonNamedCondStr{"yo"}, map[string]string{"myv": "yo"}},
+	{&jsonNamedCondStr{}, map[string]string{}},
+	{&jsonOmitNamedCondStr{"yo"}, map[string]string{"myv": "yo"}},
 
 	{&shortInt{1}, map[string]interface{}{"v": 1}},
 	{&shortInt{1 << 30}, map[string]interface{}{"v": 1 << 30}},
