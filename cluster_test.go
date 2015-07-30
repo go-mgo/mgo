@@ -1460,7 +1460,7 @@ func (s *S) TestPrimaryShutdownOnAuthShard(c *C) {
 }
 
 func (s *S) TestNearestSecondary(c *C) {
-	defer mgo.HackPingDelay(3 * time.Second)()
+	defer mgo.HackPingDelay(300 * time.Millisecond)()
 
 	rs1a := "127.0.0.1:40011"
 	rs1b := "127.0.0.1:40012"
