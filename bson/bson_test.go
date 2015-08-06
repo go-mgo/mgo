@@ -40,6 +40,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/mgo.v2-unstable/bson"
+	"gopkg.in/mgo.v2-unstable/decimal"
 	"gopkg.in/yaml.v2"
 )
 
@@ -169,6 +170,8 @@ var allItems = []testItemType{
 		"\x12_\x00\x02\x01\x00\x00\x00\x00\x00\x00"},
 	{bson.M{"_": int64(258 << 32)},
 		"\x12_\x00\x00\x00\x00\x00\x02\x01\x00\x00"},
+	{bson.M{"_": decimal.Decimal{0x0000000000000001, 0x303e000000000000}}, // 0.1
+		"\x13_\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x3e\x30"},
 	{bson.M{"_": bson.MaxKey},
 		"\x7F_\x00"},
 	{bson.M{"_": bson.MinKey},
