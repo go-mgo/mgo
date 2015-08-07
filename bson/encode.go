@@ -35,6 +35,8 @@ import (
 	"reflect"
 	"strconv"
 	"time"
+
+	"gopkg.in/mgo.v2-unstable/decimal"
 )
 
 // --------------------------------------------------------------------------
@@ -54,6 +56,7 @@ var (
 	typeTime           = reflect.TypeOf(time.Time{})
 	typeString         = reflect.TypeOf("")
 	typeJSONNumber     = reflect.TypeOf(json.Number(""))
+	typeDecimal        = reflect.TypeOf(decimal.Decimal{})
 )
 
 const itoaCacheSize = 32
@@ -437,6 +440,10 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 			e.addElemName('\x02', name)
 			e.addStr(s.String())
 
+		case decimal.Decimal:
+			e.addElemName('\x13', name)
+			e.addDecimal(s)
+
 		case undefined:
 			e.addElemName('\x06', name)
 
@@ -502,6 +509,13 @@ func (e *encoder) addInt64(v int64) {
 
 func (e *encoder) addFloat64(v float64) {
 	e.addInt64(int64(math.Float64bits(v)))
+}
+
+func (e *encoder) addDecimal(v decimal.Decimal) {
+	e.addBytes(byte(v.Low64), byte(v.Low64>>8), byte(v.Low64>>16), byte(v.Low64>>24),
+		byte(v.Low64>>32), byte(v.Low64>>40), byte(v.Low64>>48), byte(v.Low64>>56),
+		byte(v.High64), byte(v.High64>>8), byte(v.High64>>16), byte(v.High64>>24),
+		byte(v.High64>>32), byte(v.High64>>40), byte(v.High64>>48), byte(v.High64>>56))
 }
 
 func (e *encoder) addBytes(v ...byte) {
