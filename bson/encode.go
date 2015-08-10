@@ -35,6 +35,9 @@ import (
 	"reflect"
 	"strconv"
 	"time"
+	"unicode"
+
+	"gopkg.in/mgo.v2-unstable/decimal"
 )
 
 // --------------------------------------------------------------------------
@@ -54,6 +57,7 @@ var (
 	typeTime           = reflect.TypeOf(time.Time{})
 	typeString         = reflect.TypeOf("")
 	typeJSONNumber     = reflect.TypeOf(json.Number(""))
+	typeDecimal        = reflect.TypeOf(decimal.Decimal{})
 )
 
 const itoaCacheSize = 32
@@ -437,6 +441,10 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 			e.addElemName('\x02', name)
 			e.addStr(s.String())
 
+		case decimal.Decimal:
+			e.addElemName('\x13', name)
+			e.addDecimal(s)
+
 		case undefined:
 			e.addElemName('\x06', name)
 
@@ -504,6 +512,335 @@ func (e *encoder) addFloat64(v float64) {
 	e.addInt64(int64(math.Float64bits(v)))
 }
 
+func (e *encoder) addDecimal(v decimal.Decimal) {
+	dec128 := DecimalToDec128(v.String(v.GetPrecision()))
+	e.addBytes(
+		byte(dec128.Low),
+		byte(dec128.Low>>8),
+		byte(dec128.Low>>16),
+		byte(dec128.Low>>24),
+		byte(dec128.Low>>32),
+		byte(dec128.Low>>40),
+		byte(dec128.Low>>48),
+		byte(dec128.Low>>56),
+		byte(dec128.High),
+		byte(dec128.High>>8),
+		byte(dec128.High>>16),
+		byte(dec128.High>>24),
+		byte(dec128.High>>32),
+		byte(dec128.High>>40),
+		byte(dec128.High>>48),
+		byte(dec128.High>>56))
+}
+
 func (e *encoder) addBytes(v ...byte) {
 	e.out = append(e.out, v...)
+}
+
+// --------------------------------------------------------------------------
+// Marshaling helpers.
+
+// multiply64x64 multiplies two uint64's to get a Uint64x2
+func multiply64x64(left uint64, right uint64) Uint64x2 {
+	if left == 0 && right == 0 {
+		return Uint64x2{0, 0}
+	}
+	var leftHigh = left >> 32
+	var leftLow = uint64(uint32(left))
+	var rightHigh = right >> 32
+	var rightLow = uint64(uint32(right))
+
+	var productHigh = leftHigh * rightHigh
+	var productMidl = leftHigh * rightLow
+	var productMidr = leftLow * rightHigh
+	var productLow = leftLow * rightLow
+
+	productHigh += (productMidl >> 32)
+	productMidl = uint64(uint32(productMidl)) + productMidr + (productLow >> 32)
+
+	productHigh += (productMidl >> 32)
+	productLow = (productMidl << 32) + uint64(uint32(productLow))
+
+	return Uint64x2{productLow, productHigh}
+}
+
+// makeDec128Infinity returns a Dec128 +/-Infinity depending on the parameter
+func makeDec128Infinity(negative bool) Uint64x2 {
+	if !negative {
+		return Uint64x2{0, 0x7800000000000000}
+	}
+	return Uint64x2{0, 0xf800000000000000}
+}
+
+// makeDec128NaN returns a Dec128 NaN
+func makeDec128NaN() Uint64x2 {
+	return Uint64x2{0, 0x7c00000000000000}
+}
+
+// DecimalToDec128 converts a decimal string to two uint64s
+func DecimalToDec128(str string) Uint64x2 {
+	// State tracking
+	var isNegative = false
+	var sawRadix = false
+	var foundNonZero = false
+
+	var nDigitsNoTrailing uint16 // Total number of sig. digits (no trailing zeros)
+	var nDigitsRead uint16	  	 // Total number of significand digits read
+	var nDigits uint16		  	 // Total number of sig. digits
+	var radixPosition uint16  	 // The number of digits after the radix point
+	var firstNonZero uint16	  	 // The index of the first non zero
+
+	const BSONDecimalMaxDigits int = 34
+	const BSONDecimalExponentMax int = 6111
+	const BSONDecimalExponentBias int = 6176
+	const BSONDecimalExponentMin int = -6176
+	var digits [BSONDecimalMaxDigits]uint16
+	var digitsInsertPosition int
+	var nDigitsStored uint16
+	var firstDigit uint16		 // The index of the first digit
+	var lastDigit uint16		 // The index of the last digit
+
+	var exponent int32
+
+	var strRead = 0
+	var strLen = len(str)
+
+	// Check sign
+	if str[strRead] == '-' {
+		isNegative = true
+		strRead++
+	}
+
+	// Check for Infinity
+	if str[strRead:] == "Infinity" {
+		return makeDec128Infinity(isNegative)
+	}
+
+	// Check for NaN
+	if str[strRead:] == "NaN" {
+		return makeDec128NaN()
+	}
+
+	// Read digits
+	for (unicode.IsDigit(rune(str[strRead])) || str[strRead] == '.') {
+		if str[strRead] == '.' {
+			sawRadix = true
+			if strRead < strLen - 1 {
+				strRead++
+			} else {
+				break
+			}
+			continue
+		}
+
+		if nDigitsStored < 34 {
+			if str[strRead] != '0' || foundNonZero {
+				if !foundNonZero {
+					firstNonZero = nDigitsRead
+				}
+				foundNonZero = true
+				digits[digitsInsertPosition] = uint16(str[strRead]) - '0'
+				digitsInsertPosition++
+				nDigitsStored++
+			}
+		}
+
+		if foundNonZero {
+			nDigits++
+		}
+
+		if sawRadix {
+			radixPosition++
+		}
+
+		nDigitsRead++
+		if strRead < strLen - 1 {
+			strRead++
+		} else {
+			break
+		}
+	}
+
+	// Done reading input
+	// Find first non-zero digit in digits
+	if nDigitsStored == 0 {
+		firstDigit = 0
+		lastDigit = 0
+		digits[0] = 0
+		nDigits = 1
+		nDigitsStored = 1
+		nDigitsNoTrailing = 0
+	} else {
+		lastDigit = nDigitsStored - 1
+		nDigitsNoTrailing = nDigits
+		for str[firstNonZero + nDigitsNoTrailing - 1] == '0' {
+			nDigitsNoTrailing--;
+		}
+	}
+
+	// Normalization of exponent
+	// Correct exponent based on radix position and shift significand as needed
+	// to represent user input.
+
+	// Overflow prevention
+	if exponent <= int32(radixPosition) && int32(radixPosition) - exponent > (1 << 14) {
+		exponent = int32(BSONDecimalExponentMin)
+	} else {
+		exponent -= int32(radixPosition)
+	}
+
+	// Attempt to normalize the exponent
+	for exponent > int32(BSONDecimalExponentMax) {
+		// Shift the exponent to significand and decrease
+		lastDigit++
+
+		if lastDigit - firstDigit > uint16(BSONDecimalMaxDigits) {
+			return makeDec128Infinity(isNegative)
+		}
+
+		exponent--
+	}
+
+	for exponent < int32(BSONDecimalExponentMin) || nDigitsStored < nDigits {
+		// Shift the last digit
+		if lastDigit == 0 {
+			exponent = int32(BSONDecimalExponentMin)
+			// Signal zero value
+			nDigitsNoTrailing = 0
+			break;
+		}
+
+		if nDigitsStored < nDigits {
+			// Adjust to match digits not stored
+			nDigits--
+		} else {
+			// Adjust to round
+			lastDigit--
+		}
+
+		if exponent < int32(BSONDecimalExponentMax) {
+			exponent++
+		} else {
+			return makeDec128Infinity(isNegative)
+		}
+	}
+
+	// Round
+	if lastDigit - firstDigit + 1 < nDigitsNoTrailing {
+		var endOfString = nDigitsRead
+		// If we have seen a radix point, str is 1 longer than we have documented
+		// so inc the position of the first nonzero and the position digits are read to
+		if (sawRadix && exponent <= int32(BSONDecimalExponentMin)) {
+			firstNonZero++
+			endOfString++
+		}
+		// There are non-zero digits after lastDigit that need rounding
+		// Use round to nearest, ties to even rounding mode
+		var roundDigit = str[firstNonZero + lastDigit + 1] - '0'
+		var roundBit = false
+		if roundDigit >= 5 {
+			roundBit = true
+
+			if roundDigit == 5 {
+				roundBit = (digits[lastDigit] % 2 == 1)
+
+				for i := firstNonZero + lastDigit + 2; i < endOfString; i++ {
+					if (str[i] - '0') != 0 {
+						roundBit = true
+						break
+					}
+				}
+			}
+		}
+
+		if roundBit {
+			var dIdx = lastDigit
+			for ; dIdx >= 0; dIdx-- {
+				// fmt.Println(dIdx)
+				digits[dIdx]++
+				if digits[dIdx] > 9 {
+					digits[dIdx] = 0
+					// Overflowed most significant digit
+					if dIdx == 0 {
+						if exponent < int32(BSONDecimalExponentMax) {
+							exponent++
+							digits[dIdx] = 1
+							break
+						} else {
+							return makeDec128Infinity(isNegative)
+						}
+					}
+				} else {
+					break
+				}
+			}
+		}
+	}
+
+	// Encode significand
+	var significandHigh uint64
+	var significandLow uint64
+
+	if nDigitsNoTrailing == 0 {
+		// If we read a zero, significand is zero
+		significandHigh = 0
+		significandLow = 0
+	} else if lastDigit - firstDigit < 17 {
+		// If we can fit the significand entirely into the low 64 bits
+		var dIdx = firstDigit
+		significandLow = uint64(digits[dIdx])
+		dIdx++
+
+		for ; dIdx <= lastDigit; dIdx++ {
+			significandLow *= 10
+			significandLow += uint64(digits[dIdx])
+			significandHigh = 0
+		}
+	} else {
+		// We need to use both the low 64 and high 64 bits
+		var dIdx = firstDigit
+		significandHigh = uint64(digits[dIdx])
+		dIdx++
+
+		for ; dIdx <= lastDigit - 17; dIdx++ {
+			significandHigh *= 10
+			significandHigh += uint64(digits[dIdx])
+		}
+
+		significandLow = uint64(digits[dIdx])
+		dIdx++
+		for ; dIdx <= lastDigit; dIdx++ {
+			significandLow *= 10
+			significandLow += uint64(digits[dIdx])
+		}
+	}
+
+	significand := multiply64x64(significandHigh, 100000000000000000)
+	significand.Low += significandLow
+	if significand.Low < significandLow {
+		significand.High++
+	}
+
+	// Encode combination and exponent with significand
+	var biasedExponent = uint16(exponent + int32(BSONDecimalExponentBias))
+	var decHigh64 uint64
+	var decLow64 uint64
+
+	if (significand.High >> 49) & 1 != 0 {
+		decHigh64 |= (0x3 << 61)
+		decHigh64 |= uint64((biasedExponent & 0x3fff)) << 47
+		decHigh64 |= (significand.High & 0x7fffffffffff)
+	} else {
+		decHigh64 |= uint64((biasedExponent & 0x3fff)) << 49
+		decHigh64 |= (significand.High & 0x1ffffffffffff)
+	}
+
+	decLow64 = significand.Low
+
+	// Encode sign
+	if isNegative {
+		decHigh64 |= 0x8000000000000000
+	}
+
+	return Uint64x2{decLow64, decHigh64}
 }

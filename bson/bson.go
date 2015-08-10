@@ -402,6 +402,13 @@ type DBPointer struct {
 	Id        ObjectId
 }
 
+// Uint64x2 is a struct that represents a 128 bit uint and is used
+// for marshaling, parsing, and testing the BSON decimal type
+type Uint64x2 struct {
+	Low uint64
+	High uint64
+}
+
 const initialBufferSize = 64
 
 func handleErr(err *error) {
