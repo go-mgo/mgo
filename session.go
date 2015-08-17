@@ -44,12 +44,12 @@ import (
 	"gopkg.in/mgo.v2-unstable/bson"
 )
 
-type mode int
+type Mode int
 
 const (
-	Eventual  mode = 0
-	Monotonic mode = 1
-	Strong    mode = 2
+	Eventual  Mode = 0
+	Monotonic Mode = 1
+	Strong    Mode = 2
 )
 
 // When changing the Session type, check if newSession and copySession
@@ -61,7 +61,7 @@ type Session struct {
 	slaveSocket  *mongoSocket
 	masterSocket *mongoSocket
 	slaveOk      bool
-	consistency  mode
+	consistency  Mode
 	queryConfig  query
 	safeOp       *queryOp
 	syncTimeout  time.Duration
@@ -481,7 +481,7 @@ func extractURL(s string) (*urlInfo, error) {
 	return info, nil
 }
 
-func newSession(consistency mode, cluster *mongoCluster, timeout time.Duration) (session *Session) {
+func newSession(consistency Mode, cluster *mongoCluster, timeout time.Duration) (session *Session) {
 	cluster.Acquire()
 	session = &Session{
 		cluster_:    cluster,
@@ -1489,7 +1489,7 @@ func (s *Session) Refresh() {
 // Shifting between Monotonic and Strong modes will keep a previously
 // reserved connection for the session unless refresh is true or the
 // connection is unsuitable (to a secondary server in a Strong session).
-func (s *Session) SetMode(consistency mode, refresh bool) {
+func (s *Session) SetMode(consistency Mode, refresh bool) {
 	s.m.Lock()
 	debugf("Session %p: setting mode %d with refresh=%v (master=%p, slave=%p)", s, consistency, refresh, s.masterSocket, s.slaveSocket)
 	s.consistency = consistency
@@ -1505,7 +1505,7 @@ func (s *Session) SetMode(consistency mode, refresh bool) {
 }
 
 // Mode returns the current consistency mode for the session.
-func (s *Session) Mode() mode {
+func (s *Session) Mode() Mode {
 	s.m.RLock()
 	mode := s.consistency
 	s.m.RUnlock()
