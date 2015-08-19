@@ -971,6 +971,11 @@ type indexSpec struct {
 	LanguageOverride string  "language_override,omitempty"
 }
 
+type ttlIndexSpec struct {
+	indexSpec
+	ExpireAfter int "expireAfterSeconds"
+}
+
 type Index struct {
 	Key        []string // Index key fields; prefix name with dash (-) for descending order
 	Unique     bool     // Prevent two documents from having the same index key
@@ -1210,6 +1215,69 @@ NextField:
 
 	// Try with a command first.
 	err = db.Run(bson.D{{"createIndexes", c.Name}, {"indexes", []indexSpec{spec}}}, nil)
+	if isNoCmd(err) {
+		// Command not yet supported. Insert into the indexes collection instead.
+		err = db.C("system.indexes").Insert(&spec)
+	}
+	if err == nil {
+		session.cluster().CacheIndex(cacheKey, true)
+	}
+	return err
+}
+
+// EnsureTTLIndex behaves like EnsureIndex but unconditionally sends the ExpireAfter field
+// to allow setting it to zero.
+func (c *Collection) EnsureTTLIndex(index Index) error {
+	keyInfo, err := parseIndexKey(index.Key)
+	if err != nil {
+		return err
+	}
+
+	session := c.Database.Session
+	cacheKey := c.FullName + "\x00" + keyInfo.name
+	if session.cluster().HasCachedIndex(cacheKey) {
+		return nil
+	}
+
+	spec := ttlIndexSpec{
+		indexSpec: indexSpec{
+			Name:             keyInfo.name,
+			NS:               c.FullName,
+			Key:              keyInfo.key,
+			Unique:           index.Unique,
+			DropDups:         index.DropDups,
+			Background:       index.Background,
+			Sparse:           index.Sparse,
+			Bits:             index.Bits,
+			Min:              index.Min,
+			Max:              index.Max,
+			BucketSize:       index.BucketSize,
+			Weights:          keyInfo.weights,
+			DefaultLanguage:  index.DefaultLanguage,
+			LanguageOverride: index.LanguageOverride,
+		},
+		ExpireAfter: int(index.ExpireAfter / time.Second),
+	}
+
+NextField:
+	for name, weight := range index.Weights {
+		for i, elem := range spec.Weights {
+			if elem.Name == name {
+				spec.Weights[i].Value = weight
+				continue NextField
+			}
+		}
+		panic("weight provided for field that is not part of index key: " + name)
+	}
+
+	cloned := session.Clone()
+	defer cloned.Close()
+	cloned.SetMode(Strong, false)
+	cloned.EnsureSafe(&Safe{})
+	db := c.Database.With(cloned)
+
+	// Try with a command first.
+	err = db.Run(bson.D{{"createIndexes", c.Name}, {"indexes", []ttlIndexSpec{spec}}}, nil)
 	if isNoCmd(err) {
 		// Command not yet supported. Insert into the indexes collection instead.
 		err = db.C("system.indexes").Insert(&spec)
@@ -4190,7 +4258,7 @@ func (c *Collection) writeCommand(socket *mongoSocket, safeOp *queryOp, op inter
 	debugf("Write command result: %#v (err=%v)", result, err)
 	lerr = &LastError{
 		UpdatedExisting: result.N > 0 && len(result.Upserted) == 0,
-		N: result.N,
+		N:               result.N,
 	}
 	if len(result.Upserted) > 0 {
 		lerr.UpsertedId = result.Upserted[0].Id
