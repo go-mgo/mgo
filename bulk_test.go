@@ -1,6 +1,6 @@
 // mgo - MongoDB driver for Go
 //
-// Copyright (c) 2010-2014 - Gustavo Niemeyer <gustavo@niemeyer.net>
+// Copyright (c) 2010-2015 - Gustavo Niemeyer <gustavo@niemeyer.net>
 //
 // All rights reserved.
 //
@@ -61,6 +61,7 @@ func (s *S) TestBulkInsertError(c *C) {
 	bulk.Insert(M{"_id": 1}, M{"_id": 2}, M{"_id": 2}, M{"_id": 3})
 	_, err = bulk.Run()
 	c.Assert(err, ErrorMatches, ".*duplicate key.*")
+	c.Assert(mgo.IsDup(err), Equals, true)
 
 	type doc struct {
 		N int `_id`
@@ -129,3 +130,133 @@ func (s *S) TestBulkInsertErrorUnorderedSplitBatch(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(res.Id, Equals, 1500)
 }
+
+func (s *S) TestBulkUpdate(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"n": 1}, M{"n": 2}, M{"n": 3})
+	c.Assert(err, IsNil)
+
+	bulk := coll.Bulk()
+	bulk.Update(M{"n": 2}, M{"$set": M{"n": 20}})
+	bulk.Update(M{"n": 1}, M{"$set": M{"n": 10}}, M{"n": 3}, M{"$set": M{"n": 30}})
+	r, err := bulk.Run()
+	c.Assert(err, IsNil)
+	c.Assert(r, FitsTypeOf, &mgo.BulkResult{})
+
+	type doc struct{ N int }
+	var res []doc
+	err = coll.Find(nil).Sort("n").All(&res)
+	c.Assert(err, IsNil)
+	c.Assert(res, DeepEquals, []doc{{10}, {20}, {30}})
+}
+
+func (s *S) TestBulkUpdateError(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"n": 1}, M{"n": 2}, M{"n": 3})
+	c.Assert(err, IsNil)
+
+	bulk := coll.Bulk()
+	bulk.Update(
+		M{"n": 1}, M{"$set": M{"n": 10}},
+		M{"n": 2}, M{"$set": M{"n": 20, "_id": 20}},
+		M{"n": 3}, M{"$set": M{"n": 30}},
+	)
+	r, err := bulk.Run()
+	c.Assert(err, ErrorMatches, ".*_id.*")
+	c.Assert(r, FitsTypeOf, &mgo.BulkResult{})
+
+	type doc struct{ N int }
+	var res []doc
+	err = coll.Find(nil).Sort("n").All(&res)
+	c.Assert(err, IsNil)
+	c.Assert(res, DeepEquals, []doc{{2}, {3}, {10}})
+}
+
+func (s *S) TestBulkUpdateErrorUnordered(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"n": 1}, M{"n": 2}, M{"n": 3})
+	c.Assert(err, IsNil)
+
+	bulk := coll.Bulk()
+	bulk.Unordered()
+	bulk.Update(
+		M{"n": 1}, M{"$set": M{"n": 10}},
+		M{"n": 2}, M{"$set": M{"n": 20, "_id": 20}},
+		M{"n": 3}, M{"$set": M{"n": 30}},
+	)
+	r, err := bulk.Run()
+	c.Assert(err, ErrorMatches, ".*_id.*")
+	c.Assert(r, FitsTypeOf, &mgo.BulkResult{})
+
+	type doc struct{ N int }
+	var res []doc
+	err = coll.Find(nil).Sort("n").All(&res)
+	c.Assert(err, IsNil)
+	c.Assert(res, DeepEquals, []doc{{2}, {10}, {30}})
+}
+
+func (s *S) TestBulkUpdateAll(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"n": 1}, M{"n": 2}, M{"n": 3})
+	c.Assert(err, IsNil)
+
+	bulk := coll.Bulk()
+	bulk.UpdateAll(M{"n": 1}, M{"$set": M{"n": 10}})
+	bulk.UpdateAll(M{}, M{"$inc": M{"n": 1}}, M{"n": 11}, M{"$set": M{"n": 5}})
+	r, err := bulk.Run()
+	c.Assert(err, IsNil)
+	c.Assert(r, FitsTypeOf, &mgo.BulkResult{})
+
+	type doc struct{ N int }
+	var res []doc
+	err = coll.Find(nil).Sort("n").All(&res)
+	c.Assert(err, IsNil)
+	c.Assert(res, DeepEquals, []doc{{3}, {4}, {5}})
+}
+
+func (s *S) TestBulkMixedUnordered(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	// Abuse undefined behavior to ensure the desired implementation is in place.
+	bulk := coll.Bulk()
+	bulk.Unordered()
+	bulk.Insert(M{"n": 1})
+	bulk.Update(M{"n": 2}, M{"$inc": M{"n": 1}})
+	bulk.Insert(M{"n": 2})
+	bulk.Update(M{"n": 3}, M{"$inc": M{"n": 1}})
+	bulk.Update(M{"n": 1}, M{"$inc": M{"n": 1}})
+	bulk.Insert(M{"n": 3})
+	_, err = bulk.Run()
+	c.Assert(err, IsNil)
+
+	type doc struct{ N int }
+	var res []doc
+	err = coll.Find(nil).Sort("n").All(&res)
+	c.Assert(err, IsNil)
+	c.Assert(res, DeepEquals, []doc{{2}, {3}, {4}})
+}
+
