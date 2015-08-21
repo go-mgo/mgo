@@ -409,7 +409,7 @@ func (cluster *mongoCluster) server(addr string, tcpaddr *net.TCPAddr) *mongoSer
 
 func resolveAddr(addr string) (*net.TCPAddr, error) {
 	// This hack allows having a timeout on resolution.
-	conn, err := net.DialTimeout("udp", addr, 10*time.Second)
+	conn, err := net.DialTimeout("udp4", addr, 10*time.Second)
 	if err != nil {
 		log("SYNC Failed to resolve server address: ", addr)
 		return nil, errors.New("failed to resolve server address: " + addr)
