@@ -727,6 +727,12 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 			out.Set(reflect.ValueOf(u).Elem())
 			return true
 		}
+		if outt == typeBinary {
+			if b, ok := in.([]byte); ok {
+				out.Set(reflect.ValueOf(Binary{Data: b}))
+				return true
+			}
+		}
 	}
 
 	return false

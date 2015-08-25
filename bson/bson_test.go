@@ -1280,6 +1280,9 @@ var twoWayCrossItems = []crossTypeItem{
 	{&inlineMapInt{A: 1, M: nil}, map[string]int{"a": 1}},
 	{&inlineMapMyM{A: 1, M: MyM{"b": MyM{"c": 3}}}, map[string]interface{}{"a": 1, "b": map[string]interface{}{"c": 3}}},
 
+	// []byte <=> Binary
+	{&struct{ B []byte }{[]byte("abc")}, map[string]bson.Binary{"b": bson.Binary{Data: []byte("abc")}}},
+
 	// []byte <=> MyBytes
 	{&struct{ B MyBytes }{[]byte("abc")}, map[string]string{"b": "abc"}},
 	{&struct{ B MyBytes }{[]byte{}}, map[string]string{"b": ""}},
