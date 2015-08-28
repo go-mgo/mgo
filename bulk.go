@@ -1,5 +1,9 @@
 package mgo
 
+import (
+	"gopkg.in/mgo.v2-unstable/bson"
+)
+
 // Bulk represents an operation that can be prepared with several
 // orthogonal changes before being delivered to the server.
 //
@@ -25,6 +29,8 @@ type bulkAction struct {
 	op   bulkOp
 	docs []interface{}
 }
+
+type bulkUpdateOp []interface{}
 
 // BulkError holds an error returned from running a Bulk operation.
 //
@@ -94,7 +100,17 @@ func (b *Bulk) Update(pairs ...interface{}) {
 		panic("Bulk.Update requires an even number of parameters")
 	}
 	action := b.action(bulkUpdate)
-	action.docs = append(action.docs, pairs...)
+	for i := 0; i < len(pairs); i += 2 {
+		selector := pairs[i]
+		if selector == nil {
+			selector = bson.D{}
+		}
+		action.docs = append(action.docs, &updateOp{
+			Collection: b.c.FullName,
+			Selector: selector,
+			Update: pairs[i+1],
+		})
+	}
 }
 
 // UpdateAll queues up the provided pairs of updating instructions.
@@ -105,8 +121,20 @@ func (b *Bulk) UpdateAll(pairs ...interface{}) {
 	if len(pairs)%2 != 0 {
 		panic("Bulk.UpdateAll requires an even number of parameters")
 	}
-	action := b.action(bulkUpdateAll)
-	action.docs = append(action.docs, pairs...)
+	action := b.action(bulkUpdate)
+	for i := 0; i < len(pairs); i += 2 {
+		selector := pairs[i]
+		if selector == nil {
+			selector = bson.D{}
+		}
+		action.docs = append(action.docs, &updateOp{
+			Collection: b.c.FullName,
+			Selector: selector,
+			Update: pairs[i+1],
+			Flags: 2,
+			Multi: true,
+		})
+	}
 }
 
 // Run runs all the operations queued up.
@@ -121,9 +149,7 @@ func (b *Bulk) Run() (*BulkResult, error) {
 		case bulkInsert:
 			ok = b.runInsert(action, &result, &berr)
 		case bulkUpdate:
-			ok = b.runUpdate(action, &result, &berr, 0)
-		case bulkUpdateAll:
-			ok = b.runUpdate(action, &result, &berr, 2)
+			ok = b.runUpdate(action, &result, &berr)
 		default:
 			panic("unknown bulk operation")
 		}
@@ -145,7 +171,7 @@ func (b *Bulk) runInsert(action *bulkAction, result *BulkResult, berr *bulkError
 	if !b.ordered {
 		op.flags = 1 // ContinueOnError
 	}
-	_, err := b.c.writeQuery(op)
+	_, err := b.c.writeOp(op, b.ordered)
 	if err != nil {
 		berr.err = err
 		return false
@@ -153,10 +179,10 @@ func (b *Bulk) runInsert(action *bulkAction, result *BulkResult, berr *bulkError
 	return true
 }
 
-func (b *Bulk) runUpdate(action *bulkAction, result *BulkResult, berr *bulkError, flags uint32) bool {
+func (b *Bulk) runUpdate(action *bulkAction, result *BulkResult, berr *bulkError) bool {
 	ok := true
-	for i := 0; i < len(action.docs); i += 2 {
-		_, err := b.c.writeQuery(&updateOp{b.c.FullName, action.docs[i], action.docs[i+1], flags})
+	for _, op := range action.docs {
+		_, err := b.c.writeOp(op, b.ordered)
 		if err != nil {
 			ok = false
 			berr.err = &bulkError{err}

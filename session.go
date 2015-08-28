@@ -2215,7 +2215,7 @@ func IsDup(err error) bool {
 // happens while inserting the provided documents, the returned error will
 // be of type *LastError.
 func (c *Collection) Insert(docs ...interface{}) error {
-	_, err := c.writeQuery(&insertOp{c.FullName, docs, 0})
+	_, err := c.writeOp(&insertOp{c.FullName, docs, 0}, true)
 	return err
 }
 
@@ -2231,7 +2231,15 @@ func (c *Collection) Insert(docs ...interface{}) error {
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
 func (c *Collection) Update(selector interface{}, update interface{}) error {
-	lerr, err := c.writeQuery(&updateOp{c.FullName, selector, update, 0})
+	if selector == nil {
+		selector = bson.D{}
+	}
+	op := updateOp{
+		Collection: c.FullName,
+		Selector: selector,
+		Update: update,
+	}
+	lerr, err := c.writeOp(&op, true)
 	if err == nil && lerr != nil && !lerr.UpdatedExisting {
 		return ErrNotFound
 	}
@@ -2267,7 +2275,17 @@ type ChangeInfo struct {
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
 func (c *Collection) UpdateAll(selector interface{}, update interface{}) (info *ChangeInfo, err error) {
-	lerr, err := c.writeQuery(&updateOp{c.FullName, selector, update, 2})
+	if selector == nil {
+		selector = bson.D{}
+	}
+	op := updateOp{
+		Collection: c.FullName,
+		Selector: selector,
+		Update: update,
+		Flags: 2,
+		Multi: true,
+	}
+	lerr, err := c.writeOp(&op, true)
 	if err == nil && lerr != nil {
 		info = &ChangeInfo{Updated: lerr.N}
 	}
@@ -2288,7 +2306,17 @@ func (c *Collection) UpdateAll(selector interface{}, update interface{}) (info *
 //     http://www.mongodb.org/display/DOCS/Atomic+Operations
 //
 func (c *Collection) Upsert(selector interface{}, update interface{}) (info *ChangeInfo, err error) {
-	lerr, err := c.writeQuery(&updateOp{c.FullName, selector, update, 1})
+	if selector == nil {
+		selector = bson.D{}
+	}
+	op := updateOp{
+		Collection: c.FullName,
+		Selector: selector,
+		Update: update,
+		Flags: 1,
+		Upsert: true,
+	}
+	lerr, err := c.writeOp(&op, true)
 	if err == nil && lerr != nil {
 		info = &ChangeInfo{}
 		if lerr.UpdatedExisting {
@@ -2320,7 +2348,7 @@ func (c *Collection) UpsertId(id interface{}, update interface{}) (info *ChangeI
 //     http://www.mongodb.org/display/DOCS/Removing
 //
 func (c *Collection) Remove(selector interface{}) error {
-	lerr, err := c.writeQuery(&deleteOp{c.FullName, selector, 1})
+	lerr, err := c.writeOp(&deleteOp{c.FullName, selector, 1}, true)
 	if err == nil && lerr != nil && lerr.N == 0 {
 		return ErrNotFound
 	}
@@ -2346,7 +2374,7 @@ func (c *Collection) RemoveId(id interface{}) error {
 //     http://www.mongodb.org/display/DOCS/Removing
 //
 func (c *Collection) RemoveAll(selector interface{}) (info *ChangeInfo, err error) {
-	lerr, err := c.writeQuery(&deleteOp{c.FullName, selector, 0})
+	lerr, err := c.writeOp(&deleteOp{c.FullName, selector, 0}, true)
 	if err == nil && lerr != nil {
 		info = &ChangeInfo{Removed: lerr.N}
 	}
@@ -4056,14 +4084,13 @@ type writeCmdResult struct {
 	} `bson:"writeConcernError"`
 }
 
-// writeQuery runs the given modifying operation, potentially followed up
+// writeOp runs the given modifying operation, potentially followed up
 // by a getLastError command in case the session is in safe mode.  The
 // LastError result is made available in lerr, and if lerr.Err is set it
 // will also be returned as err.
-func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
+func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err error) {
 	s := c.Database.Session
-	dbname := c.Database.Name
-	socket, err := s.acquireSocket(dbname == "local")
+	socket, err := s.acquireSocket(c.Database.Name == "local")
 	if err != nil {
 		return nil, err
 	}
@@ -4086,7 +4113,7 @@ func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
 					l = len(all)
 				}
 				op.documents = all[i:l]
-				_, err := c.writeCommand(socket, safeOp, op)
+				_, err := c.writeOpCommand(socket, safeOp, op, ordered)
 				if err != nil {
 					if op.flags&1 != 0 {
 						if firstErr == nil {
@@ -4099,9 +4126,27 @@ func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
 			}
 			return nil, firstErr
 		}
-		return c.writeCommand(socket, safeOp, op)
+		return c.writeOpCommand(socket, safeOp, op, ordered)
+	} else if updateOps, ok := op.(bulkUpdateOp); ok {
+		var firstErr error
+		for _, updateOp := range updateOps {
+			_, err := c.writeOpQuery(socket, safeOp, updateOp, ordered)
+			if err != nil {
+				if !ordered {
+					if firstErr == nil {
+						firstErr = err
+					}
+				} else {
+					return nil, err
+				}
+			}
+		}
+		return nil, firstErr
 	}
+	return c.writeOpQuery(socket, safeOp, op, ordered)
+}
 
+func (c *Collection) writeOpQuery(socket *mongoSocket, safeOp *queryOp, op interface{}, ordered bool) (lerr *LastError, err error) {
 	if safeOp == nil {
 		return nil, socket.Query(op)
 	}
@@ -4111,7 +4156,7 @@ func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
 	var replyErr error
 	mutex.Lock()
 	query := *safeOp // Copy the data.
-	query.collection = dbname + ".$cmd"
+	query.collection = c.Database.Name + ".$cmd"
 	query.replyFunc = func(err error, reply *replyOp, docNum int, docData []byte) {
 		replyData = docData
 		replyErr = err
@@ -4141,7 +4186,7 @@ func (c *Collection) writeQuery(op interface{}) (lerr *LastError, err error) {
 	return result, nil
 }
 
-func (c *Collection) writeCommand(socket *mongoSocket, safeOp *queryOp, op interface{}) (lerr *LastError, err error) {
+func (c *Collection) writeOpCommand(socket *mongoSocket, safeOp *queryOp, op interface{}, ordered bool) (lerr *LastError, err error) {
 	var writeConcern interface{}
 	if safeOp == nil {
 		writeConcern = bson.D{{"w", 0}}
@@ -4161,15 +4206,19 @@ func (c *Collection) writeCommand(socket *mongoSocket, safeOp *queryOp, op inter
 		}
 	case *updateOp:
 		// http://docs.mongodb.org/manual/reference/command/update
-		selector := op.selector
-		if selector == nil {
-			selector = bson.D{}
-		}
 		cmd = bson.D{
 			{"update", c.Name},
-			{"updates", []bson.D{{{"q", selector}, {"u", op.update}, {"upsert", op.flags&1 != 0}, {"multi", op.flags&2 != 0}}}},
+			{"updates", []interface{}{op}},
 			{"writeConcern", writeConcern},
-			//{"ordered", <bool>},
+			{"ordered", ordered},
+		}
+	case bulkUpdateOp:
+		// http://docs.mongodb.org/manual/reference/command/update
+		cmd = bson.D{
+			{"update", c.Name},
+			{"updates", op},
+			{"writeConcern", writeConcern},
+			{"ordered", ordered},
 		}
 	case *deleteOp:
 		// http://docs.mongodb.org/manual/reference/command/delete
