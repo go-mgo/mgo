@@ -2416,6 +2416,9 @@ type CollectionInfo struct {
 	Capped   bool
 	MaxBytes int
 	MaxDocs  int
+
+	// Extra holds non-standard or newly-added options.
+	Extra bson.M
 }
 
 // Create explicitly creates the c collection with details of info.
@@ -2446,6 +2449,9 @@ func (c *Collection) Create(info *CollectionInfo) error {
 	}
 	if info.ForceIdIndex {
 		cmd = append(cmd, bson.DocElem{"autoIndexId", true})
+	}
+	for key, value := range info.Extra {
+		cmd = append(cmd, bson.DocElem{key, value})
 	}
 	return c.Database.Run(cmd, nil)
 }
@@ -4239,7 +4245,7 @@ func (c *Collection) writeOpCommand(socket *mongoSocket, safeOp *queryOp, op int
 	debugf("Write command result: %#v (err=%v)", result, err)
 	lerr = &LastError{
 		UpdatedExisting: result.N > 0 && len(result.Upserted) == 0,
-		N: result.N,
+		N:               result.N,
 	}
 	if len(result.Upserted) > 0 {
 		lerr.UpsertedId = result.Upserted[0].Id
