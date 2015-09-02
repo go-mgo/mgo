@@ -34,6 +34,8 @@ import (
 	"time"
 
 	"gopkg.in/mgo.v2/bson"
+	"strconv"
+	"strings"
 )
 
 // ---------------------------------------------------------------------------
@@ -408,7 +410,22 @@ func (cluster *mongoCluster) server(addr string, tcpaddr *net.TCPAddr) *mongoSer
 }
 
 func resolveAddr(addr string) (*net.TCPAddr, error) {
-	// This hack allows having a timeout on resolution.
+	// Simple cases that do not need actual resolution. Works with IPv4 and v6.
+	if host, port, err := net.SplitHostPort(addr); err == nil {
+		if port, _ := strconv.Atoi(port); port > 0 {
+			zone := ""
+			if i := strings.LastIndex(host, "%"); i >= 0 {
+				zone = host[i+1:]
+				host = host[:i]
+			}
+			ip := net.ParseIP(host)
+			if ip != nil {
+				return &net.TCPAddr{IP: ip, Port: port, Zone: zone}, nil
+			}
+		}
+	}
+
+	// This unfortunate hack allows having a timeout on address resolution.
 	conn, err := net.DialTimeout("udp4", addr, 10*time.Second)
 	if err != nil {
 		log("SYNC Failed to resolve server address: ", addr)

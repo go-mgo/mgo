@@ -84,6 +84,16 @@ func (s *S) TestPing(c *C) {
 	c.Assert(stats.ReceivedOps, Equals, 1)
 }
 
+func (s *S) TestDialIPAddress(c *C) {
+	session, err := mgo.Dial("127.0.0.1:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	session, err = mgo.Dial("[::1%]:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+}
+
 func (s *S) TestURLSingle(c *C) {
 	session, err := mgo.Dial("mongodb://localhost:40001/")
 	c.Assert(err, IsNil)
