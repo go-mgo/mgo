@@ -137,6 +137,30 @@ func (b *Bulk) UpdateAll(pairs ...interface{}) {
 	}
 }
 
+// Upsert queues up the provided pairs of upserting instructions.
+// The first element of each pair selects which documents must be
+// updated, and the second element defines how to update it.
+// Each pair matches exactly one document for updating at most.
+func (b *Bulk) Upsert(pairs ...interface{}) {
+	if len(pairs)%2 != 0 {
+		panic("Bulk.Update requires an even number of parameters")
+	}
+	action := b.action(bulkUpdate)
+	for i := 0; i < len(pairs); i += 2 {
+		selector := pairs[i]
+		if selector == nil {
+			selector = bson.D{}
+		}
+		action.docs = append(action.docs, &updateOp{
+			Collection: b.c.FullName,
+			Selector: selector,
+			Update: pairs[i+1],
+			Flags: 1,
+			Upsert: true,
+		})
+	}
+}
+
 // Run runs all the operations queued up.
 func (b *Bulk) Run() (*BulkResult, error) {
 	var result BulkResult

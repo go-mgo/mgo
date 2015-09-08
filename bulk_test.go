@@ -260,3 +260,26 @@ func (s *S) TestBulkMixedUnordered(c *C) {
 	c.Assert(res, DeepEquals, []doc{{2}, {3}, {4}})
 }
 
+func (s *S) TestBulkUpsert(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"n": 1}, M{"n": 2}, M{"n": 3})
+	c.Assert(err, IsNil)
+
+	bulk := coll.Bulk()
+	bulk.Upsert(M{"n": 2}, M{"$set": M{"n": 20}})
+	bulk.Upsert(M{"n": 4}, M{"$set": M{"n": 40}}, M{"n": 3}, M{"$set": M{"n": 30}})
+	r, err := bulk.Run()
+	c.Assert(err, IsNil)
+	c.Assert(r, FitsTypeOf, &mgo.BulkResult{})
+
+	type doc struct{ N int }
+	var res []doc
+	err = coll.Find(nil).Sort("n").All(&res)
+	c.Assert(err, IsNil)
+	c.Assert(res, DeepEquals, []doc{{1}, {20}, {30}, {40}})
+}
