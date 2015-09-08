@@ -142,11 +142,16 @@ func (s *S) TestBulkUpdate(c *C) {
 	c.Assert(err, IsNil)
 
 	bulk := coll.Bulk()
+	bulk.Update(M{"n": 1}, M{"$set": M{"n": 1}})
 	bulk.Update(M{"n": 2}, M{"$set": M{"n": 20}})
+	bulk.Update(M{"n": 5}, M{"$set": M{"n": 50}}) // Won't match.
 	bulk.Update(M{"n": 1}, M{"$set": M{"n": 10}}, M{"n": 3}, M{"$set": M{"n": 30}})
 	r, err := bulk.Run()
 	c.Assert(err, IsNil)
-	c.Assert(r, FitsTypeOf, &mgo.BulkResult{})
+	c.Assert(r.Matched, Equals, 4)
+	if s.versionAtLeast(2, 6) {
+		c.Assert(r.Modified, Equals, 3)
+	}
 
 	type doc struct{ N int }
 	var res []doc
@@ -222,10 +227,15 @@ func (s *S) TestBulkUpdateAll(c *C) {
 
 	bulk := coll.Bulk()
 	bulk.UpdateAll(M{"n": 1}, M{"$set": M{"n": 10}})
+	bulk.UpdateAll(M{"n": 2}, M{"$set": M{"n": 2}})
+	bulk.UpdateAll(M{"n": 5}, M{"$set": M{"n": 50}}) // Won't match.
 	bulk.UpdateAll(M{}, M{"$inc": M{"n": 1}}, M{"n": 11}, M{"$set": M{"n": 5}})
 	r, err := bulk.Run()
 	c.Assert(err, IsNil)
-	c.Assert(r, FitsTypeOf, &mgo.BulkResult{})
+	c.Assert(r.Matched, Equals, 6)
+	if s.versionAtLeast(2, 6) {
+		c.Assert(r.Modified, Equals, 5)
+	}
 
 	type doc struct{ N int }
 	var res []doc
@@ -250,8 +260,12 @@ func (s *S) TestBulkMixedUnordered(c *C) {
 	bulk.Update(M{"n": 3}, M{"$inc": M{"n": 1}})
 	bulk.Update(M{"n": 1}, M{"$inc": M{"n": 1}})
 	bulk.Insert(M{"n": 3})
-	_, err = bulk.Run()
+	r, err := bulk.Run()
 	c.Assert(err, IsNil)
+	c.Assert(r.Matched, Equals, 3)
+	if s.versionAtLeast(2, 6) {
+		c.Assert(r.Modified, Equals, 3)
+	}
 
 	type doc struct{ N int }
 	var res []doc

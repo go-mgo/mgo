@@ -2168,6 +2168,8 @@ type LastError struct {
 	WTimeout        bool
 	UpdatedExisting bool        `bson:"updatedExisting"`
 	UpsertedId      interface{} `bson:"upserted"`
+
+	modified int
 }
 
 func (err *LastError) Error() string {
@@ -2236,8 +2238,8 @@ func (c *Collection) Update(selector interface{}, update interface{}) error {
 	}
 	op := updateOp{
 		Collection: c.FullName,
-		Selector: selector,
-		Update: update,
+		Selector:   selector,
+		Update:     update,
 	}
 	lerr, err := c.writeOp(&op, true)
 	if err == nil && lerr != nil && !lerr.UpdatedExisting {
@@ -2280,10 +2282,10 @@ func (c *Collection) UpdateAll(selector interface{}, update interface{}) (info *
 	}
 	op := updateOp{
 		Collection: c.FullName,
-		Selector: selector,
-		Update: update,
-		Flags: 2,
-		Multi: true,
+		Selector:   selector,
+		Update:     update,
+		Flags:      2,
+		Multi:      true,
 	}
 	lerr, err := c.writeOp(&op, true)
 	if err == nil && lerr != nil {
@@ -2311,10 +2313,10 @@ func (c *Collection) Upsert(selector interface{}, update interface{}) (info *Cha
 	}
 	op := updateOp{
 		Collection: c.FullName,
-		Selector: selector,
-		Update: update,
-		Flags: 1,
-		Upsert: true,
+		Selector:   selector,
+		Update:     update,
+		Flags:      1,
+		Upsert:     true,
 	}
 	lerr, err := c.writeOp(&op, true)
 	if err == nil && lerr != nil {
@@ -4238,7 +4240,8 @@ func (c *Collection) writeOpCommand(socket *mongoSocket, safeOp *queryOp, op int
 	debugf("Write command result: %#v (err=%v)", result, err)
 	lerr = &LastError{
 		UpdatedExisting: result.N > 0 && len(result.Upserted) == 0,
-		N: result.N,
+		N:               result.N,
+		modified:        result.NModified,
 	}
 	if len(result.Upserted) > 0 {
 		lerr.UpsertedId = result.Upserted[0].Id

@@ -42,6 +42,9 @@ type bulkError struct {
 
 // BulkResult holds the results for a bulk operation.
 type BulkResult struct {
+	Matched  int
+	Modified int // Available only for MongoDB 2.6+
+
 	// Be conservative while we understand exactly how to report these
 	// results in a useful and convenient way, and also how to emulate
 	// them with prior servers.
@@ -84,7 +87,6 @@ func (b *Bulk) action(op bulkOp) *bulkAction {
 	return &b.actions[len(b.actions)-1]
 }
 
-
 // Insert queues up the provided documents for insertion.
 func (b *Bulk) Insert(docs ...interface{}) {
 	action := b.action(bulkInsert)
@@ -107,8 +109,8 @@ func (b *Bulk) Update(pairs ...interface{}) {
 		}
 		action.docs = append(action.docs, &updateOp{
 			Collection: b.c.FullName,
-			Selector: selector,
-			Update: pairs[i+1],
+			Selector:   selector,
+			Update:     pairs[i+1],
 		})
 	}
 }
@@ -129,10 +131,10 @@ func (b *Bulk) UpdateAll(pairs ...interface{}) {
 		}
 		action.docs = append(action.docs, &updateOp{
 			Collection: b.c.FullName,
-			Selector: selector,
-			Update: pairs[i+1],
-			Flags: 2,
-			Multi: true,
+			Selector:   selector,
+			Update:     pairs[i+1],
+			Flags:      2,
+			Multi:      true,
 		})
 	}
 }
@@ -153,10 +155,10 @@ func (b *Bulk) Upsert(pairs ...interface{}) {
 		}
 		action.docs = append(action.docs, &updateOp{
 			Collection: b.c.FullName,
-			Selector: selector,
-			Update: pairs[i+1],
-			Flags: 1,
-			Upsert: true,
+			Selector:   selector,
+			Update:     pairs[i+1],
+			Flags:      1,
+			Upsert:     true,
 		})
 	}
 }
@@ -206,7 +208,7 @@ func (b *Bulk) runInsert(action *bulkAction, result *BulkResult, berr *bulkError
 func (b *Bulk) runUpdate(action *bulkAction, result *BulkResult, berr *bulkError) bool {
 	ok := true
 	for _, op := range action.docs {
-		_, err := b.c.writeOp(op, b.ordered)
+		lerr, err := b.c.writeOp(op, b.ordered)
 		if err != nil {
 			ok = false
 			berr.err = &bulkError{err}
@@ -214,7 +216,8 @@ func (b *Bulk) runUpdate(action *bulkAction, result *BulkResult, berr *bulkError
 				break
 			}
 		}
-		// TODO Report number of updates into result.
+		result.Matched += lerr.N
+		result.Modified += lerr.modified
 	}
 	return ok
 }
