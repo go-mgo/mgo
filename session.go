@@ -993,8 +993,8 @@ type Index struct {
 	// documents with indexed time.Time older than the provided delta.
 	ExpireAfter time.Duration
 
-	// Name holds the stored index name. On creation this field is ignored and the index name
-	// is automatically computed by EnsureIndex based on the index key
+	// Name holds the stored index name. On creation if this field is unset it is
+	// computed by EnsureIndex based on the index key.
 	Name string
 
 	// Properties for spatial indexes.
@@ -1202,6 +1202,10 @@ func (c *Collection) EnsureIndex(index Index) error {
 		LanguageOverride: index.LanguageOverride,
 	}
 
+	if index.Name != "" {
+		spec.Name = index.Name
+	}
+
 NextField:
 	for name, weight := range index.Weights {
 		for i, elem := range spec.Weights {
@@ -1231,17 +1235,15 @@ NextField:
 	return err
 }
 
-// DropIndex removes the index with key from the collection.
+// DropIndex drops the index with the provided key from the c collection.
 //
-// The key value determines which fields compose the index. The index ordering
-// will be ascending by default.  To obtain an index with a descending order,
-// the field name should be prefixed by a dash (e.g. []string{"-time"}).
+// See EnsureIndex for details on the accepted key variants.
 //
 // For example:
 //
-//     err := collection.DropIndex("lastname", "firstname")
+//     err1 := collection.DropIndex("firstField", "-secondField")
+//     err2 := collection.DropIndex("customIndexName")
 //
-// See the EnsureIndex method for more details on indexes.
 func (c *Collection) DropIndex(key ...string) error {
 	keyInfo, err := parseIndexKey(key)
 	if err != nil {
@@ -1270,6 +1272,60 @@ func (c *Collection) DropIndex(key ...string) error {
 	}
 	return nil
 }
+
+// DropIndexName removes the index with the provided index name.
+//
+// For example:
+//
+//     err := collection.DropIndex("customIndexName")
+//
+func (c *Collection) DropIndexName(name string) error {
+	session := c.Database.Session
+
+	session = session.Clone()
+	defer session.Close()
+	session.SetMode(Strong, false)
+
+	c = c.With(session)
+
+	indexes, err := c.Indexes()
+	if err != nil {
+		return err
+	}
+
+	var index Index
+	for _, idx := range indexes {
+		if idx.Name == name {
+			index = idx
+			break
+		}
+	}
+
+	if index.Name != "" {
+		keyInfo, err := parseIndexKey(index.Key)
+		if err != nil {
+			return err
+		}
+
+		cacheKey := c.FullName + "\x00" + keyInfo.name
+		session.cluster().CacheIndex(cacheKey, false)
+	}
+
+
+	result := struct {
+		ErrMsg string
+		Ok     bool
+	}{}
+	err = c.Database.Run(bson.D{{"dropIndexes", c.Name}, {"index", name}}, &result)
+	if err != nil {
+		return err
+	}
+	if !result.Ok {
+		return errors.New(result.ErrMsg)
+	}
+	return nil
+}
+
 
 // Indexes returns a list of all indexes for the collection.
 //

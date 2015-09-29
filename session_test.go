@@ -2718,6 +2718,16 @@ var indexTests = []struct {
 		"language_override": "language",
 		"textIndexVersion":  2,
 	},
+}, {
+	mgo.Index{
+		Key:  []string{"cn"},
+		Name: "CustomName",
+	},
+	M{
+		"name":              "CustomName",
+		"key":               M{"cn": 1},
+		"ns":                "mydb.mycoll",
+	},
 }}
 
 func (s *S) TestEnsureIndex(c *C) {
@@ -2737,8 +2747,13 @@ func (s *S) TestEnsureIndex(c *C) {
 		err = coll.EnsureIndex(test.index)
 		c.Assert(err, IsNil)
 
+		expectedName := test.index.Name
+		if expectedName == "" {
+			expectedName, _ = test.expected["name"].(string)
+		}
+
 		obtained := M{}
-		err = idxs.Find(M{"name": test.expected["name"]}).One(obtained)
+		err = idxs.Find(M{"name": expectedName}).One(obtained)
 		c.Assert(err, IsNil)
 
 		delete(obtained, "v")
@@ -2750,8 +2765,13 @@ func (s *S) TestEnsureIndex(c *C) {
 
 		c.Assert(obtained, DeepEquals, test.expected)
 
-		err = coll.DropIndex(test.index.Key...)
-		c.Assert(err, IsNil)
+		if test.index.Name == "" {
+			err = coll.DropIndex(test.index.Key...)
+			c.Assert(err, IsNil)
+		} else {
+			err = coll.DropIndexName(test.index.Name)
+			c.Assert(err, IsNil)
+		}
 	}
 }
 
@@ -2851,21 +2871,54 @@ func (s *S) TestEnsureIndexDropIndex(c *C) {
 	c.Assert(err, IsNil)
 
 	sysidx := session.DB("mydb").C("system.indexes")
-	dummy := &struct{}{}
 
-	err = sysidx.Find(M{"name": "a_1"}).One(dummy)
+	err = sysidx.Find(M{"name": "a_1"}).One(nil)
 	c.Assert(err, IsNil)
 
-	err = sysidx.Find(M{"name": "b_1"}).One(dummy)
+	err = sysidx.Find(M{"name": "b_1"}).One(nil)
 	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = coll.DropIndex("a")
 	c.Assert(err, IsNil)
 
-	err = sysidx.Find(M{"name": "a_1"}).One(dummy)
+	err = sysidx.Find(M{"name": "a_1"}).One(nil)
 	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = coll.DropIndex("a")
+	c.Assert(err, ErrorMatches, "index not found.*")
+}
+
+func (s *S) TestEnsureIndexDropIndexName(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.EnsureIndexKey("a")
+	c.Assert(err, IsNil)
+
+	err = coll.EnsureIndex(mgo.Index{Key: []string{"b"}, Name: "a"})
+	c.Assert(err, IsNil)
+
+	err = coll.DropIndexName("a")
+	c.Assert(err, IsNil)
+
+	sysidx := session.DB("mydb").C("system.indexes")
+
+	err = sysidx.Find(M{"name": "a_1"}).One(nil)
+	c.Assert(err, IsNil)
+
+	err = sysidx.Find(M{"name": "a"}).One(nil)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+
+	err = coll.DropIndexName("a_1")
+	c.Assert(err, IsNil)
+
+	err = sysidx.Find(M{"name": "a_1"}).One(nil)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+
+	err = coll.DropIndexName("a_1")
 	c.Assert(err, ErrorMatches, "index not found.*")
 }
 
@@ -2945,6 +2998,51 @@ func (s *S) TestEnsureIndexGetIndexes(c *C) {
 	c.Assert(indexes[3].Key, DeepEquals, []string{"$2d:c"})
 	c.Assert(indexes[4].Name, Equals, "d_2d")
 	c.Assert(indexes[4].Key, DeepEquals, []string{"$2d:d"})
+}
+
+func (s *S) TestEnsureIndexNameCaching(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.EnsureIndex(mgo.Index{Key: []string{"a"}, Name: "custom"})
+	c.Assert(err, IsNil)
+
+	mgo.ResetStats()
+
+	// Second EnsureIndex should be cached and do nothing.
+	err = coll.EnsureIndexKey("a")
+	c.Assert(err, IsNil)
+
+	err = coll.EnsureIndex(mgo.Index{Key: []string{"a"}, Name: "custom"})
+	c.Assert(err, IsNil)
+
+	stats := mgo.GetStats()
+	c.Assert(stats.SentOps, Equals, 0)
+
+
+	// Resetting the cache should make it contact the server again.
+	session.ResetIndexCache()
+
+	err = coll.EnsureIndex(mgo.Index{Key: []string{"a"}, Name: "custom"})
+	c.Assert(err, IsNil)
+
+	stats = mgo.GetStats()
+	c.Assert(stats.SentOps > 0, Equals, true)
+
+	// Dropping the index should also drop the cached index key.
+	err = coll.DropIndexName("custom")
+	c.Assert(err, IsNil)
+
+	mgo.ResetStats()
+
+	err = coll.EnsureIndex(mgo.Index{Key: []string{"a"}, Name: "custom"})
+	c.Assert(err, IsNil)
+
+	stats = mgo.GetStats()
+	c.Assert(stats.SentOps > 0, Equals, true)
 }
 
 func (s *S) TestEnsureIndexEvalGetIndexes(c *C) {
