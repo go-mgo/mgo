@@ -2646,8 +2646,8 @@ var indexTests = []struct {
 		"name": "loc_old_2d",
 		"key":  M{"loc_old": "2d"},
 		"ns":   "mydb.mycoll",
-		"min":  -500,
-		"max":  500,
+		"min":  -500.0,
+		"max":  500.0,
 		"bits": 32,
 	},
 }, {
@@ -2661,8 +2661,25 @@ var indexTests = []struct {
 		"name": "loc_2d",
 		"key":  M{"loc": "2d"},
 		"ns":   "mydb.mycoll",
-		"min":  -500,
-		"max":  500,
+		"min":  -500.0,
+		"max":  500.0,
+		"bits": 32,
+	},
+}, {
+	mgo.Index{
+		Key:  []string{"$2d:loc"},
+		Minf: -500.1,
+		Maxf: 500.1,
+		Min:  1, // Should be ignored
+		Max:  2,
+		Bits: 32,
+	},
+	M{
+		"name": "loc_2d",
+		"key":  M{"loc": "2d"},
+		"ns":   "mydb.mycoll",
+		"min":  -500.1,
+		"max":  500.1,
 		"bits": 32,
 	},
 }, {
@@ -2724,9 +2741,9 @@ var indexTests = []struct {
 		Name: "CustomName",
 	},
 	M{
-		"name":              "CustomName",
-		"key":               M{"cn": 1},
-		"ns":                "mydb.mycoll",
+		"name": "CustomName",
+		"key":  M{"cn": 1},
+		"ns":   "mydb.mycoll",
 	},
 }}
 
@@ -3021,7 +3038,6 @@ func (s *S) TestEnsureIndexNameCaching(c *C) {
 
 	stats := mgo.GetStats()
 	c.Assert(stats.SentOps, Equals, 0)
-
 
 	// Resetting the cache should make it contact the server again.
 	session.ResetIndexCache()

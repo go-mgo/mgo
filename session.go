@@ -980,7 +980,8 @@ type indexSpec struct {
 	DropDups         bool    "dropDups,omitempty"
 	Background       bool    ",omitempty"
 	Sparse           bool    ",omitempty"
-	Bits, Min, Max   int     ",omitempty"
+	Bits             int     ",omitempty"
+	Min, Max         float64 ",omitempty"
 	BucketSize       float64 "bucketSize,omitempty"
 	ExpireAfter      int     "expireAfterSeconds,omitempty"
 	Weights          bson.D  ",omitempty"
@@ -1004,8 +1005,16 @@ type Index struct {
 	Name string
 
 	// Properties for spatial indexes.
-	Bits, Min, Max int
-	BucketSize     float64
+	//
+	// Min and Max were improperly typed as int when they should have been
+	// floats.  To preserve backwards compatibility they are still typed as
+	// int and the following two fields enable reading and writing the same
+	// fields as float numbers. In mgo.v3, these fields will be dropped and
+	// Min/Max will become floats.
+	Min, Max   int
+	Minf, Maxf float64
+	BucketSize float64
+	Bits       int
 
 	// Properties for text indexes.
 	DefaultLanguage  string
@@ -1199,13 +1208,18 @@ func (c *Collection) EnsureIndex(index Index) error {
 		Background:       index.Background,
 		Sparse:           index.Sparse,
 		Bits:             index.Bits,
-		Min:              index.Min,
-		Max:              index.Max,
+		Min:              index.Minf,
+		Max:              index.Maxf,
 		BucketSize:       index.BucketSize,
 		ExpireAfter:      int(index.ExpireAfter / time.Second),
 		Weights:          keyInfo.weights,
 		DefaultLanguage:  index.DefaultLanguage,
 		LanguageOverride: index.LanguageOverride,
+	}
+
+	if spec.Min == 0 && spec.Max == 0 {
+		spec.Min = float64(index.Min)
+		spec.Max = float64(index.Max)
 	}
 
 	if index.Name != "" {

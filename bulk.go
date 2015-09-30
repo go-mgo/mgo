@@ -53,7 +53,7 @@ type BulkResult struct {
 }
 
 func (e *bulkError) Error() string {
-	if len(e.errs) == 0{
+	if len(e.errs) == 0 {
 		return "invalid bulkError instance: no errors"
 	}
 	if len(e.errs) == 1 {
