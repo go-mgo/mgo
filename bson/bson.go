@@ -421,7 +421,8 @@ func handleErr(err *error) {
 }
 
 // Marshal serializes the in value, which may be a map or a struct value.
-// In the case of struct values, only exported fields will be serialized.
+// In the case of struct values, only exported fields will be serialized,
+// and the order of serialized fields will match that of the struct itself.
 // The lowercased field name is used as the key for each exported field,
 // but this behavior may be changed using the respective field tag.
 // The tag may also contain flags to tweak the marshalling behavior for
