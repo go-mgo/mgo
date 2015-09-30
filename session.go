@@ -66,6 +66,12 @@ const (
 // When changing the Session type, check if newSession and copySession
 // need to be updated too.
 
+// Session represents a communication session with the database.
+//
+// All Session methods are concurrency-safe and may be called from multiple
+// goroutines. In all session modes but Eventual, using the session from
+// multiple goroutines will cause them to share the same underlying socket.
+// See the documentation on Session.SetMode for more details.
 type Session struct {
 	m            sync.RWMutex
 	cluster_     *mongoCluster
