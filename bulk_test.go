@@ -131,6 +131,39 @@ func (s *S) TestBulkInsertErrorUnorderedSplitBatch(c *C) {
 	c.Assert(res.Id, Equals, 1500)
 }
 
+func (s *S) TestBulkError(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	// If it's just the same string multiple times, join it into a single message.
+	bulk := coll.Bulk()
+	bulk.Unordered()
+	bulk.Insert(M{"_id": 1}, M{"_id": 2}, M{"_id": 2})
+	_, err = bulk.Run()
+	c.Assert(err, ErrorMatches, ".*duplicate key.*")
+	c.Assert(err, Not(ErrorMatches), ".*duplicate key.*duplicate key")
+	c.Assert(mgo.IsDup(err), Equals, true)
+
+	// With matching errors but different messages, present them all.
+	bulk = coll.Bulk()
+	bulk.Unordered()
+	bulk.Insert(M{"_id": "dupone"}, M{"_id": "dupone"}, M{"_id": "duptwo"}, M{"_id": "duptwo"})
+	_, err = bulk.Run()
+	c.Assert(err, ErrorMatches, "multiple errors in bulk operation:\n  - .*duplicate.*dupone.*\n  - .*duplicate.*duptwo.*\n$")
+	c.Assert(mgo.IsDup(err), Equals, true)
+
+	// With mixed errors, present them all.
+	bulk = coll.Bulk()
+	bulk.Unordered()
+	bulk.Insert(M{"_id": 1}, M{"_id": []int{2}})
+	_, err = bulk.Run()
+	c.Assert(err, ErrorMatches, "multiple errors in bulk operation:\n  - .*duplicate.*\n  - .*array.*\n$")
+	c.Assert(mgo.IsDup(err), Equals, false)
+}
+
 func (s *S) TestBulkUpdate(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)

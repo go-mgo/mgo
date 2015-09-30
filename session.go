@@ -1311,7 +1311,6 @@ func (c *Collection) DropIndexName(name string) error {
 		session.cluster().CacheIndex(cacheKey, false)
 	}
 
-
 	result := struct {
 		ErrMsg string
 		Ok     bool
@@ -1325,7 +1324,6 @@ func (c *Collection) DropIndexName(name string) error {
 	}
 	return nil
 }
-
 
 // Indexes returns a list of all indexes for the collection.
 //
@@ -2237,6 +2235,7 @@ type LastError struct {
 	UpsertedId      interface{} `bson:"upserted"`
 
 	modified int
+	errors   []writeCmdError
 }
 
 func (err *LastError) Error() string {
@@ -2274,7 +2273,12 @@ func IsDup(err error) bool {
 	case *QueryError:
 		return e.Code == 11000 || e.Code == 11001 || e.Code == 12582
 	case *bulkError:
-		return IsDup(e.err)
+		for _, ee := range e.errs {
+			if !IsDup(ee) {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }
@@ -4142,17 +4146,19 @@ type writeCmdResult struct {
 		Index int
 		Id    interface{} `_id`
 	}
-	Errors []struct {
-		Ok     bool
-		Index  int
-		Code   int
-		N      int
-		ErrMsg string
-	} `bson:"writeErrors"`
-	ConcernError struct {
-		Code   int
-		ErrMsg string
-	} `bson:"writeConcernError"`
+	ConcernError writeConcernError `bson:"writeConcernError"`
+	Errors       []writeCmdError   `bson:"writeErrors"`
+}
+
+type writeConcernError struct {
+	Code   int
+	ErrMsg string
+}
+
+type writeCmdError struct {
+	Index  int
+	Code   int
+	ErrMsg string
 }
 
 // writeOp runs the given modifying operation, potentially followed up
@@ -4310,18 +4316,18 @@ func (c *Collection) writeOpCommand(socket *mongoSocket, safeOp *queryOp, op int
 	lerr = &LastError{
 		UpdatedExisting: result.N > 0 && len(result.Upserted) == 0,
 		N:               result.N,
-		modified:        result.NModified,
+
+		modified: result.NModified,
+		errors:   result.Errors,
 	}
 	if len(result.Upserted) > 0 {
 		lerr.UpsertedId = result.Upserted[0].Id
 	}
 	if len(result.Errors) > 0 {
 		e := result.Errors[0]
-		if !e.Ok {
-			lerr.Code = e.Code
-			lerr.Err = e.ErrMsg
-			err = lerr
-		}
+		lerr.Code = e.Code
+		lerr.Err = e.ErrMsg
+		err = lerr
 	} else if result.ConcernError.Code != 0 {
 		e := result.ConcernError
 		lerr.Code = e.Code

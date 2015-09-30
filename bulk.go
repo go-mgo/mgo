@@ -1,6 +1,7 @@
 package mgo
 
 import (
+	"bytes"
 	"gopkg.in/mgo.v2-unstable/bson"
 )
 
@@ -37,7 +38,7 @@ type bulkUpdateOp []interface{}
 // TODO: This is private for the moment, until we understand exactly how
 //       to report these multi-errors in a useful and convenient way.
 type bulkError struct {
-	err error
+	errs []error
 }
 
 // BulkResult holds the results for a bulk operation.
@@ -52,7 +53,29 @@ type BulkResult struct {
 }
 
 func (e *bulkError) Error() string {
-	return e.err.Error()
+	if len(e.errs) == 0{
+		return "invalid bulkError instance: no errors"
+	}
+	if len(e.errs) == 1 {
+		return e.errs[0].Error()
+	}
+	msgs := make(map[string]bool)
+	for _, err := range e.errs {
+		msgs[err.Error()] = true
+	}
+	if len(msgs) == 1 {
+		for msg := range msgs {
+			return msg
+		}
+	}
+	var buf bytes.Buffer
+	buf.WriteString("multiple errors in bulk operation:\n")
+	for msg := range msgs {
+		buf.WriteString("  - ")
+		buf.WriteString(msg)
+		buf.WriteByte('\n')
+	}
+	return buf.String()
 }
 
 // Bulk returns a value to prepare the execution of a bulk operation.
@@ -197,21 +220,16 @@ func (b *Bulk) runInsert(action *bulkAction, result *BulkResult, berr *bulkError
 	if !b.ordered {
 		op.flags = 1 // ContinueOnError
 	}
-	_, err := b.c.writeOp(op, b.ordered)
-	if err != nil {
-		berr.err = err
-		return false
-	}
-	return true
+	lerr, err := b.c.writeOp(op, b.ordered)
+	return b.checkSuccess(berr, lerr, err)
 }
 
 func (b *Bulk) runUpdate(action *bulkAction, result *BulkResult, berr *bulkError) bool {
 	ok := true
 	for _, op := range action.docs {
 		lerr, err := b.c.writeOp(op, b.ordered)
-		if err != nil {
+		if !b.checkSuccess(berr, lerr, err) {
 			ok = false
-			berr.err = &bulkError{err}
 			if b.ordered {
 				break
 			}
@@ -222,4 +240,15 @@ func (b *Bulk) runUpdate(action *bulkAction, result *BulkResult, berr *bulkError
 	return ok
 }
 
-// TODO Introduce IsNotFound that also works on bulk.
+func (b *Bulk) checkSuccess(berr *bulkError, lerr *LastError, err error) bool {
+	if lerr != nil && len(lerr.errors) > 0 {
+		for _, e := range lerr.errors {
+			berr.errs = append(berr.errs, &QueryError{Code: e.Code, Message: e.ErrMsg})
+		}
+		return false
+	} else if err != nil {
+		berr.errs = append(berr.errs, err)
+		return false
+	}
+	return true
+}
