@@ -2782,6 +2782,45 @@ func (s *S) TestEnsureIndex(c *C) {
 
 		c.Assert(obtained, DeepEquals, test.expected)
 
+		// The result of Indexes must match closely what was used to create the index.
+		indexes, err := coll.Indexes()
+		c.Assert(err, IsNil)
+		c.Assert(indexes, HasLen, 2)
+		gotIndex := indexes[0]
+		if gotIndex.Name == "_id_" {
+			gotIndex = indexes[1]
+		}
+		wantIndex := test.index
+		if wantIndex.Name == "" {
+			wantIndex.Name = gotIndex.Name
+		}
+		if strings.HasPrefix(wantIndex.Key[0], "@") {
+			wantIndex.Key[0] = "$2d:" + wantIndex.Key[0][1:]
+		}
+		if wantIndex.Minf == 0 && wantIndex.Maxf == 0 {
+			wantIndex.Minf = float64(wantIndex.Min)
+			wantIndex.Maxf = float64(wantIndex.Max)
+		} else {
+			wantIndex.Min = gotIndex.Min
+			wantIndex.Max = gotIndex.Max
+		}
+		if wantIndex.DefaultLanguage == "" {
+			wantIndex.DefaultLanguage = gotIndex.DefaultLanguage
+		}
+		if wantIndex.LanguageOverride == "" {
+			wantIndex.LanguageOverride = gotIndex.LanguageOverride
+		}
+		for name, _ := range gotIndex.Weights {
+			if _, ok := wantIndex.Weights[name]; !ok {
+				if wantIndex.Weights == nil {
+					wantIndex.Weights = make(map[string]int)
+				}
+				wantIndex.Weights[name] = 1
+			}
+		}
+		c.Assert(gotIndex, DeepEquals, wantIndex)
+
+		// Drop created index by key or by name if a custom name was used.
 		if test.index.Name == "" {
 			err = coll.DropIndex(test.index.Key...)
 			c.Assert(err, IsNil)

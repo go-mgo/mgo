@@ -987,6 +987,7 @@ type indexSpec struct {
 	Weights          bson.D  ",omitempty"
 	DefaultLanguage  string  "default_language,omitempty"
 	LanguageOverride string  "language_override,omitempty"
+	TextIndexVersion int     "textIndexVersion,omitempty"
 }
 
 type Index struct {
@@ -1414,15 +1415,36 @@ func (c *Collection) Indexes() (indexes []Index, err error) {
 }
 
 func indexFromSpec(spec indexSpec) Index {
-	return Index{
-		Name:        spec.Name,
-		Key:         simpleIndexKey(spec.Key),
-		Unique:      spec.Unique,
-		DropDups:    spec.DropDups,
-		Background:  spec.Background,
-		Sparse:      spec.Sparse,
-		ExpireAfter: time.Duration(spec.ExpireAfter) * time.Second,
+	index := Index{
+		Name:             spec.Name,
+		Key:              simpleIndexKey(spec.Key),
+		Unique:           spec.Unique,
+		DropDups:         spec.DropDups,
+		Background:       spec.Background,
+		Sparse:           spec.Sparse,
+		Minf:             spec.Min,
+		Maxf:             spec.Max,
+		Bits:             spec.Bits,
+		BucketSize:       spec.BucketSize,
+		DefaultLanguage:  spec.DefaultLanguage,
+		LanguageOverride: spec.LanguageOverride,
+		ExpireAfter:      time.Duration(spec.ExpireAfter) * time.Second,
 	}
+	if float64(int(spec.Min)) == spec.Min && float64(int(spec.Max)) == spec.Max {
+		index.Min = int(spec.Min)
+		index.Max = int(spec.Max)
+	}
+	if spec.TextIndexVersion > 0 {
+		index.Key = make([]string, len(spec.Weights))
+		index.Weights = make(map[string]int)
+		for i, elem := range spec.Weights {
+			index.Key[i] = "$text:" + elem.Name
+			if w, ok := elem.Value.(int); ok {
+				index.Weights[elem.Name] = w
+			}
+		}
+	}
+	return index
 }
 
 type indexSlice []Index
