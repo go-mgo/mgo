@@ -30,7 +30,6 @@ import (
 	"flag"
 	"fmt"
 	"math"
-	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
@@ -287,10 +286,7 @@ func (s *S) TestDatabaseAndCollectionNames(c *C) {
 
 	names, err := session.DatabaseNames()
 	c.Assert(err, IsNil)
-	if !reflect.DeepEqual(names, []string{"db1", "db2"}) {
-		// 2.4+ has "local" as well.
-		c.Assert(names, DeepEquals, []string{"db1", "db2", "local"})
-	}
+	c.Assert(filterDBs(names), DeepEquals, []string{"db1", "db2"})
 
 	// Try to exercise cursor logic. 2.8.0-rc3 still ignores this.
 	session.SetBatch(2)
@@ -698,20 +694,30 @@ func (s *S) TestDropDatabase(c *C) {
 
 	names, err := session.DatabaseNames()
 	c.Assert(err, IsNil)
-	if !reflect.DeepEqual(names, []string{"db2"}) {
-		// 2.4+ has "local" as well.
-		c.Assert(names, DeepEquals, []string{"db2", "local"})
-	}
+	c.Assert(filterDBs(names), DeepEquals, []string{"db2"})
 
 	err = db2.DropDatabase()
 	c.Assert(err, IsNil)
 
 	names, err = session.DatabaseNames()
 	c.Assert(err, IsNil)
-	if !reflect.DeepEqual(names, []string(nil)) {
-		// 2.4+ has "local" as well.
-		c.Assert(names, DeepEquals, []string{"local"})
+	c.Assert(filterDBs(names), DeepEquals, []string{})
+}
+
+func filterDBs(dbs []string) []string {
+	var i int
+	for _, name := range dbs {
+		switch name {
+		case "admin", "local":
+		default:
+			dbs[i] = name
+			i++
+		}
 	}
+	if len(dbs) == 0 {
+		return []string{}
+	}
+	return dbs[:i]
 }
 
 func (s *S) TestDropCollection(c *C) {
@@ -2283,6 +2289,10 @@ func (s *S) TestSortScoreText(c *C) {
 	err = coll.EnsureIndex(mgo.Index{
 		Key: []string{"$text:a", "$text:b"},
 	})
+	msg := "text search not enabled"
+	if err != nil && strings.Contains(err.Error(), msg) {
+		c.Skip(msg)
+	}
 	c.Assert(err, IsNil)
 
 	err = coll.Insert(M{
@@ -2756,12 +2766,11 @@ func (s *S) TestEnsureIndex(c *C) {
 	idxs := session.DB("mydb").C("system.indexes")
 
 	for _, test := range indexTests {
-		if !s.versionAtLeast(2, 4) && test.expected["weights"] != nil {
-			// No text indexes until 2.4.
+		err = coll.EnsureIndex(test.index)
+		msg := "text search not enabled"
+		if err != nil && strings.Contains(err.Error(), msg) {
 			continue
 		}
-
-		err = coll.EnsureIndex(test.index)
 		c.Assert(err, IsNil)
 
 		expectedName := test.index.Name
@@ -2778,6 +2787,7 @@ func (s *S) TestEnsureIndex(c *C) {
 		if s.versionAtLeast(2, 7) {
 			// Was deprecated in 2.6, and not being reported by 2.7+.
 			delete(test.expected, "dropDups")
+			test.index.DropDups = false
 		}
 
 		c.Assert(obtained, DeepEquals, test.expected)

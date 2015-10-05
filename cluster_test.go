@@ -1308,10 +1308,8 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 	opc23b, err := getOpCounters("localhost:40023")
 	c.Assert(err, IsNil)
 
-	masterPort := master[strings.Index(master, ":")+1:]
-
 	var masterDelta, slaveDelta int
-	switch masterPort {
+	switch hostPort(master) {
 	case "40021":
 		masterDelta = opc21b.Query - opc21a.Query
 		slaveDelta = (opc22b.Query - opc22a.Query) + (opc23b.Query - opc23a.Query)
@@ -1361,8 +1359,13 @@ func (s *S) TestRemovalOfClusterMember(c *C) {
 	slaveAddr := result.Me
 
 	defer func() {
+		config := map[string]string{
+			"40021": `{_id: 1, host: "127.0.0.1:40021", priority: 1, tags: {rs2: "a"}}`,
+			"40022": `{_id: 2, host: "127.0.0.1:40022", priority: 0, tags: {rs2: "b"}}`,
+			"40023": `{_id: 3, host: "127.0.0.1:40023", priority: 0, tags: {rs2: "c"}}`,
+		}
 		master.Refresh()
-		master.Run(bson.D{{"$eval", `rs.add("` + slaveAddr + `")`}}, nil)
+		master.Run(bson.D{{"$eval", `rs.add(` + config[hostPort(slaveAddr)] + `)`}}, nil)
 		master.Close()
 		slave.Close()
 	}()
