@@ -2277,7 +2277,7 @@ type LastError struct {
 	UpsertedId      interface{} `bson:"upserted"`
 
 	modified int
-	errors   []writeCmdError
+	errors   []error
 }
 
 func (err *LastError) Error() string {
@@ -4203,6 +4203,14 @@ type writeCmdError struct {
 	ErrMsg string
 }
 
+func (r *writeCmdResult) QueryErrors() []error {
+	var errs []error
+	for _, err := range r.Errors {
+		errs = append(errs, &QueryError{Code: err.Code, Message: err.ErrMsg})
+	}
+	return errs
+}
+
 // writeOp runs the given modifying operation, potentially followed up
 // by a getLastError command in case the session is in safe mode.  The
 // LastError result is made available in lerr, and if lerr.Err is set it
@@ -4222,7 +4230,7 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 	if socket.ServerInfo().MaxWireVersion >= 2 {
 		// Servers with a more recent write protocol benefit from write commands.
 		if op, ok := op.(*insertOp); ok && len(op.documents) > 1000 {
-			var firstErr error
+			var errors []error
 			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
 			all := op.documents
 			for i := 0; i < len(all); i += 1000 {
@@ -4231,35 +4239,35 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 					l = len(all)
 				}
 				op.documents = all[i:l]
-				_, err := c.writeOpCommand(socket, safeOp, op, ordered)
+				lerr, err := c.writeOpCommand(socket, safeOp, op, ordered)
 				if err != nil {
-					if op.flags&1 != 0 {
-						if firstErr == nil {
-							firstErr = err
-						}
-					} else {
-						return nil, err
+					errors = append(errors, lerr.errors...)
+					if op.flags&1 == 0 {
+						return &LastError{errors: errors}, err
 					}
 				}
 			}
-			return nil, firstErr
+			if len(errors) == 0 {
+				return nil, nil
+			}
+			return &LastError{errors: errors}, errors[0]
 		}
 		return c.writeOpCommand(socket, safeOp, op, ordered)
 	} else if updateOps, ok := op.(bulkUpdateOp); ok {
-		var firstErr error
+		var errors []error
 		for _, updateOp := range updateOps {
-			_, err := c.writeOpQuery(socket, safeOp, updateOp, ordered)
+			lerr, err := c.writeOpQuery(socket, safeOp, updateOp, ordered)
 			if err != nil {
-				if !ordered {
-					if firstErr == nil {
-						firstErr = err
-					}
-				} else {
-					return nil, err
+				errors = append(errors, lerr.errors...)
+				if ordered {
+					return &LastError{errors: errors}, err
 				}
 			}
 		}
-		return nil, firstErr
+		if len(errors) == 0 {
+			return nil, nil
+		}
+		return &LastError{errors: errors}, errors[0]
 	}
 	return c.writeOpQuery(socket, safeOp, op, ordered)
 }
@@ -4360,7 +4368,7 @@ func (c *Collection) writeOpCommand(socket *mongoSocket, safeOp *queryOp, op int
 		N:               result.N,
 
 		modified: result.NModified,
-		errors:   result.Errors,
+		errors:   result.QueryErrors(),
 	}
 	if len(result.Upserted) > 0 {
 		lerr.UpsertedId = result.Upserted[0].Id

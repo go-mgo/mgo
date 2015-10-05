@@ -187,6 +187,11 @@ func (b *Bulk) Upsert(pairs ...interface{}) {
 }
 
 // Run runs all the operations queued up.
+//
+// If an error is reported on an unordered bulk operation, the error value may
+// be an aggregation of all issues observed. As an exception to that, Insert
+// operations running on MongoDB versions prior to 2.6 will report the last
+// error only due to a limitation in the wire protocol.
 func (b *Bulk) Run() (*BulkResult, error) {
 	var result BulkResult
 	var berr bulkError
@@ -242,9 +247,7 @@ func (b *Bulk) runUpdate(action *bulkAction, result *BulkResult, berr *bulkError
 
 func (b *Bulk) checkSuccess(berr *bulkError, lerr *LastError, err error) bool {
 	if lerr != nil && len(lerr.errors) > 0 {
-		for _, e := range lerr.errors {
-			berr.errs = append(berr.errs, &QueryError{Code: e.Code, Message: e.ErrMsg})
-		}
+		berr.errs = append(berr.errs, lerr.errors...)
 		return false
 	} else if err != nil {
 		berr.errs = append(berr.errs, err)

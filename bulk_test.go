@@ -152,7 +152,14 @@ func (s *S) TestBulkError(c *C) {
 	bulk.Unordered()
 	bulk.Insert(M{"_id": "dupone"}, M{"_id": "dupone"}, M{"_id": "duptwo"}, M{"_id": "duptwo"})
 	_, err = bulk.Run()
-	c.Assert(err, ErrorMatches, "multiple errors in bulk operation:\n  - .*duplicate.*dupone.*\n  - .*duplicate.*duptwo.*\n$")
+	if s.versionAtLeast(2, 6) {
+		c.Assert(err, ErrorMatches, "multiple errors in bulk operation:\n(  - .*duplicate.*\n){2}$")
+		c.Assert(err, ErrorMatches, "(?s).*dupone.*")
+		c.Assert(err, ErrorMatches, "(?s).*duptwo.*")
+	} else {
+		// Wire protocol query doesn't return all errors.
+		c.Assert(err, ErrorMatches, ".*duplicate.*")
+	}
 	c.Assert(mgo.IsDup(err), Equals, true)
 
 	// With mixed errors, present them all.
@@ -160,7 +167,12 @@ func (s *S) TestBulkError(c *C) {
 	bulk.Unordered()
 	bulk.Insert(M{"_id": 1}, M{"_id": []int{2}})
 	_, err = bulk.Run()
-	c.Assert(err, ErrorMatches, "multiple errors in bulk operation:\n  - .*duplicate.*\n  - .*array.*\n$")
+	if s.versionAtLeast(2, 6) {
+		c.Assert(err, ErrorMatches, "multiple errors in bulk operation:\n  - .*duplicate.*\n  - .*array.*\n$")
+	} else {
+		// Wire protocol query doesn't return all errors.
+		c.Assert(err, ErrorMatches, ".*array.*")
+	}
 	c.Assert(mgo.IsDup(err), Equals, false)
 }
 
