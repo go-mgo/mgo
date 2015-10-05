@@ -1368,6 +1368,14 @@ func (s *S) TestRemovalOfClusterMember(c *C) {
 		master.Run(bson.D{{"$eval", `rs.add(` + config[hostPort(slaveAddr)] + `)`}}, nil)
 		master.Close()
 		slave.Close()
+
+		// Ensure suite syncs up with the changes before next test.
+		s.Stop(":40201")
+		s.StartAll()
+		time.Sleep(8 * time.Second)
+		// TODO Find a better way to find out when mongos is fully aware that all
+		// servers are up. Without that follow up tests that depend on mongos will
+		// break due to their expectation of things being in a working state.
 	}()
 
 	c.Logf("========== Removing slave: %s ==========", slaveAddr)
