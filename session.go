@@ -371,6 +371,8 @@ type DialInfo struct {
 	Dial func(addr net.Addr) (net.Conn, error)
 }
 
+// mgo.v3: Drop DialInfo.Dial.
+
 // ServerAddr represents the address for establishing a connection to an
 // individual MongoDB server.
 type ServerAddr struct {
@@ -1027,6 +1029,8 @@ type Index struct {
 	// that document. The default field weight is 1.
 	Weights map[string]int
 }
+
+// mgo.v3: Drop Minf and Maxf and transform Min and Max to floats.
 
 type indexKeyInfo struct {
 	name    string
@@ -2267,6 +2271,8 @@ func (p *Pipe) Batch(n int) *Pipe {
 	p.batchSize = n
 	return p
 }
+
+// mgo.v3: Use a single user-visible error type.
 
 type LastError struct {
 	Err             string
