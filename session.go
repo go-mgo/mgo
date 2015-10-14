@@ -63,6 +63,8 @@ const (
 	Strong    Mode = 2 // Same as Primary.
 )
 
+// mgo.v3: Drop Strong mode, suffix all modes with "Mode".
+
 // When changing the Session type, check if newSession and copySession
 // need to be updated too.
 
@@ -315,7 +317,7 @@ type DialInfo struct {
 	// Timeout is the amount of time to wait for a server to respond when
 	// first connecting and on follow up operations in the session. If
 	// timeout is zero, the call may block forever waiting for a connection
-	// to be established.
+	// to be established. Timeout does not affect logic in DialServer.
 	Timeout time.Duration
 
 	// FailFast will cause connection and query attempts to fail faster when
@@ -1031,6 +1033,7 @@ type Index struct {
 }
 
 // mgo.v3: Drop Minf and Maxf and transform Min and Max to floats.
+// mgo.v3: Drop DropDups as it's unsupported past 2.8.
 
 type indexKeyInfo struct {
 	name    string
@@ -1716,8 +1719,8 @@ type Safe struct {
 	W        int    // Min # of servers to ack before success
 	WMode    string // Write mode for MongoDB 2.0+ (e.g. "majority")
 	WTimeout int    // Milliseconds to wait for W before timing out
-	FSync    bool   // Should servers sync to disk before returning success
-	J        bool   // Wait for next group commit if journaling; no effect otherwise
+	FSync    bool   // Sync via the journal if present, or via data files sync otherwise
+	J        bool   // Sync via the journal if present
 }
 
 // Safe returns the current safety mode for the session.
@@ -1761,11 +1764,19 @@ func (s *Session) Safe() (safe *Safe) {
 // the links below for more details (note that MongoDB internally reuses the
 // "w" field name for WMode).
 //
-// If safe.FSync is true and journaling is disabled, the servers will be
-// forced to sync all files to disk immediately before returning. If the
-// same option is true but journaling is enabled, the server will instead
-// await for the next group commit before returning.
+// If safe.J is true, servers will block until write operations have been
+// committed to the journal. Cannot be used in combination with FSync. Prior
+// to MongoDB 2.6 this option was ignored if the server was running without
+// journaling. Starting with MongoDB 2.6 write operations will fail with an
+// exception if this option is used when the server is running without
+// journaling.
 //
+// If safe.FSync is true and the server is running without journaling, blocks
+// until the server has synced all data files to disk. If the server is running
+// with journaling, this acts the same as the J option, blocking until write
+// operations have been committed to the journal. Cannot be used in
+// combination with J.
+// 
 // Since MongoDB 2.0.0, the safe.J option can also be used instead of FSync
 // to force the server to wait for a group commit in case journaling is
 // enabled. The option has no effect if the server has journaling disabled.
