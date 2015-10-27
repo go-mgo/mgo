@@ -94,27 +94,23 @@ type queryWrapper struct {
 }
 
 func (op *queryOp) finalQuery(socket *mongoSocket) interface{} {
-	if socket.ServerInfo().Mongos {
+	if op.flags&flagSlaveOk != 0 && socket.ServerInfo().Mongos {
 		var modeName string
-		if op.flags&flagSlaveOk == 0 {
+		switch op.mode {
+		case Strong:
 			modeName = "primary"
-		} else {
-			switch op.mode {
-			case Strong:
-				modeName = "primary"
-			case Monotonic, Eventual:
-				modeName = "secondaryPreferred"
-			case PrimaryPreferred:
-				modeName = "primaryPreferred"
-			case Secondary:
-				modeName = "secondary"
-			case SecondaryPreferred:
-				modeName = "secondaryPreferred"
-			case Nearest:
-				modeName = "nearest"
-			default:
-				panic(fmt.Sprintf("unsupported read mode: %d", op.mode))
-			}
+		case Monotonic, Eventual:
+			modeName = "secondaryPreferred"
+		case PrimaryPreferred:
+			modeName = "primaryPreferred"
+		case Secondary:
+			modeName = "secondary"
+		case SecondaryPreferred:
+			modeName = "secondaryPreferred"
+		case Nearest:
+			modeName = "nearest"
+		default:
+			panic(fmt.Sprintf("unsupported read mode: %d", op.mode))
 		}
 		op.hasOptions = true
 		op.options.ReadPreference = make(bson.D, 0, 2)
