@@ -1623,6 +1623,28 @@ func (s *S) TestSpecTests(c *C) {
 	}
 }
 
+func (s *S) TestUnmarshalBinFromRecycledBuffer(c *C) {
+	var testValues = []bson.M{
+		{"_": bson.Binary{0x80, []byte("apples")}},
+		{"_": bson.Binary{0x80, []byte("bananas")}},
+		{"_": bson.Binary{0x80, []byte("cherries")}},
+	}
+	var testResults = []bson.M{}
+	buf := make([]byte, 1024, 1024)
+	for _, tv := range testValues {
+		// the marshaling here is not intrinsic to what we're testing here,
+		// it's just a way to create data to unmarshal
+		data, err := bson.Marshal(&tv)
+		c.Assert(err, IsNil)
+		copy(buf, data)
+		var v bson.M
+		err = bson.Unmarshal(buf, &v)
+		c.Assert(err, IsNil)
+		testResults = append(testResults, v)
+	}
+	c.Assert(testResults, DeepEquals, testValues)
+}
+
 // --------------------------------------------------------------------------
 // Some simple benchmarks.
 
