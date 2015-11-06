@@ -59,18 +59,21 @@ func (e *bulkError) Error() string {
 	if len(e.errs) == 1 {
 		return e.errs[0].Error()
 	}
-	msgs := make(map[string]bool)
+	msgs := make([]string, 0, len(e.errs))
+	seen := make(map[string]bool)
 	for _, err := range e.errs {
-		msgs[err.Error()] = true
+		msg := err.Error()
+		if !seen[msg] {
+			seen[msg] = true
+			msgs = append(msgs, msg)
+		}
 	}
 	if len(msgs) == 1 {
-		for msg := range msgs {
-			return msg
-		}
+		return msgs[0]
 	}
 	var buf bytes.Buffer
 	buf.WriteString("multiple errors in bulk operation:\n")
-	for msg := range msgs {
+	for _, msg := range msgs {
 		buf.WriteString("  - ")
 		buf.WriteString(msg)
 		buf.WriteByte('\n')
