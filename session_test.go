@@ -2789,6 +2789,9 @@ func (s *S) TestEnsureIndex(c *C) {
 			delete(test.expected, "dropDups")
 			test.index.DropDups = false
 		}
+		if s.versionAtLeast(3, 2) && test.expected["textIndexVersion"] != nil {
+			test.expected["textIndexVersion"] = 3
+		}
 
 		c.Assert(obtained, DeepEquals, test.expected)
 
