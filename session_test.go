@@ -3474,7 +3474,13 @@ func (s *S) TestBuildInfo(c *C) {
 
 	c.Assert(info.VersionArray, DeepEquals, v)
 	c.Assert(info.GitVersion, Matches, "[a-z0-9]+")
-	c.Assert(info.SysInfo, Matches, ".*[0-9:]+.*")
+
+	if s.versionAtLeast(3, 2) {
+		// It was deprecated in 3.2.
+		c.Assert(info.SysInfo, Equals, "")
+	} else {
+		c.Assert(info.SysInfo, Matches, ".*[0-9:]+.*")
+	}
 	if info.Bits != 32 && info.Bits != 64 {
 		c.Fatalf("info.Bits is %d", info.Bits)
 	}

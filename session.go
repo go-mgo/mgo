@@ -4022,7 +4022,7 @@ type BuildInfo struct {
 	VersionArray   []int  `bson:"versionArray"` // On MongoDB 2.0+; assembled from Version otherwise
 	GitVersion     string `bson:"gitVersion"`
 	OpenSSLVersion string `bson:"OpenSSLVersion"`
-	SysInfo        string `bson:"sysInfo"`
+	SysInfo        string `bson:"sysInfo"`      // Deprecated and empty on MongoDB 3.2+.
 	Bits           int
 	Debug          bool
 	MaxObjectSize  int `bson:"maxBsonObjectSize"`
@@ -4063,6 +4063,9 @@ func (s *Session) BuildInfo() (info BuildInfo, err error) {
 		// Strip off the " modules: enterprise" suffix. This is a _git version_.
 		// That information may be moved to another field if people need it.
 		info.GitVersion = info.GitVersion[:i]
+	}
+	if info.SysInfo == "deprecated" {
+		info.SysInfo = ""
 	}
 	return
 }
