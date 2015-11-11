@@ -2191,6 +2191,10 @@ func (s *S) TestFindForResetsResult(c *C) {
 }
 
 func (s *S) TestFindIterSnapshot(c *C) {
+	if s.versionAtLeast(3, 2) {
+		c.Skip("Broken in 3.2: https://jira.mongodb.org/browse/SERVER-21403")
+	}
+
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
