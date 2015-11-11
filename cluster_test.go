@@ -1240,25 +1240,25 @@ func (s *S) TestFailFast(c *C) {
 	c.Assert(started.After(time.Now().Add(-time.Second)), Equals, true)
 }
 
-type OpCounters struct {
-	Insert  int
-	Query   int
-	Update  int
-	Delete  int
-	GetMore int
-	Command int
-}
-
-func getOpCounters(server string) (c *OpCounters, err error) {
+func (s *S) countQueries(c *C, server string) int {
 	session, err := mgo.Dial(server + "?connect=direct")
-	if err != nil {
-		return nil, err
-	}
+	c.Assert(err, IsNil)
 	defer session.Close()
 	session.SetMode(mgo.Monotonic, true)
-	result := struct{ OpCounters }{}
+	var result struct {
+		OpCounters struct {
+			Query int
+		}
+		Metrics struct {
+			Commands struct{ Find struct{ Total int } }
+		}
+	}
 	err = session.Run("serverStatus", &result)
-	return &result.OpCounters, err
+	c.Assert(err, IsNil)
+	if s.versionAtLeast(3, 2) {
+		return result.Metrics.Commands.Find.Total
+	}
+	return result.OpCounters.Query
 }
 
 func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
@@ -1277,13 +1277,33 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 	master := ssresult.Host
 	c.Assert(imresult.IsMaster, Equals, true, Commentf("%s is not the master", master))
 
+	// Insert some data as otherwise 3.2+ won't run the query at all.
+	err = session.DB("mydb").C("mycoll").Insert(bson.M{"n": 1})
+	c.Assert(err, IsNil)
+
+	// Wait until all servers see the data.
+	for _, addr := range []string{"localhost:40021", "localhost:40022", "localhost:40023"} {
+		session, err := mgo.Dial(addr + "?connect=direct")
+		c.Assert(err, IsNil)
+		defer session.Close()
+		session.SetMode(mgo.Monotonic, true)
+		for i := 300; i >= 0; i-- {
+			n, err := session.DB("mydb").C("mycoll").Find(nil).Count()
+			c.Assert(err, IsNil)
+			if n == 1 {
+				break
+			}
+			if i == 0 {
+				c.Fatalf("Inserted data never reached " + addr)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
 	// Collect op counters for everyone.
-	opc21a, err := getOpCounters("localhost:40021")
-	c.Assert(err, IsNil)
-	opc22a, err := getOpCounters("localhost:40022")
-	c.Assert(err, IsNil)
-	opc23a, err := getOpCounters("localhost:40023")
-	c.Assert(err, IsNil)
+	q21a := s.countQueries(c, "localhost:40021")
+	q22a := s.countQueries(c, "localhost:40022")
+	q23a := s.countQueries(c, "localhost:40023")
 
 	// Do a SlaveOk query through MongoS
 
@@ -1294,31 +1314,29 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 	mongos.SetMode(mgo.Monotonic, true)
 
 	coll := mongos.DB("mydb").C("mycoll")
-	result := &struct{}{}
+	var result struct{ N int }
 	for i := 0; i != 5; i++ {
-		err := coll.Find(nil).One(result)
-		c.Assert(err, Equals, mgo.ErrNotFound)
+		err := coll.Find(nil).One(&result)
+		c.Assert(err, IsNil)
+		c.Assert(result.N, Equals, 1)
 	}
 
 	// Collect op counters for everyone again.
-	opc21b, err := getOpCounters("localhost:40021")
-	c.Assert(err, IsNil)
-	opc22b, err := getOpCounters("localhost:40022")
-	c.Assert(err, IsNil)
-	opc23b, err := getOpCounters("localhost:40023")
-	c.Assert(err, IsNil)
+	q21b := s.countQueries(c, "localhost:40021")
+	q22b := s.countQueries(c, "localhost:40022")
+	q23b := s.countQueries(c, "localhost:40023")
 
 	var masterDelta, slaveDelta int
 	switch hostPort(master) {
 	case "40021":
-		masterDelta = opc21b.Query - opc21a.Query
-		slaveDelta = (opc22b.Query - opc22a.Query) + (opc23b.Query - opc23a.Query)
+		masterDelta = q21b - q21a
+		slaveDelta = (q22b - q22a) + (q23b - q23a)
 	case "40022":
-		masterDelta = opc22b.Query - opc22a.Query
-		slaveDelta = (opc21b.Query - opc21a.Query) + (opc23b.Query - opc23a.Query)
+		masterDelta = q22b - q22a
+		slaveDelta = (q21b - q21a) + (q23b - q23a)
 	case "40023":
-		masterDelta = opc23b.Query - opc23a.Query
-		slaveDelta = (opc21b.Query - opc21a.Query) + (opc22b.Query - opc22a.Query)
+		masterDelta = q23b - q23a
+		slaveDelta = (q21b - q21a) + (q22b - q22a)
 	default:
 		c.Fatal("Uh?")
 	}
@@ -1857,12 +1875,9 @@ func (s *S) TestSelectServersWithMongos(c *C) {
 	}
 
 	// Collect op counters for everyone.
-	opc21a, err := getOpCounters("localhost:40021")
-	c.Assert(err, IsNil)
-	opc22a, err := getOpCounters("localhost:40022")
-	c.Assert(err, IsNil)
-	opc23a, err := getOpCounters("localhost:40023")
-	c.Assert(err, IsNil)
+	q21a := s.countQueries(c, "localhost:40021")
+	q22a := s.countQueries(c, "localhost:40022")
+	q23a := s.countQueries(c, "localhost:40023")
 
 	// Do a SlaveOk query through MongoS
 	mongos, err := mgo.Dial("localhost:40202")
@@ -1889,26 +1904,23 @@ func (s *S) TestSelectServersWithMongos(c *C) {
 	}
 
 	// Collect op counters for everyone again.
-	opc21b, err := getOpCounters("localhost:40021")
-	c.Assert(err, IsNil)
-	opc22b, err := getOpCounters("localhost:40022")
-	c.Assert(err, IsNil)
-	opc23b, err := getOpCounters("localhost:40023")
-	c.Assert(err, IsNil)
+	q21b := s.countQueries(c, "localhost:40021")
+	q22b := s.countQueries(c, "localhost:40022")
+	q23b := s.countQueries(c, "localhost:40023")
 
 	switch hostPort(master) {
 	case "40021":
-		c.Check(opc21b.Query-opc21a.Query, Equals, 0)
-		c.Check(opc22b.Query-opc22a.Query, Equals, 5)
-		c.Check(opc23b.Query-opc23a.Query, Equals, 7)
+		c.Check(q21b-q21a, Equals, 0)
+		c.Check(q22b-q22a, Equals, 5)
+		c.Check(q23b-q23a, Equals, 7)
 	case "40022":
-		c.Check(opc21b.Query-opc21a.Query, Equals, 5)
-		c.Check(opc22b.Query-opc22a.Query, Equals, 0)
-		c.Check(opc23b.Query-opc23a.Query, Equals, 7)
+		c.Check(q21b-q21a, Equals, 5)
+		c.Check(q22b-q22a, Equals, 0)
+		c.Check(q23b-q23a, Equals, 7)
 	case "40023":
-		c.Check(opc21b.Query-opc21a.Query, Equals, 5)
-		c.Check(opc22b.Query-opc22a.Query, Equals, 7)
-		c.Check(opc23b.Query-opc23a.Query, Equals, 0)
+		c.Check(q21b-q21a, Equals, 5)
+		c.Check(q22b-q22a, Equals, 7)
+		c.Check(q23b-q23a, Equals, 0)
 	default:
 		c.Fatal("Uh?")
 	}
