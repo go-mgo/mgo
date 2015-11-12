@@ -1664,7 +1664,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 
 	mgo.ResetStats()
 
-	timeout := 3 * time.Second
+	timeout := 3500 * time.Millisecond
 
 	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2)
 	iter := query.Tail(timeout)
@@ -1686,38 +1686,33 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	mgo.ResetStats()
 
 	// The following call to Next will block.
+	done := make(chan bool)
+	defer func() { <-done }()
 	go func() {
 		// The internal AwaitData timing of MongoDB is around 2 seconds,
 		// so this should force mgo to sleep at least once by itself to
 		// respect the requested timeout.
-		time.Sleep(timeout + 5e8*time.Nanosecond)
+		c.Logf("[GOROUTINE] Starting and sleeping...")
+		time.Sleep(timeout - 800*time.Millisecond)
+		c.Logf("[GOROUTINE] Woke up...")
 		session := session.New()
-		defer session.Close()
-		coll := session.DB("mydb").C("mycoll")
-		coll.Insert(M{"n": 47})
+		c.Logf("[GOROUTINE] Session created and will insert...")
+		err := coll.Insert(M{"n": 47})
+		c.Logf("[GOROUTINE] Insert attempted, err=%v...", err)
+		session.Close()
+		c.Logf("[GOROUTINE] Session closed.")
+		c.Check(err, IsNil)
+		done <- true
 	}()
 
 	c.Log("Will wait for Next with N=47...")
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, true)
+
 	c.Assert(iter.Err(), IsNil)
 	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 47)
 	c.Log("Got Next with N=47!")
-
-	// The following may break because it depends a bit on the internal
-	// timing used by MongoDB's AwaitData logic.  If it does, the problem
-	// will be observed as more GET_MORE_OPs than predicted:
-	// 1*QUERY for nonce + 1*GET_MORE_OP on Next + 1*GET_MORE_OP on Next after sleep +
-	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
-	stats := mgo.GetStats()
-	if s.versionAtLeast(2, 6) {
-		c.Assert(stats.SentOps, Equals, 4)
-	} else {
-		c.Assert(stats.SentOps, Equals, 5)
-	}
-	c.Assert(stats.ReceivedOps, Equals, 4)  // REPLY_OPs for 1*QUERY_OP for nonce + 2*GET_MORE_OPs + 1*QUERY_OP
-	c.Assert(stats.ReceivedDocs, Equals, 3) // nonce + N=47 result + getLastError response
 
 	c.Log("Will wait for a result which will never come...")
 
@@ -1897,20 +1892,6 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 47)
 	c.Log("Got Next with N=47!")
-
-	// The following may break because it depends a bit on the internal
-	// timing used by MongoDB's AwaitData logic.  If it does, the problem
-	// will be observed as more GET_MORE_OPs than predicted:
-	// 1*QUERY_OP for nonce + 1*GET_MORE_OP on Next +
-	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
-	stats := mgo.GetStats()
-	if s.versionAtLeast(2, 6) {
-		c.Assert(stats.SentOps, Equals, 3)
-	} else {
-		c.Assert(stats.SentOps, Equals, 4)
-	}
-	c.Assert(stats.ReceivedOps, Equals, 3)  // REPLY_OPs for 1*QUERY_OP for nonce + 1*GET_MORE_OPs and 1*QUERY_OP
-	c.Assert(stats.ReceivedDocs, Equals, 3) // nonce + N=47 result + getLastError response
 
 	c.Log("Will wait for a result which will never come...")
 

@@ -877,9 +877,9 @@ func (s *S) TestPreserveSocketCountOnSync(c *C) {
 	defer session.Close()
 
 	stats := mgo.GetStats()
-	for stats.MasterConns+stats.SlaveConns != 3 {
+	for stats.SocketsAlive != 3 {
+		c.Logf("Waiting for all connections to be established (sockets alive currently %d)...", stats.SocketsAlive)
 		stats = mgo.GetStats()
-		c.Log("Waiting for all connections to be established...")
 		time.Sleep(5e8)
 	}
 
@@ -1240,7 +1240,8 @@ func (s *S) TestFailFast(c *C) {
 	c.Assert(started.After(time.Now().Add(-time.Second)), Equals, true)
 }
 
-func (s *S) countQueries(c *C, server string) int {
+func (s *S) countQueries(c *C, server string) (n int) {
+	defer func() { c.Logf("Queries for %q: %d", server, n) }()
 	session, err := mgo.Dial(server + "?connect=direct")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -1277,8 +1278,16 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 	master := ssresult.Host
 	c.Assert(imresult.IsMaster, Equals, true, Commentf("%s is not the master", master))
 
-	// Insert some data as otherwise 3.2+ won't run the query at all.
-	err = session.DB("mydb").C("mycoll").Insert(bson.M{"n": 1})
+	// Ensure mongos is aware about the current topology.
+	s.Stop(":40201")
+	s.StartAll()
+
+	mongos, err := mgo.Dial("localhost:40202")
+	c.Assert(err, IsNil)
+	defer mongos.Close()
+
+	// Insert some data as otherwise 3.2+ doesn't seem to run the query at all.
+	err = mongos.DB("mydb").C("mycoll").Insert(bson.M{"n": 1})
 	c.Assert(err, IsNil)
 
 	// Wait until all servers see the data.
@@ -1307,16 +1316,12 @@ func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 
 	// Do a SlaveOk query through MongoS
 
-	mongos, err := mgo.Dial("localhost:40202")
-	c.Assert(err, IsNil)
-	defer mongos.Close()
-
 	mongos.SetMode(mgo.Monotonic, true)
 
 	coll := mongos.DB("mydb").C("mycoll")
 	var result struct{ N int }
 	for i := 0; i != 5; i++ {
-		err := coll.Find(nil).One(&result)
+		err = coll.Find(nil).One(&result)
 		c.Assert(err, IsNil)
 		c.Assert(result.N, Equals, 1)
 	}
@@ -1473,12 +1478,11 @@ func (s *S) TestPoolLimitMany(c *C) {
 	defer session.Close()
 
 	stats := mgo.GetStats()
-	for stats.MasterConns+stats.SlaveConns != 3 {
+	for stats.SocketsAlive != 3 {
+		c.Logf("Waiting for all connections to be established (sockets alive currently %d)...", stats.SocketsAlive)
 		stats = mgo.GetStats()
-		c.Log("Waiting for all connections to be established...")
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(5e8)
 	}
-	c.Assert(stats.SocketsAlive, Equals, 3)
 
 	const poolLimit = 64
 	session.SetPoolLimit(poolLimit)
