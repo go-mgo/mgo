@@ -3840,6 +3840,53 @@ func (s *S) TestNewIterNoServerPresetErr(c *C) {
 	c.Assert(iter.Err(), ErrorMatches, "my error")
 }
 
+func (s *S) TestBypassValidation(c *C) {
+	if !s.versionAtLeast(3, 2) {
+		c.Skip("validation supported on 3.2+")
+	}
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+
+	err = coll.Database.Run(bson.D{
+		{"collMod", "mycoll"},
+		{"validator", M{"s": M{"$type": "string"}}},
+	}, nil)
+	c.Assert(err, IsNil)
+
+	err = coll.Insert(M{"n": 2})
+	c.Assert(err, ErrorMatches, "Document failed validation")
+
+	err = coll.Update(M{"n": 1}, M{"n": 10})
+	c.Assert(err, ErrorMatches, "Document failed validation")
+
+	session.SetBypassValidation(true)
+
+	err = coll.Insert(M{"n": 3})
+	c.Assert(err, IsNil)
+
+	err = coll.Update(M{"n": 3}, M{"n": 4})
+	c.Assert(err, IsNil)
+
+	// Ensure this still works. Shouldn't be affected.
+	err = coll.Remove(M{"n": 1})
+	c.Assert(err, IsNil)
+
+	var result struct{ N int }
+	var ns []int
+	iter := coll.Find(nil).Iter()
+	for iter.Next(&result) {
+		ns = append(ns, result.N)
+	}
+	c.Assert(iter.Err(), IsNil)
+	sort.Ints(ns)
+	c.Assert(ns, DeepEquals, []int{4})
+}
+
 // --------------------------------------------------------------------------
 // Some benchmarks that require a running database.
 

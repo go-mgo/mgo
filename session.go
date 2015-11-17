@@ -75,21 +75,22 @@ const (
 // multiple goroutines will cause them to share the same underlying socket.
 // See the documentation on Session.SetMode for more details.
 type Session struct {
-	m            sync.RWMutex
-	cluster_     *mongoCluster
-	slaveSocket  *mongoSocket
-	masterSocket *mongoSocket
-	slaveOk      bool
-	consistency  Mode
-	queryConfig  query
-	safeOp       *queryOp
-	syncTimeout  time.Duration
-	sockTimeout  time.Duration
-	defaultdb    string
-	sourcedb     string
-	dialCred     *Credential
-	creds        []Credential
-	poolLimit    int
+	m                sync.RWMutex
+	cluster_         *mongoCluster
+	slaveSocket      *mongoSocket
+	masterSocket     *mongoSocket
+	slaveOk          bool
+	consistency      Mode
+	queryConfig      query
+	safeOp           *queryOp
+	syncTimeout      time.Duration
+	sockTimeout      time.Duration
+	defaultdb        string
+	sourcedb         string
+	dialCred         *Credential
+	creds            []Credential
+	poolLimit        int
+	bypassValidation bool
 }
 
 type Database struct {
@@ -1678,6 +1679,24 @@ func (s *Session) SetPoolLimit(limit int) {
 	s.m.Unlock()
 }
 
+// SetBypassValidation sets whether the server should bypass the registered
+// validation expressions executed when documents are inserted or modified,
+// in the interest of preserving properties for documents in the collection
+// being modfified. The default is to not bypass, and thus to perform the
+// validation expressions registered for modified collections. 
+//
+// Document validation was introuced in MongoDB 3.2.
+//
+// Relevant documentation:
+//
+//   https://docs.mongodb.org/manual/release-notes/3.2/#bypass-validation
+//
+func (s *Session) SetBypassValidation(bypass bool) {
+	s.m.Lock()
+	s.bypassValidation = bypass
+	s.m.Unlock()
+}
+
 // SetBatch sets the default batch size used when fetching documents from the
 // database. It's possible to change this setting on a per-query basis as
 // well, using the Query.Batch method.
@@ -1776,7 +1795,7 @@ func (s *Session) Safe() (safe *Safe) {
 // with journaling, this acts the same as the J option, blocking until write
 // operations have been committed to the journal. Cannot be used in
 // combination with J.
-// 
+//
 // Since MongoDB 2.0.0, the safe.J option can also be used instead of FSync
 // to force the server to wait for a group commit in case journaling is
 // enabled. The option has no effect if the server has journaling disabled.
@@ -4022,7 +4041,7 @@ type BuildInfo struct {
 	VersionArray   []int  `bson:"versionArray"` // On MongoDB 2.0+; assembled from Version otherwise
 	GitVersion     string `bson:"gitVersion"`
 	OpenSSLVersion string `bson:"OpenSSLVersion"`
-	SysInfo        string `bson:"sysInfo"`      // Deprecated and empty on MongoDB 3.2+.
+	SysInfo        string `bson:"sysInfo"` // Deprecated and empty on MongoDB 3.2+.
 	Bits           int
 	Debug          bool
 	MaxObjectSize  int `bson:"maxBsonObjectSize"`
@@ -4248,6 +4267,7 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 
 	s.m.RLock()
 	safeOp := s.safeOp
+	bypassValidation := s.bypassValidation
 	s.m.RUnlock()
 
 	if socket.ServerInfo().MaxWireVersion >= 2 {
@@ -4262,7 +4282,7 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 					l = len(all)
 				}
 				op.documents = all[i:l]
-				lerr, err := c.writeOpCommand(socket, safeOp, op, ordered)
+				lerr, err := c.writeOpCommand(socket, safeOp, op, ordered, bypassValidation)
 				if err != nil {
 					errors = append(errors, lerr.errors...)
 					if op.flags&1 == 0 {
@@ -4275,7 +4295,7 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 			}
 			return &LastError{errors: errors}, errors[0]
 		}
-		return c.writeOpCommand(socket, safeOp, op, ordered)
+		return c.writeOpCommand(socket, safeOp, op, ordered, bypassValidation)
 	} else if updateOps, ok := op.(bulkUpdateOp); ok {
 		var errors []error
 		for _, updateOp := range updateOps {
@@ -4335,7 +4355,7 @@ func (c *Collection) writeOpQuery(socket *mongoSocket, safeOp *queryOp, op inter
 	return result, nil
 }
 
-func (c *Collection) writeOpCommand(socket *mongoSocket, safeOp *queryOp, op interface{}, ordered bool) (lerr *LastError, err error) {
+func (c *Collection) writeOpCommand(socket *mongoSocket, safeOp *queryOp, op interface{}, ordered, bypassValidation bool) (lerr *LastError, err error) {
 	var writeConcern interface{}
 	if safeOp == nil {
 		writeConcern = bson.D{{"w", 0}}
@@ -4381,6 +4401,9 @@ func (c *Collection) writeOpCommand(socket *mongoSocket, safeOp *queryOp, op int
 			{"writeConcern", writeConcern},
 			//{"ordered", <bool>},
 		}
+	}
+	if bypassValidation {
+		cmd = append(cmd, bson.DocElem{"bypassDocumentValidation", true})
 	}
 
 	var result writeCmdResult
