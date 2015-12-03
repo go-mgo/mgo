@@ -2499,7 +2499,10 @@ func (c *Collection) UpsertId(id interface{}, update interface{}) (info *ChangeI
 //     http://www.mongodb.org/display/DOCS/Removing
 //
 func (c *Collection) Remove(selector interface{}) error {
-	lerr, err := c.writeOp(&deleteOp{c.FullName, selector, 1}, true)
+	if selector == nil {
+		selector = bson.D{}
+	}
+	lerr, err := c.writeOp(&deleteOp{c.FullName, selector, 1, 1}, true)
 	if err == nil && lerr != nil && lerr.N == 0 {
 		return ErrNotFound
 	}
@@ -2525,7 +2528,10 @@ func (c *Collection) RemoveId(id interface{}) error {
 //     http://www.mongodb.org/display/DOCS/Removing
 //
 func (c *Collection) RemoveAll(selector interface{}) (info *ChangeInfo, err error) {
-	lerr, err := c.writeOp(&deleteOp{c.FullName, selector, 0}, true)
+	if selector == nil {
+		selector = bson.D{}
+	}
+	lerr, err := c.writeOp(&deleteOp{c.FullName, selector, 0, 0}, true)
 	if err == nil && lerr != nil {
 		info = &ChangeInfo{Removed: lerr.N}
 	}
@@ -4297,20 +4303,39 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 		}
 		return c.writeOpCommand(socket, safeOp, op, ordered, bypassValidation)
 	} else if updateOps, ok := op.(bulkUpdateOp); ok {
-		var errors []error
+		var lerr LastError
 		for _, updateOp := range updateOps {
-			lerr, err := c.writeOpQuery(socket, safeOp, updateOp, ordered)
+			oplerr, err := c.writeOpQuery(socket, safeOp, updateOp, ordered)
 			if err != nil {
-				errors = append(errors, lerr.errors...)
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
+				lerr.errors = append(lerr.errors, oplerr.errors...)
 				if ordered {
-					return &LastError{errors: errors}, err
+					break
 				}
 			}
 		}
-		if len(errors) == 0 {
+		if len(lerr.errors) == 0 {
 			return nil, nil
 		}
-		return &LastError{errors: errors}, errors[0]
+		return &lerr, lerr.errors[0]
+	} else if deleteOps, ok := op.(bulkDeleteOp); ok {
+		var lerr LastError
+		for _, deleteOp := range deleteOps {
+			oplerr, err := c.writeOpQuery(socket, safeOp, deleteOp, ordered)
+			if err != nil {
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
+				lerr.errors = append(lerr.errors, oplerr.errors...)
+				if ordered {
+					break
+				}
+			}
+		}
+		if len(lerr.errors) == 0 {
+			return nil, nil
+		}
+		return &lerr, lerr.errors[0]
 	}
 	return c.writeOpQuery(socket, safeOp, op, ordered)
 }
@@ -4391,15 +4416,19 @@ func (c *Collection) writeOpCommand(socket *mongoSocket, safeOp *queryOp, op int
 		}
 	case *deleteOp:
 		// http://docs.mongodb.org/manual/reference/command/delete
-		selector := op.selector
-		if selector == nil {
-			selector = bson.D{}
-		}
 		cmd = bson.D{
 			{"delete", c.Name},
-			{"deletes", []bson.D{{{"q", selector}, {"limit", op.flags & 1}}}},
+			{"deletes", []interface{}{op}},
 			{"writeConcern", writeConcern},
-			//{"ordered", <bool>},
+			{"ordered", ordered},
+		}
+	case bulkDeleteOp:
+		// http://docs.mongodb.org/manual/reference/command/delete
+		cmd = bson.D{
+			{"delete", c.Name},
+			{"deletes", op},
+			{"writeConcern", writeConcern},
+			{"ordered", ordered},
 		}
 	}
 	if bypassValidation {

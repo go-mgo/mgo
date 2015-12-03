@@ -342,3 +342,52 @@ func (s *S) TestBulkUpsert(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(res, DeepEquals, []doc{{1}, {20}, {30}, {40}})
 }
+
+func (s *S) TestBulkRemove(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"n": 1}, M{"n": 2}, M{"n": 3}, M{"n": 4}, M{"n": 4})
+	c.Assert(err, IsNil)
+
+	bulk := coll.Bulk()
+	bulk.Remove(M{"n": 1})
+	bulk.Remove(M{"n": 2}, M{"n": 4})
+	r, err := bulk.Run()
+	c.Assert(err, IsNil)
+	c.Assert(r.Matched, Equals, 3)
+
+	type doc struct{ N int }
+	var res []doc
+	err = coll.Find(nil).Sort("n").All(&res)
+	c.Assert(err, IsNil)
+	c.Assert(res, DeepEquals, []doc{{3}, {4}})
+}
+
+func (s *S) TestBulkRemoveAll(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"n": 1}, M{"n": 2}, M{"n": 3}, M{"n": 4}, M{"n": 4})
+	c.Assert(err, IsNil)
+
+	bulk := coll.Bulk()
+	bulk.RemoveAll(M{"n": 1})
+	bulk.RemoveAll(M{"n": 2}, M{"n": 4})
+	r, err := bulk.Run()
+	c.Assert(err, IsNil)
+	c.Assert(r.Matched, Equals, 4)
+
+	type doc struct{ N int }
+	var res []doc
+	err = coll.Find(nil).Sort("n").All(&res)
+	c.Assert(err, IsNil)
+	c.Assert(res, DeepEquals, []doc{{3}})
+}
+
