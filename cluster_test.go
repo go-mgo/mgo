@@ -1929,3 +1929,24 @@ func (s *S) TestSelectServersWithMongos(c *C) {
 		c.Fatal("Uh?")
 	}
 }
+
+func (s *S) TestConnsStatsAfterSyncServers(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	stats := mgo.GetStats()
+	c.Assert(stats.MasterConns, Equals, 1)
+	c.Assert(stats.SlaveConns, Equals, 0)
+
+	// Waiting for syncServersIteration (syncServersDelay + 1 second to be sure)
+	time.Sleep(31e9)
+
+	stats = mgo.GetStats()
+	c.Assert(stats.MasterConns, Equals, 1)
+	c.Assert(stats.SlaveConns, Equals, 0)
+}
