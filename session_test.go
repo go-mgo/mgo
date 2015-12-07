@@ -1664,7 +1664,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 
 	mgo.ResetStats()
 
-	timeout := 3500 * time.Millisecond
+	timeout := 5 * time.Second
 
 	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2)
 	iter := query.Tail(timeout)
@@ -1693,7 +1693,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 		// so this should force mgo to sleep at least once by itself to
 		// respect the requested timeout.
 		c.Logf("[GOROUTINE] Starting and sleeping...")
-		time.Sleep(timeout - 800*time.Millisecond)
+		time.Sleep(timeout - 2*time.Second)
 		c.Logf("[GOROUTINE] Woke up...")
 		session := session.New()
 		c.Logf("[GOROUTINE] Session created and will insert...")
@@ -1707,6 +1707,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 
 	c.Log("Will wait for Next with N=47...")
 	ok := iter.Next(&result)
+	c.Log("Next unblocked...")
 	c.Assert(ok, Equals, true)
 
 	c.Assert(iter.Err(), IsNil)
