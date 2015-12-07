@@ -1202,7 +1202,13 @@ func (s *S) TestQueryComment(c *C) {
 	err = query.One(nil)
 	c.Assert(err, IsNil)
 
-	n, err := session.DB("mydb").C("system.profile").Find(bson.M{"query.$query.n": 41, "query.$comment": "some comment"}).Count()
+	commentField := "query.$comment"
+	nField := "query.$query.n"
+	if s.versionAtLeast(3, 2) {
+		commentField = "query.comment"
+		nField = "query.filter.n"
+	}
+	n, err := session.DB("mydb").C("system.profile").Find(bson.M{nField: 41, commentField: "some comment"}).Count()
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, 1)
 }
@@ -1658,7 +1664,7 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 
 	mgo.ResetStats()
 
-	timeout := 3 * time.Second
+	timeout := 5 * time.Second
 
 	query := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2)
 	iter := query.Tail(timeout)
@@ -1680,38 +1686,34 @@ func (s *S) TestFindTailTimeoutWithSleep(c *C) {
 	mgo.ResetStats()
 
 	// The following call to Next will block.
+	done := make(chan bool)
+	defer func() { <-done }()
 	go func() {
 		// The internal AwaitData timing of MongoDB is around 2 seconds,
 		// so this should force mgo to sleep at least once by itself to
 		// respect the requested timeout.
-		time.Sleep(timeout + 5e8*time.Nanosecond)
+		c.Logf("[GOROUTINE] Starting and sleeping...")
+		time.Sleep(timeout - 2*time.Second)
+		c.Logf("[GOROUTINE] Woke up...")
 		session := session.New()
-		defer session.Close()
-		coll := session.DB("mydb").C("mycoll")
-		coll.Insert(M{"n": 47})
+		c.Logf("[GOROUTINE] Session created and will insert...")
+		err := coll.Insert(M{"n": 47})
+		c.Logf("[GOROUTINE] Insert attempted, err=%v...", err)
+		session.Close()
+		c.Logf("[GOROUTINE] Session closed.")
+		c.Check(err, IsNil)
+		done <- true
 	}()
 
 	c.Log("Will wait for Next with N=47...")
 	ok := iter.Next(&result)
+	c.Log("Next unblocked...")
 	c.Assert(ok, Equals, true)
+
 	c.Assert(iter.Err(), IsNil)
 	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 47)
 	c.Log("Got Next with N=47!")
-
-	// The following may break because it depends a bit on the internal
-	// timing used by MongoDB's AwaitData logic.  If it does, the problem
-	// will be observed as more GET_MORE_OPs than predicted:
-	// 1*QUERY for nonce + 1*GET_MORE_OP on Next + 1*GET_MORE_OP on Next after sleep +
-	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
-	stats := mgo.GetStats()
-	if s.versionAtLeast(2, 6) {
-		c.Assert(stats.SentOps, Equals, 4)
-	} else {
-		c.Assert(stats.SentOps, Equals, 5)
-	}
-	c.Assert(stats.ReceivedOps, Equals, 4)  // REPLY_OPs for 1*QUERY_OP for nonce + 2*GET_MORE_OPs + 1*QUERY_OP
-	c.Assert(stats.ReceivedDocs, Equals, 3) // nonce + N=47 result + getLastError response
 
 	c.Log("Will wait for a result which will never come...")
 
@@ -1891,20 +1893,6 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 47)
 	c.Log("Got Next with N=47!")
-
-	// The following may break because it depends a bit on the internal
-	// timing used by MongoDB's AwaitData logic.  If it does, the problem
-	// will be observed as more GET_MORE_OPs than predicted:
-	// 1*QUERY_OP for nonce + 1*GET_MORE_OP on Next +
-	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
-	stats := mgo.GetStats()
-	if s.versionAtLeast(2, 6) {
-		c.Assert(stats.SentOps, Equals, 3)
-	} else {
-		c.Assert(stats.SentOps, Equals, 4)
-	}
-	c.Assert(stats.ReceivedOps, Equals, 3)  // REPLY_OPs for 1*QUERY_OP for nonce + 1*GET_MORE_OPs and 1*QUERY_OP
-	c.Assert(stats.ReceivedDocs, Equals, 3) // nonce + N=47 result + getLastError response
 
 	c.Log("Will wait for a result which will never come...")
 
@@ -2185,6 +2173,10 @@ func (s *S) TestFindForResetsResult(c *C) {
 }
 
 func (s *S) TestFindIterSnapshot(c *C) {
+	if s.versionAtLeast(3, 2) {
+		c.Skip("Broken in 3.2: https://jira.mongodb.org/browse/SERVER-21403")
+	}
+
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -2788,6 +2780,9 @@ func (s *S) TestEnsureIndex(c *C) {
 			// Was deprecated in 2.6, and not being reported by 2.7+.
 			delete(test.expected, "dropDups")
 			test.index.DropDups = false
+		}
+		if s.versionAtLeast(3, 2) && test.expected["textIndexVersion"] != nil {
+			test.expected["textIndexVersion"] = 3
 		}
 
 		c.Assert(obtained, DeepEquals, test.expected)
@@ -3474,7 +3469,13 @@ func (s *S) TestBuildInfo(c *C) {
 
 	c.Assert(info.VersionArray, DeepEquals, v)
 	c.Assert(info.GitVersion, Matches, "[a-z0-9]+")
-	c.Assert(info.SysInfo, Matches, ".*[0-9:]+.*")
+
+	if s.versionAtLeast(3, 2) {
+		// It was deprecated in 3.2.
+		c.Assert(info.SysInfo, Equals, "")
+	} else {
+		c.Assert(info.SysInfo, Matches, ".*[0-9:]+.*")
+	}
 	if info.Bits != 32 && info.Bits != 64 {
 		c.Fatalf("info.Bits is %d", info.Bits)
 	}
@@ -3838,6 +3839,53 @@ func (s *S) TestNewIterNoServerPresetErr(c *C) {
 	c.Assert(ok, Equals, false)
 
 	c.Assert(iter.Err(), ErrorMatches, "my error")
+}
+
+func (s *S) TestBypassValidation(c *C) {
+	if !s.versionAtLeast(3, 2) {
+		c.Skip("validation supported on 3.2+")
+	}
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+
+	err = coll.Database.Run(bson.D{
+		{"collMod", "mycoll"},
+		{"validator", M{"s": M{"$type": "string"}}},
+	}, nil)
+	c.Assert(err, IsNil)
+
+	err = coll.Insert(M{"n": 2})
+	c.Assert(err, ErrorMatches, "Document failed validation")
+
+	err = coll.Update(M{"n": 1}, M{"n": 10})
+	c.Assert(err, ErrorMatches, "Document failed validation")
+
+	session.SetBypassValidation(true)
+
+	err = coll.Insert(M{"n": 3})
+	c.Assert(err, IsNil)
+
+	err = coll.Update(M{"n": 3}, M{"n": 4})
+	c.Assert(err, IsNil)
+
+	// Ensure this still works. Shouldn't be affected.
+	err = coll.Remove(M{"n": 1})
+	c.Assert(err, IsNil)
+
+	var result struct{ N int }
+	var ns []int
+	iter := coll.Find(nil).Iter()
+	for iter.Next(&result) {
+		ns = append(ns, result.N)
+	}
+	c.Assert(iter.Err(), IsNil)
+	sort.Ints(ns)
+	c.Assert(ns, DeepEquals, []int{4})
 }
 
 // --------------------------------------------------------------------------

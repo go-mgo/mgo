@@ -162,9 +162,10 @@ type updateOp struct {
 }
 
 type deleteOp struct {
-	collection string // "database.collection"
-	selector   interface{}
-	flags      uint32
+	Collection string      `bson:"-"` // "database.collection"
+	Selector   interface{} `bson:"q"`
+	Flags      uint32      `bson:"-"`
+	Limit      int         `bson:"limit"`
 }
 
 type killCursorsOp struct {
@@ -449,10 +450,10 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 		case *deleteOp:
 			buf = addHeader(buf, 2006)
 			buf = addInt32(buf, 0) // Reserved
-			buf = addCString(buf, op.collection)
-			buf = addInt32(buf, int32(op.flags))
-			debugf("Socket %p to %s: serializing selector document: %#v", socket, socket.addr, op.selector)
-			buf, err = addBSON(buf, op.selector)
+			buf = addCString(buf, op.Collection)
+			buf = addInt32(buf, int32(op.Flags))
+			debugf("Socket %p to %s: serializing selector document: %#v", socket, socket.addr, op.Selector)
+			buf, err = addBSON(buf, op.Selector)
 			if err != nil {
 				return err
 			}

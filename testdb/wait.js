@@ -52,7 +52,7 @@ function countHealthy(rs) {
 
 var totalRSMembers = rs1cfg.members.length + rs2cfg.members.length + rs3cfg.members.length
 
-for (var i = 0; i != 60; i++) {
+for (var i = 0; i != 90; i++) {
     var count = countHealthy(rs1a) + countHealthy(rs2a) + countHealthy(rs3a)
     print("Replica sets have", count, "healthy nodes.")
     if (count == totalRSMembers) {

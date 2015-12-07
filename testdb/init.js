@@ -58,14 +58,30 @@ function configAuth() {
         addrs.push("127.0.0.1:40003")
     }
     for (var i in addrs) {
+        print("Configuring auth for", addrs[i])
         var db = new Mongo(addrs[i]).getDB("admin")
         var v = db.serverBuildInfo().versionArray
+        var timedOut = false
         if (v < [2, 5]) {
             db.addUser("root", "rapadura")
         } else {
-            db.createUser({user: "root", pwd: "rapadura", roles: ["root"]})
+            try {
+                db.createUser({user: "root", pwd: "rapadura", roles: ["root"]})
+            } catch (err) {
+                // 3.2 consistently fails replication of creds on 40031 (config server) 
+                print("createUser command returned an error: " + err)
+                if (String(err).indexOf("timed out") >= 0) {
+                    timedOut = true;
+                }
+            }
         }
-        db.auth("root", "rapadura")
+        for (var i = 0; i < 60; i++) {
+            var ok = db.auth("root", "rapadura")
+            if (ok || !timedOut) {
+                break
+            }
+            sleep(1000);
+        }
         if (v >= [2, 6]) {
             db.createUser({user: "reader", pwd: "rapadura", roles: ["readAnyDatabase"]})
         } else if (v >= [2, 4]) {
