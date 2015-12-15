@@ -1354,6 +1354,17 @@ func (c *Collection) DropIndexName(name string) error {
 	return nil
 }
 
+// nonEventual returns a clone of session and ensures it is not Eventual.
+// This guarantees that the server that is used for queries may be reused
+// afterwards when a cursor is received.
+func (session *Session) nonEventual() *Session {
+	cloned := session.Clone()
+	if cloned.consistency == Eventual {
+		cloned.SetMode(Monotonic, false)
+	}
+	return cloned
+}
+
 // Indexes returns a list of all indexes for the collection.
 //
 // For example, this snippet would drop all available indexes:
@@ -1371,12 +1382,7 @@ func (c *Collection) DropIndexName(name string) error {
 //
 // See the EnsureIndex method for more details on indexes.
 func (c *Collection) Indexes() (indexes []Index, err error) {
-	// Clone session and set it to Monotonic mode so that the server
-	// used for the query may be safely obtained afterwards, if
-	// necessary for iteration when a cursor is received.
-	session := c.Database.Session
-	cloned := session.Clone()
-	cloned.SetMode(Monotonic, false)
+	cloned := c.Database.Session.nonEventual()
 	defer cloned.Close()
 
 	batchSize := int(cloned.queryConfig.op.limit)
@@ -2058,8 +2064,7 @@ func (c *Collection) Repair() *Iter {
 	// used for the query may be safely obtained afterwards, if
 	// necessary for iteration when a cursor is received.
 	session := c.Database.Session
-	cloned := session.Clone()
-	cloned.SetMode(Monotonic, false)
+	cloned := session.nonEventual()
 	defer cloned.Close()
 
 	batchSize := int(cloned.queryConfig.op.limit)
@@ -2143,8 +2148,7 @@ func (p *Pipe) Iter() *Iter {
 	// Clone session and set it to Monotonic mode so that the server
 	// used for the query may be safely obtained afterwards, if
 	// necessary for iteration when a cursor is received.
-	cloned := p.session.Clone()
-	cloned.SetMode(Monotonic, false)
+	cloned := p.session.nonEventual()
 	defer cloned.Close()
 	c := p.collection.With(cloned)
 
@@ -3103,9 +3107,7 @@ func (db *Database) CollectionNames() (names []string, err error) {
 	// Clone session and set it to Monotonic mode so that the server
 	// used for the query may be safely obtained afterwards, if
 	// necessary for iteration when a cursor is received.
-	session := db.Session
-	cloned := session.Clone()
-	cloned.SetMode(Monotonic, false)
+	cloned := db.Session.nonEventual()
 	defer cloned.Close()
 
 	batchSize := int(cloned.queryConfig.op.limit)
