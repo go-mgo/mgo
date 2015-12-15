@@ -461,6 +461,7 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 			case typeRawDocElem:
 				out.Set(d.readRawDocElems(outt))
 			}
+			d.readDocTo(blackHole)
 			return true
 		}
 		d.readDocTo(blackHole)
