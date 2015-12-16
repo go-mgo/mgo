@@ -1320,19 +1320,20 @@ func (s *S) TestFindIterTwiceWithSameQuery(c *C) {
 	coll := session.DB("mydb").C("mycoll")
 
 	for i := 40; i != 47; i++ {
-		coll.Insert(M{"n": i})
+		err := coll.Insert(M{"n": i})
+		c.Assert(err, IsNil)
 	}
 
 	query := coll.Find(M{}).Sort("n")
 
-	result1 := query.Skip(1).Iter()
-	result2 := query.Skip(2).Iter()
+	iter1 := query.Skip(1).Iter()
+	iter2 := query.Skip(2).Iter()
 
-	result := struct{ N int }{}
-	ok := result2.Next(&result)
+	var result struct{ N int }
+	ok := iter2.Next(&result)
 	c.Assert(ok, Equals, true)
 	c.Assert(result.N, Equals, 42)
-	ok = result1.Next(&result)
+	ok = iter1.Next(&result)
 	c.Assert(ok, Equals, true)
 	c.Assert(result.N, Equals, 41)
 }
@@ -1363,7 +1364,8 @@ func (s *S) TestFindIterLimit(c *C) {
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
-		coll.Insert(M{"n": n})
+		err := coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
 	}
 
 	session.Refresh() // Release socket.
@@ -1387,9 +1389,16 @@ func (s *S) TestFindIterLimit(c *C) {
 	session.Refresh() // Release socket.
 
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 2)     // 1*QUERY_OP + 1*KILL_CURSORS_OP
-	c.Assert(stats.ReceivedOps, Equals, 1) // and its REPLY_OP
-	c.Assert(stats.ReceivedDocs, Equals, 3)
+	if s.versionAtLeast(3, 2) {
+		// Limit works properly in 3.2+, and results are batched in single doc.
+		c.Assert(stats.SentOps, Equals, 1)     // 1*QUERY_OP
+		c.Assert(stats.ReceivedOps, Equals, 1) // and its REPLY_OP
+		c.Assert(stats.ReceivedDocs, Equals, 1)
+	} else {
+		c.Assert(stats.SentOps, Equals, 2)     // 1*QUERY_OP + 1*KILL_CURSORS_OP
+		c.Assert(stats.ReceivedOps, Equals, 1) // and its REPLY_OP
+		c.Assert(stats.ReceivedDocs, Equals, 3)
+	}
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 

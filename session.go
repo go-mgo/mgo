@@ -3007,6 +3007,7 @@ func prepareFindOp(socket *mongoSocket, op *queryOp, limit int32) bool {
 		Collection: op.collection[nameDot+1:],
 		Filter:     op.query,
 		Sort:       op.options.OrderBy,
+		Skip:       op.skip,
 		Limit:      limit,
 	}
 	if op.limit < 0 {
@@ -3018,7 +3019,10 @@ func prepareFindOp(socket *mongoSocket, op *queryOp, limit int32) bool {
 
 	op.collection = op.collection[:nameDot] + ".$cmd"
 	op.query = &find
+	op.skip = 0
 	op.limit = -1
+	op.options = queryWrapper{}
+	op.hasOptions = false
 
 	return true
 }
@@ -3058,7 +3062,7 @@ type findCmd struct {
 	Hint                interface{} `bson:"hint,omitempty"`
 	Skip                interface{} `bson:"skip,omitempty"`
 	Limit               int32       `bson:"limit,omitempty"`
-	BatchSize           interface{} `bson:"batchSize,omitempty"`
+	BatchSize           int32       `bson:"batchSize,omitempty"`
 	SingleBatch         bool        `bson:"singleBatch,omitempty"`
 	Comment             string      `bson:"comment,omitempty"`
 	MaxScan             int         `bson:"maxScan,omitempty"`
