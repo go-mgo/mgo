@@ -138,6 +138,7 @@ type Iter struct {
 	docsBeforeMore int
 	timeout        time.Duration
 	timedout       bool
+	findCmd        bool
 }
 
 var (
@@ -1390,12 +1391,7 @@ func (c *Collection) Indexes() (indexes []Index, err error) {
 	// Try with a command.
 	var result struct {
 		Indexes []bson.Raw
-
-		Cursor struct {
-			FirstBatch []bson.Raw "firstBatch"
-			NS         string
-			Id         int64
-		}
+		Cursor  cursorData
 	}
 	var iter *Iter
 	err = c.Database.With(cloned).Run(bson.D{{"listIndexes", c.Name}, {"cursor", bson.D{{"batchSize", batchSize}}}}, &result)
@@ -1687,9 +1683,9 @@ func (s *Session) SetPoolLimit(limit int) {
 
 // SetBypassValidation sets whether the server should bypass the registered
 // validation expressions executed when documents are inserted or modified,
-// in the interest of preserving properties for documents in the collection
-// being modfified. The default is to not bypass, and thus to perform the
-// validation expressions registered for modified collections. 
+// in the interest of preserving invariants in the collection being modified.
+// The default is to not bypass, and thus to perform the validation
+// expressions registered for modified collections.
 //
 // Document validation was introuced in MongoDB 3.2.
 //
@@ -2069,12 +2065,7 @@ func (c *Collection) Repair() *Iter {
 
 	batchSize := int(cloned.queryConfig.op.limit)
 
-	var result struct {
-		Cursor struct {
-			FirstBatch []bson.Raw "firstBatch"
-			Id         int64
-		}
-	}
+	var result struct{ Cursor cursorData }
 
 	cmd := repairCmd{
 		RepairCursor: c.Name,
@@ -2153,14 +2144,8 @@ func (p *Pipe) Iter() *Iter {
 	c := p.collection.With(cloned)
 
 	var result struct {
-		// 2.4, no cursors.
-		Result []bson.Raw
-
-		// 2.6+, with cursors.
-		Cursor struct {
-			FirstBatch []bson.Raw "firstBatch"
-			Id         int64
-		}
+		Result []bson.Raw // 2.4, no cursors.
+		Cursor cursorData // 2.6+, with cursors.
 	}
 
 	cmd := pipeCmd{
@@ -2980,8 +2965,11 @@ func (q *Query) One(result interface{}) (err error) {
 	}
 	defer socket.Release()
 
-	session.prepareQuery(&op)
 	op.limit = -1
+
+	session.prepareQuery(&op)
+
+	prepareFindOp(socket, &op, 1)
 
 	data, err := socket.SimpleQuery(&op)
 	if err != nil {
@@ -2991,7 +2979,7 @@ func (q *Query) One(result interface{}) (err error) {
 		return ErrNotFound
 	}
 	if result != nil {
-		err = bson.Unmarshal(data, result)
+		err = unmarshalFindOpOne(socket, data, result)
 		if err == nil {
 			debugf("Query %p document unmarshaled: %#v", q, result)
 		} else {
@@ -3000,6 +2988,105 @@ func (q *Query) One(result interface{}) (err error) {
 		}
 	}
 	return checkQueryError(op.collection, data)
+}
+
+// prepareFindOp translates op from being an old-style wire protocol query into
+// a new-style find command if that's supported by the MongoDB server (3.2+).
+// It returns whether the op was translated or not.
+func prepareFindOp(socket *mongoSocket, op *queryOp, limit int32) bool {
+	if socket.ServerInfo().MaxWireVersion < 4 {
+		return false
+	}
+
+	nameDot := strings.Index(op.collection, ".")
+	if nameDot < 0 {
+		panic("invalid query collection name: " + op.collection)
+	}
+
+	find := findCmd{
+		Collection: op.collection[nameDot+1:],
+		Filter:     op.query,
+		Sort:       op.options.OrderBy,
+		Limit:      limit,
+	}
+	if op.limit < 0 {
+		find.BatchSize = -op.limit
+		find.SingleBatch = true
+	} else {
+		find.BatchSize = op.limit
+	}
+
+	op.collection = op.collection[:nameDot] + ".$cmd"
+	op.query = &find
+	op.limit = -1
+
+	return true
+}
+
+type cursorData struct {
+	FirstBatch []bson.Raw "firstBatch"
+	NextBatch  []bson.Raw "nextBatch"
+	NS         string
+	Id         int64
+}
+
+func unmarshalFindOpOne(socket *mongoSocket, data []byte, result interface{}) error {
+	if socket.ServerInfo().MaxWireVersion < 4 {
+		return bson.Unmarshal(data, result)
+	}
+	var findResult struct{ Cursor cursorData }
+	if err := bson.Unmarshal(data, &findResult); err != nil {
+		return err
+	}
+	if len(findResult.Cursor.FirstBatch) == 0 {
+		return ErrNotFound
+	}
+	return findResult.Cursor.FirstBatch[0].Unmarshal(result)
+}
+
+// findCmd holds the command used for performing queries on MongoDB 3.2+.
+//
+// Relevant documentation:
+//
+//     https://docs.mongodb.org/master/reference/command/find/#dbcmd.find
+//
+type findCmd struct {
+	Collection          string      `bson:"find"`
+	Filter              interface{} `bson:"filter,omitempty"`
+	Sort                interface{} `bson:"sort,omitempty"`
+	Projection          interface{} `bson:"projection,omitempty"`
+	Hint                interface{} `bson:"hint,omitempty"`
+	Skip                interface{} `bson:"skip,omitempty"`
+	Limit               int32       `bson:"limit,omitempty"`
+	BatchSize           interface{} `bson:"batchSize,omitempty"`
+	SingleBatch         bool        `bson:"singleBatch,omitempty"`
+	Comment             string      `bson:"comment,omitempty"`
+	MaxScan             int         `bson:"maxScan,omitempty"`
+	MaxTimeMS           int64       `bson:"maxTimeMS,omitempty"`
+	ReadConcern         interface{} `bson:"readConcern,omitempty"`
+	Max                 interface{} `bson:"max,omitempty"`
+	Min                 interface{} `bson:"min,omitempty"`
+	ReturnKey           bool        `bson:"returnKey,omitempty"`
+	ShowRecordId        bool        `bson:"showRecordId,omitempty"`
+	Snapshot            bool        `bson:"snapshot,omitempty"`
+	Tailable            bool        `bson:"tailable,omitempty"`
+	AwaitData           bool        `bson:"awaitData,omitempty"`
+	OplogReplay         bool        `bson:"oplogReplay,omitempty"`
+	NoCursorTimeout     bool        `bson:"noCursorTimeout,omitempty"`
+	AllowPartialResults bool        `bson:"allowPartialResults,omitempty"`
+}
+
+// getMoreCmd holds the command used for requesting more query results on MongoDB 3.2+.
+//
+// Relevant documentation:
+//
+//     https://docs.mongodb.org/master/reference/command/getMore/#dbcmd.getMore
+//
+type getMoreCmd struct {
+	CursorId   int64       `bson:"getMore"`
+	Collection string      `bson:"collection"`
+	BatchSize  interface{} `bson:"batchSize,omitempty"`
+	MaxTimeMS  int64       `bson:"maxTimeMS,omitempty"`
 }
 
 // run duplicates the behavior of collection.Find(query).One(&result)
@@ -3115,12 +3202,7 @@ func (db *Database) CollectionNames() (names []string, err error) {
 	// Try with a command.
 	var result struct {
 		Collections []bson.Raw
-
-		Cursor struct {
-			FirstBatch []bson.Raw "firstBatch"
-			NS         string
-			Id         int64
-		}
+		Cursor      cursorData
 	}
 	err = db.With(cloned).Run(bson.D{{"listCollections", 1}, {"cursor", bson.D{{"batchSize", batchSize}}}}, &result)
 	if err == nil {
@@ -3212,23 +3294,29 @@ func (q *Query) Iter() *Iter {
 	iter.op.replyFunc = iter.replyFunc()
 	iter.docsToReceive++
 
-	session.prepareQuery(&op)
-	op.replyFunc = iter.op.replyFunc
-
 	socket, err := session.acquireSocket(true)
 	if err != nil {
 		iter.err = err
-	} else {
-		iter.server = socket.Server()
-		err = socket.Query(&op)
-		if err != nil {
-			// Must lock as the query above may call replyFunc.
-			iter.m.Lock()
-			iter.err = err
-			iter.m.Unlock()
-		}
-		socket.Release()
+		return iter
 	}
+	defer socket.Release()
+
+	session.prepareQuery(&op)
+	op.replyFunc = iter.op.replyFunc
+
+	if prepareFindOp(socket, &op, limit) {
+		iter.findCmd = true
+	}
+
+	iter.server = socket.Server()
+	err = socket.Query(&op)
+	if err != nil {
+		// Must lock as the query is already out and it may call replyFunc.
+		iter.m.Lock()
+		iter.err = err
+		iter.m.Unlock()
+	}
+
 	return iter
 }
 
@@ -3304,7 +3392,7 @@ func (q *Query) Tail(timeout time.Duration) *Iter {
 		iter.server = socket.Server()
 		err = socket.Query(&op)
 		if err != nil {
-			// Must lock as the query above may call replyFunc.
+			// Must lock as the query is already out and it may call replyFunc.
 			iter.m.Lock()
 			iter.err = err
 			iter.m.Unlock()
@@ -3642,10 +3730,37 @@ func (iter *Iter) getMore() {
 			iter.op.limit = limit
 		}
 	}
-	if err := socket.Query(&iter.op); err != nil {
+	var op interface{}
+	if iter.findCmd {
+		op = iter.getMoreCmd()
+	} else {
+		op = &iter.op
+	}
+	if err := socket.Query(op); err != nil {
 		iter.docsToReceive--
 		iter.err = err
 	}
+}
+
+func (iter *Iter) getMoreCmd() *queryOp {
+	// TODO: Define the query statically in the Iter type, next to getMoreOp.
+	nameDot := strings.Index(iter.op.collection, ".")
+	if nameDot < 0 {
+		panic("invalid query collection name: " + iter.op.collection)
+	}
+
+	getMore := getMoreCmd{
+		CursorId:   iter.op.cursorId,
+		Collection: iter.op.collection[nameDot+1:],
+		BatchSize:  iter.op.limit,
+	}
+
+	var op queryOp
+	op.collection = iter.op.collection[:nameDot] + ".$cmd"
+	op.query = &getMore
+	op.limit = -1
+	op.replyFunc = iter.op.replyFunc
+	return &op
 }
 
 type countCmd struct {
@@ -4209,6 +4324,31 @@ func (iter *Iter) replyFunc() replyFunc {
 			} else {
 				iter.err = ErrNotFound
 			}
+		} else if iter.findCmd {
+			debugf("Iter %p received reply document %d/%d (cursor=%d)", iter, docNum+1, int(op.replyDocs), op.cursorId)
+			var findReply struct{ Cursor cursorData }
+			if err := bson.Unmarshal(docData, &findReply); err != nil {
+				iter.err = err
+			} else if len(findReply.Cursor.FirstBatch) == 0 && len(findReply.Cursor.NextBatch) == 0 {
+				iter.err = ErrNotFound
+			} else {
+				batch := findReply.Cursor.FirstBatch
+				if len(batch) == 0 {
+					batch = findReply.Cursor.NextBatch
+				}
+				rdocs := len(batch)
+				for _, raw := range batch {
+					iter.docData.Push(raw.Data)
+				}
+				iter.docsToReceive = 0
+				docsToProcess := iter.docData.Len()
+				if iter.limit == 0 || int32(docsToProcess) < iter.limit {
+					iter.docsBeforeMore = docsToProcess - int(iter.prefetch*float64(rdocs))
+				} else {
+					iter.docsBeforeMore = -1
+				}
+				iter.op.cursorId = findReply.Cursor.Id
+			}
 		} else {
 			rdocs := int(op.replyDocs)
 			if docNum == 0 {
@@ -4221,7 +4361,6 @@ func (iter *Iter) replyFunc() replyFunc {
 				}
 				iter.op.cursorId = op.cursorId
 			}
-			// XXX Handle errors and flags.
 			debugf("Iter %p received reply document %d/%d (cursor=%d)", iter, docNum+1, rdocs, op.cursorId)
 			iter.docData.Push(docData)
 		}

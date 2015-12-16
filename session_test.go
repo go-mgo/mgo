@@ -146,6 +146,11 @@ func (s *S) TestInsertFindOne(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result.A, Equals, 1)
 	c.Assert(result.B, Equals, 2)
+
+	err = coll.Find(M{"a": 1}).Sort("-b").One(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result.A, Equals, 1)
+	c.Assert(result.B, Equals, 3)
 }
 
 func (s *S) TestInsertFindOneNil(c *C) {
@@ -1281,7 +1286,7 @@ func (s *S) TestFindIterAll(c *C) {
 	result := struct{ N int }{}
 	for i := 2; i < 7; i++ {
 		ok := iter.Next(&result)
-		c.Assert(ok, Equals, true)
+		c.Assert(ok, Equals, true, Commentf("err=%v", err))
 		c.Assert(result.N, Equals, ns[i])
 		if i == 1 {
 			stats := mgo.GetStats()
@@ -1298,7 +1303,12 @@ func (s *S) TestFindIterAll(c *C) {
 	stats := mgo.GetStats()
 	c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 2*GET_MORE_OP
 	c.Assert(stats.ReceivedOps, Equals, 3) // and their REPLY_OPs.
-	c.Assert(stats.ReceivedDocs, Equals, 5)
+	if s.versionAtLeast(3, 2) {
+		// In 3.2+ responses come in batches inside the op reply docs.
+		c.Assert(stats.ReceivedDocs, Equals, 3)
+	} else {
+		c.Assert(stats.ReceivedDocs, Equals, 5)
+	}
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
@@ -1568,7 +1578,12 @@ func (s *S) TestFindIterLimitWithBatch(c *C) {
 		c.Assert(result.N, Equals, ns[i])
 		if i == 3 {
 			stats := mgo.GetStats()
-			c.Assert(stats.ReceivedDocs, Equals, 2)
+			if s.versionAtLeast(3, 2) {
+				// In 3.2+ responses come in batches inside the op reply docs.
+				c.Assert(stats.ReceivedDocs, Equals, 1)
+			} else {
+				c.Assert(stats.ReceivedDocs, Equals, 2)
+			}
 		}
 	}
 
@@ -1579,9 +1594,18 @@ func (s *S) TestFindIterLimitWithBatch(c *C) {
 	session.Refresh() // Release socket.
 
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 1*GET_MORE_OP + 1*KILL_CURSORS_OP
-	c.Assert(stats.ReceivedOps, Equals, 2) // and its REPLY_OPs
-	c.Assert(stats.ReceivedDocs, Equals, 3)
+	if s.versionAtLeast(3, 2) {
+		// In 3.2+ limit works properly even with multiple batches..
+		c.Assert(stats.SentOps, Equals, 2)     // 1*QUERY_OP + 1*GET_MORE_OP
+		c.Assert(stats.ReceivedOps, Equals, 2) // and its REPLY_OPs
+
+		// In 3.2+ responses come in batches inside the op reply docs.
+		c.Assert(stats.ReceivedDocs, Equals, 2)
+	} else {
+		c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 1*GET_MORE_OP + 1*KILL_CURSORS_OP
+		c.Assert(stats.ReceivedOps, Equals, 2) // and its REPLY_OPs
+		c.Assert(stats.ReceivedDocs, Equals, 3)
+	}
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
