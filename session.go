@@ -1539,7 +1539,7 @@ func (s *Session) Clone() *Session {
 
 // Close terminates the session.  It's a runtime error to use a session
 // after it has been closed.
-func (s *Session) Close() {
+func (s *Session) Close() error {
 	s.m.Lock()
 	if s.cluster_ != nil {
 		debugf("Closing session %p", s)
@@ -1548,6 +1548,7 @@ func (s *Session) Close() {
 		s.cluster_ = nil
 	}
 	s.m.Unlock()
+	return nil
 }
 
 func (s *Session) cluster() *mongoCluster {
