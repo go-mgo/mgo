@@ -2005,7 +2005,11 @@ func (s *Session) FsyncLock() error {
 
 // FsyncUnlock releases the server for writes. See FsyncLock for details.
 func (s *Session) FsyncUnlock() error {
-	return s.DB("admin").C("$cmd.sys.unlock").Find(nil).One(nil) // WTF?
+	err := s.Run(bson.D{{"fsyncUnlock", 1}}, nil)
+	if isNoCmd(err) {
+		err = s.DB("admin").C("$cmd.sys.unlock").Find(nil).One(nil) // WTF?
+	}
+	return err
 }
 
 // Find prepares a query using the provided document.  The document may be a
@@ -2766,6 +2770,8 @@ func (q *Query) Explain(result interface{}) error {
 	return iter.Close()
 }
 
+// TODO: Add Collection.Explain. See https://goo.gl/1MDlvz.
+
 // Hint will include an explicit "hint" in the query to force the server
 // to use a specified index, potentially improving performance in some
 // situations.  The provided parameters are the fields that compose the
@@ -2969,7 +2975,7 @@ func (q *Query) One(result interface{}) (err error) {
 
 	session.prepareQuery(&op)
 
-	prepareFindOp(socket, &op, 1)
+	expectFindReply := prepareFindOp(socket, &op, 1)
 
 	data, err := socket.SimpleQuery(&op)
 	if err != nil {
@@ -2978,8 +2984,27 @@ func (q *Query) One(result interface{}) (err error) {
 	if data == nil {
 		return ErrNotFound
 	}
+	if expectFindReply {
+		var findReply struct {
+			Ok           bool
+			Code         int
+			Errmsg       string
+			Cursor       cursorData
+		}
+		err = bson.Unmarshal(data, &findReply)
+		if err != nil {
+			return err
+		}
+		if !findReply.Ok && findReply.Errmsg != "" {
+			return &QueryError{Code: findReply.Code, Message: findReply.Errmsg}
+		}
+		if len(findReply.Cursor.FirstBatch) == 0 {
+			return ErrNotFound
+		}
+		data = findReply.Cursor.FirstBatch[0].Data
+	}
 	if result != nil {
-		err = unmarshalFindOpOne(socket, data, result)
+		err = bson.Unmarshal(data, result)
 		if err == nil {
 			debugf("Query %p document unmarshaled: %#v", q, result)
 		} else {
@@ -2992,9 +3017,10 @@ func (q *Query) One(result interface{}) (err error) {
 
 // prepareFindOp translates op from being an old-style wire protocol query into
 // a new-style find command if that's supported by the MongoDB server (3.2+).
-// It returns whether the op was translated or not.
+// It returns whether to expect a find command result or not. Note op may be
+// translated into an explain command, in which case the function returns false.
 func prepareFindOp(socket *mongoSocket, op *queryOp, limit int32) bool {
-	if socket.ServerInfo().MaxWireVersion < 4 {
+	if socket.ServerInfo().MaxWireVersion < 4 || op.collection == "admin.$cmd" {
 		return false
 	}
 
@@ -3004,11 +3030,18 @@ func prepareFindOp(socket *mongoSocket, op *queryOp, limit int32) bool {
 	}
 
 	find := findCmd{
-		Collection: op.collection[nameDot+1:],
-		Filter:     op.query,
-		Sort:       op.options.OrderBy,
-		Skip:       op.skip,
-		Limit:      limit,
+		Collection:  op.collection[nameDot+1:],
+		Filter:      op.query,
+		Projection:  op.selector,
+		Sort:        op.options.OrderBy,
+		Skip:        op.skip,
+		Limit:       limit,
+		MaxTimeMS:   op.options.MaxTimeMS,
+		MaxScan:     op.options.MaxScan,
+		Hint:        op.options.Hint,
+		Comment:     op.options.Comment,
+		Snapshot:    op.options.Snapshot,
+		OplogReplay: op.flags&flagLogReplay != 0,
 	}
 	if op.limit < 0 {
 		find.BatchSize = -op.limit
@@ -3017,6 +3050,8 @@ func prepareFindOp(socket *mongoSocket, op *queryOp, limit int32) bool {
 		find.BatchSize = op.limit
 	}
 
+	explain := op.options.Explain
+
 	op.collection = op.collection[:nameDot] + ".$cmd"
 	op.query = &find
 	op.skip = 0
@@ -3024,6 +3059,10 @@ func prepareFindOp(socket *mongoSocket, op *queryOp, limit int32) bool {
 	op.options = queryWrapper{}
 	op.hasOptions = false
 
+	if explain {
+		op.query = bson.D{{"explain", op.query}}
+		return false
+	}
 	return true
 }
 
@@ -3032,20 +3071,6 @@ type cursorData struct {
 	NextBatch  []bson.Raw "nextBatch"
 	NS         string
 	Id         int64
-}
-
-func unmarshalFindOpOne(socket *mongoSocket, data []byte, result interface{}) error {
-	if socket.ServerInfo().MaxWireVersion < 4 {
-		return bson.Unmarshal(data, result)
-	}
-	var findResult struct{ Cursor cursorData }
-	if err := bson.Unmarshal(data, &findResult); err != nil {
-		return err
-	}
-	if len(findResult.Cursor.FirstBatch) == 0 {
-		return ErrNotFound
-	}
-	return findResult.Cursor.FirstBatch[0].Unmarshal(result)
 }
 
 // findCmd holds the command used for performing queries on MongoDB 3.2+.
@@ -3066,7 +3091,7 @@ type findCmd struct {
 	SingleBatch         bool        `bson:"singleBatch,omitempty"`
 	Comment             string      `bson:"comment,omitempty"`
 	MaxScan             int         `bson:"maxScan,omitempty"`
-	MaxTimeMS           int64       `bson:"maxTimeMS,omitempty"`
+	MaxTimeMS           int         `bson:"maxTimeMS,omitempty"`
 	ReadConcern         interface{} `bson:"readConcern,omitempty"`
 	Max                 interface{} `bson:"max,omitempty"`
 	Min                 interface{} `bson:"min,omitempty"`
@@ -4330,9 +4355,16 @@ func (iter *Iter) replyFunc() replyFunc {
 			}
 		} else if iter.findCmd {
 			debugf("Iter %p received reply document %d/%d (cursor=%d)", iter, docNum+1, int(op.replyDocs), op.cursorId)
-			var findReply struct{ Cursor cursorData }
+			var findReply struct {
+				Ok           bool
+				Code         int
+				Errmsg       string
+				Cursor       cursorData
+			}
 			if err := bson.Unmarshal(docData, &findReply); err != nil {
 				iter.err = err
+			} else if !findReply.Ok && findReply.Errmsg != "" {
+				iter.err = &QueryError{Code: findReply.Code, Message: findReply.Errmsg}
 			} else if len(findReply.Cursor.FirstBatch) == 0 && len(findReply.Cursor.NextBatch) == 0 {
 				iter.err = ErrNotFound
 			} else {

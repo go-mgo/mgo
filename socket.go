@@ -389,6 +389,11 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 
 	for _, op := range ops {
 		debugf("Socket %p to %s: serializing op: %#v", socket, socket.addr, op)
+		if qop, ok := op.(*queryOp); ok {
+			if cmd, ok := qop.query.(*findCmd); ok {
+				debugf("Socket %p to %s: find command: %#v", socket, socket.addr, cmd)
+			}
+		}
 		start := len(buf)
 		var replyFunc replyFunc
 		switch op := op.(type) {
