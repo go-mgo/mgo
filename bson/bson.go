@@ -41,6 +41,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"reflect"
 	"runtime"
@@ -201,7 +202,6 @@ func readRandomUint32() uint32 {
 	return uint32((uint32(b[0]) << 0) | (uint32(b[1]) << 8) | (uint32(b[2]) << 16) | (uint32(b[3]) << 24))
 }
 
-
 // machineId stores machine id generated once and used in subsequent calls
 // to NewObjectId function.
 var machineId = readMachineId()
@@ -351,6 +351,50 @@ func Now() time.Time {
 // MongoTimestamp is a special internal type used by MongoDB that for some
 // strange reason has its own datatype defined in BSON.
 type MongoTimestamp int64
+
+// Time returns the time part of ts which is stored with second precision.
+func (ts MongoTimestamp) Time() time.Time {
+	b := make([]byte, 8, 8)
+	binary.BigEndian.PutUint64(b, uint64(ts))
+	return time.Unix(int64(binary.BigEndian.Uint32(b[:4])), 0)
+}
+
+// Counter returns the counter part of ts.
+func (ts MongoTimestamp) Counter() uint32 {
+	b := make([]byte, 8, 8)
+	binary.BigEndian.PutUint64(b, uint64(ts))
+	return binary.BigEndian.Uint32(b[4:])
+}
+
+// NewMongoTimestamp creates a timestamp using the given date t with second precision
+// and counter c.
+//
+// Returns -1 and en error if time t is earlier than 1970-01-01T00:00:00Z
+// or later than 2106-02-07T06:28:15Z.
+//
+// Note that two timestamps are not allowed to have the same combination of time and counter,
+// so you have to make sure to increase the counter when creating multiple MongoTimestamps
+// within one second.
+func NewMongoTimestamp(t time.Time, c uint32) (MongoTimestamp, error) {
+	var tv uint32
+
+	u := t.Unix()
+
+	if u < 0 || u > math.MaxUint32 {
+		return -1, errors.New("invalid value for time")
+	} 
+	
+	tv = uint32(u)
+
+	buf := bytes.Buffer{}
+
+	binary.Write(&buf, binary.BigEndian, tv)
+	binary.Write(&buf, binary.BigEndian, c)
+
+	i := int64(binary.BigEndian.Uint64(buf.Bytes()))
+
+	return MongoTimestamp(i), nil
+}
 
 type orderKey int64
 

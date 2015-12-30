@@ -32,6 +32,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math/rand"
 	"net/url"
 	"reflect"
 	"strings"
@@ -1689,5 +1691,52 @@ func (s *S) BenchmarkUnmarshalRaw(c *C) {
 	}
 	if err != nil {
 		panic(err)
+	}
+}
+
+func (s *S) TestMongoTimestampTime(c *C) {
+	t := time.Now()
+	ts, err := bson.NewMongoTimestamp(t, 1)
+	c.Assert(err, IsNil)
+	c.Assert(ts.Time().Unix(), Equals, t.Unix())
+}
+
+func (s *S) TestMongoTimestampCounter(c *C) {
+	rnd := rand.Uint32()
+	ts, err := bson.NewMongoTimestamp(time.Now(), rnd)
+	c.Assert(err, IsNil)
+	c.Assert(ts.Counter(), Equals, rnd)
+}
+
+func (s *S) TestMongoTimestampError(c *C) {
+	t := time.Date(1969, time.December, 31, 23, 59, 59, 999, time.UTC)
+	ts, err := bson.NewMongoTimestamp(t, 1)
+	c.Assert(int64(ts), Equals, int64(-1))
+	c.Assert(err, ErrorMatches, "invalid value for time")
+}
+
+func ExampleNewMongoTimestamp() {
+
+	var counter uint32 = 1
+	var t time.Time
+
+	for i := 1; i <= 3; i++ {
+
+		if c := time.Now(); t.Unix() == c.Unix() {
+			counter++
+		} else {
+			t = c
+			counter = 1
+		}
+
+		ts, err := bson.NewMongoTimestamp(time.Now(), counter)
+
+		if err != nil {
+			fmt.Printf("Error occured: %v", err)
+		} else {
+			fmt.Printf("Encoded timestamp: %d\n", ts)
+		}
+
+		time.Sleep(500 * time.Millisecond)
 	}
 }
