@@ -7,8 +7,8 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/mgo.v2-unstable"
-	"gopkg.in/mgo.v2-unstable/testserver"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/testserver"
 )
 
 type M map[string]interface{}

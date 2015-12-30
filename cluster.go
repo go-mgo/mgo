@@ -30,12 +30,12 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
-	"gopkg.in/mgo.v2-unstable/bson"
-	"strconv"
-	"strings"
+	"gopkg.in/mgo.v2/bson"
 )
 
 // ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"gopkg.in/mgo.v2-unstable"
+	"gopkg.in/mgo.v2"
 	"gopkg.in/tomb.v2"
 )
 
