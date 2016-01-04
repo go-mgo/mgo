@@ -330,7 +330,7 @@ type DialInfo struct {
 	FailFast bool
 
 	// Database is the default database name used when the Session.DB method
-	// is called with an empty name, and is also used during the intial
+	// is called with an empty name, and is also used during the initial
 	// authentication if Source is unset.
 	Database string
 
