@@ -314,7 +314,7 @@ NextDoc:
 			}
 		}
 
-		// The stash wasn't valid and tt got overwriten. Try again.
+		// The stash wasn't valid and tt got overwritten. Try again.
 		f.unstashToken(tt, dkey)
 		goto RetryDoc
 	}
