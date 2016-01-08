@@ -2566,6 +2566,23 @@ type CollectionInfo struct {
 	Capped   bool
 	MaxBytes int
 	MaxDocs  int
+
+	// Validator contains a validation expression that defines which
+	// documents should be considered valid for this collection.
+	Validator interface{}
+
+	// ValidationLevel may be set to "strict" (the default) to force
+	// MongoDB to validate all documents on inserts and updates, to
+	// "moderate" to apply the validation rules only to documents
+	// that already fulfill the validation criteria, or to "off" for
+	// disabling validation entirely.
+	ValidationLevel string
+
+	// ValidationAction determines how MongoDB handles documents that
+	// violate the validation rules. It may be set to "error" (the default)
+	// to reject inserts or updates that violate the rules, or to "warn"
+	// to log invalid operations but allow them to proceed.
+	ValidationAction string
 }
 
 // Create explicitly creates the c collection with details of info.
@@ -2597,13 +2614,22 @@ func (c *Collection) Create(info *CollectionInfo) error {
 	if info.ForceIdIndex {
 		cmd = append(cmd, bson.DocElem{"autoIndexId", true})
 	}
+	if info.Validator != nil {
+		cmd = append(cmd, bson.DocElem{"validator", info.Validator})
+	}
+	if info.ValidationLevel != "" {
+		cmd = append(cmd, bson.DocElem{"validationLevel", info.ValidationLevel})
+	}
+	if info.ValidationAction != "" {
+		cmd = append(cmd, bson.DocElem{"validationAction", info.ValidationAction})
+	}
 	return c.Database.Run(cmd, nil)
 }
 
 // Batch sets the batch size used when fetching documents from the database.
 // It's possible to change this setting on a per-session basis as well, using
 // the Batch method of Session.
-//
+
 // The default batch size is defined by the database itself.  As of this
 // writing, MongoDB will use an initial size of min(100 docs, 4MB) on the
 // first batch, and 4MB on remaining ones.
