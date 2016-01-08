@@ -2583,6 +2583,11 @@ type CollectionInfo struct {
 	// to reject inserts or updates that violate the rules, or to "warn"
 	// to log invalid operations but allow them to proceed.
 	ValidationAction string
+
+	// StorageEngine allows specifying collection options for the
+	// storage engine in use. The map keys must hold the storage engine
+	// name for which options are being specified.
+	StorageEngine interface{}
 }
 
 // Create explicitly creates the c collection with details of info.
@@ -2622,6 +2627,9 @@ func (c *Collection) Create(info *CollectionInfo) error {
 	}
 	if info.ValidationAction != "" {
 		cmd = append(cmd, bson.DocElem{"validationAction", info.ValidationAction})
+	}
+	if info.StorageEngine != nil {
+		cmd = append(cmd, bson.DocElem{"storageEngine", info.StorageEngine})
 	}
 	return c.Database.Run(cmd, nil)
 }
