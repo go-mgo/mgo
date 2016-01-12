@@ -129,7 +129,11 @@ func (e *encoder) addDoc(v reflect.Value) {
 
 func (e *encoder) addMap(v reflect.Value) {
 	for _, k := range v.MapKeys() {
-		e.addElem(k.String(), v.MapIndex(k), false)
+		if k.Kind() == reflect.Interface && k.Elem().Kind() == reflect.String {
+			e.addElem(k.Elem().String(), v.MapIndex(k), false)
+		} else {
+			e.addElem(k.String(), v.MapIndex(k), false)
+		}
 	}
 }
 
