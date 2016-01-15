@@ -270,15 +270,19 @@ func (b *Bulk) runInsert(action *bulkAction, result *BulkResult, berr *bulkError
 
 func (b *Bulk) runUpdate(action *bulkAction, result *BulkResult, berr *bulkError) bool {
 	lerr, err := b.c.writeOp(bulkUpdateOp(action.docs), b.ordered)
-	result.Matched += lerr.N
-	result.Modified += lerr.modified
+	if lerr != nil {
+		result.Matched += lerr.N
+		result.Modified += lerr.modified
+	}
 	return b.checkSuccess(berr, lerr, err)
 }
 
 func (b *Bulk) runRemove(action *bulkAction, result *BulkResult, berr *bulkError) bool {
 	lerr, err := b.c.writeOp(bulkDeleteOp(action.docs), b.ordered)
-	result.Matched += lerr.N
-	result.Modified += lerr.modified
+	if lerr != nil {
+		result.Matched += lerr.N
+		result.Modified += lerr.modified
+	}
 	return b.checkSuccess(berr, lerr, err)
 }
 
