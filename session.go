@@ -2306,7 +2306,7 @@ type LastError struct {
 	UpsertedId      interface{} `bson:"upserted"`
 
 	modified int
-	errors   []error
+	ecases   []BulkErrorCase
 }
 
 func (err *LastError) Error() string {
@@ -2343,9 +2343,9 @@ func IsDup(err error) bool {
 		return e.Code == 11000 || e.Code == 11001 || e.Code == 12582 || e.Code == 16460 && strings.Contains(e.Err, " E11000 ")
 	case *QueryError:
 		return e.Code == 11000 || e.Code == 11001 || e.Code == 12582
-	case *bulkError:
-		for _, ee := range e.errs {
-			if !IsDup(ee) {
+	case *BulkError:
+		for _, ecase := range e.ecases {
+			if !IsDup(ecase.Err) {
 				return false
 			}
 		}
@@ -3020,10 +3020,10 @@ func (q *Query) One(result interface{}) (err error) {
 	}
 	if expectFindReply {
 		var findReply struct {
-			Ok           bool
-			Code         int
-			Errmsg       string
-			Cursor       cursorData
+			Ok     bool
+			Code   int
+			Errmsg string
+			Cursor cursorData
 		}
 		err = bson.Unmarshal(data, &findReply)
 		if err != nil {
@@ -4390,10 +4390,10 @@ func (iter *Iter) replyFunc() replyFunc {
 		} else if iter.findCmd {
 			debugf("Iter %p received reply document %d/%d (cursor=%d)", iter, docNum+1, int(op.replyDocs), op.cursorId)
 			var findReply struct {
-				Ok           bool
-				Code         int
-				Errmsg       string
-				Cursor       cursorData
+				Ok     bool
+				Code   int
+				Errmsg string
+				Cursor cursorData
 			}
 			if err := bson.Unmarshal(docData, &findReply); err != nil {
 				iter.err = err
@@ -4462,12 +4462,12 @@ type writeCmdError struct {
 	ErrMsg string
 }
 
-func (r *writeCmdResult) QueryErrors() []error {
-	var errs []error
-	for _, err := range r.Errors {
-		errs = append(errs, &QueryError{Code: err.Code, Message: err.ErrMsg})
+func (r *writeCmdResult) BulkErrorCases() []BulkErrorCase {
+	ecases := make([]BulkErrorCase, len(r.Errors))
+	for i, err := range r.Errors {
+		ecases[i] = BulkErrorCase{err.Index, &QueryError{Code: err.Code, Message: err.ErrMsg}}
 	}
-	return errs
+	return ecases
 }
 
 // writeOp runs the given modifying operation, potentially followed up
@@ -4490,7 +4490,8 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 	if socket.ServerInfo().MaxWireVersion >= 2 {
 		// Servers with a more recent write protocol benefit from write commands.
 		if op, ok := op.(*insertOp); ok && len(op.documents) > 1000 {
-			var errors []error
+			var ecases []BulkErrorCase
+
 			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
 			all := op.documents
 			for i := 0; i < len(all); i += 1000 {
@@ -4501,52 +4502,55 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 				op.documents = all[i:l]
 				lerr, err := c.writeOpCommand(socket, safeOp, op, ordered, bypassValidation)
 				if err != nil {
-					errors = append(errors, lerr.errors...)
+					for ei := range lerr.ecases {
+						lerr.ecases[ei].Index += i
+					}
+					ecases = append(ecases, lerr.ecases...)
 					if op.flags&1 == 0 {
-						return &LastError{errors: errors}, err
+						return &LastError{ecases: ecases}, err
 					}
 				}
 			}
-			if len(errors) == 0 {
+			if len(ecases) == 0 {
 				return nil, nil
 			}
-			return &LastError{errors: errors}, errors[0]
+			return &LastError{ecases: ecases}, ecases[0].Err
 		}
 		return c.writeOpCommand(socket, safeOp, op, ordered, bypassValidation)
 	} else if updateOps, ok := op.(bulkUpdateOp); ok {
 		var lerr LastError
-		for _, updateOp := range updateOps {
+		for i, updateOp := range updateOps {
 			oplerr, err := c.writeOpQuery(socket, safeOp, updateOp, ordered)
 			if err != nil {
 				lerr.N += oplerr.N
 				lerr.modified += oplerr.modified
-				lerr.errors = append(lerr.errors, oplerr.errors...)
+				lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
 				if ordered {
 					break
 				}
 			}
 		}
-		if len(lerr.errors) == 0 {
+		if len(lerr.ecases) == 0 {
 			return nil, nil
 		}
-		return &lerr, lerr.errors[0]
+		return &lerr, lerr.ecases[0].Err
 	} else if deleteOps, ok := op.(bulkDeleteOp); ok {
 		var lerr LastError
-		for _, deleteOp := range deleteOps {
+		for i, deleteOp := range deleteOps {
 			oplerr, err := c.writeOpQuery(socket, safeOp, deleteOp, ordered)
 			if err != nil {
 				lerr.N += oplerr.N
 				lerr.modified += oplerr.modified
-				lerr.errors = append(lerr.errors, oplerr.errors...)
+				lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
 				if ordered {
 					break
 				}
 			}
 		}
-		if len(lerr.errors) == 0 {
+		if len(lerr.ecases) == 0 {
 			return nil, nil
 		}
-		return &lerr, lerr.errors[0]
+		return &lerr, lerr.ecases[0].Err
 	}
 	return c.writeOpQuery(socket, safeOp, op, ordered)
 }
@@ -4586,6 +4590,10 @@ func (c *Collection) writeOpQuery(socket *mongoSocket, safeOp *queryOp, op inter
 	bson.Unmarshal(replyData, &result)
 	debugf("Result from writing query: %#v", result)
 	if result.Err != "" {
+		result.ecases = []BulkErrorCase{{Index: 0, Err: result}}
+		if insert, ok := op.(*insertOp); ok && len(insert.documents) > 1 {
+			result.ecases[0].Index = -1
+		}
 		return result, result
 	}
 	return result, nil
@@ -4649,12 +4657,13 @@ func (c *Collection) writeOpCommand(socket *mongoSocket, safeOp *queryOp, op int
 	var result writeCmdResult
 	err = c.Database.run(socket, cmd, &result)
 	debugf("Write command result: %#v (err=%v)", result, err)
+	ecases := result.BulkErrorCases()
 	lerr = &LastError{
 		UpdatedExisting: result.N > 0 && len(result.Upserted) == 0,
 		N:               result.N,
 
 		modified: result.NModified,
-		errors:   result.QueryErrors(),
+		ecases:   ecases,
 	}
 	if len(result.Upserted) > 0 {
 		lerr.UpsertedId = result.Upserted[0].Id
