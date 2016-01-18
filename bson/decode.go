@@ -172,16 +172,10 @@ func (d *decoder) readDocTo(out reflect.Value) {
 	}
 
 	docType := d.docType
-	keyType := typeString
-	convertKey := false
 	switch outk {
 	case reflect.Map:
-		keyType = outt.Key()
-		if keyType.Kind() != reflect.String {
+		if outt.Key().Kind() != reflect.String {
 			panic("BSON map must have string keys. Got: " + outt.String())
-		}
-		if keyType != typeString {
-			convertKey = true
 		}
 		elemType = outt.Elem()
 		if elemType == typeIface {
@@ -212,12 +206,7 @@ func (d *decoder) readDocTo(out reflect.Value) {
 			}
 		}
 	case reflect.Slice:
-		switch outt.Elem() {
-		case typeDocElem:
-			origout.Set(d.readDocElems(outt))
-			return
-		case typeRawDocElem:
-			origout.Set(d.readRawDocElems(outt))
+		if d.readDocElems(origout, outt) {
 			return
 		}
 		fallthrough
@@ -242,8 +231,8 @@ func (d *decoder) readDocTo(out reflect.Value) {
 			e := reflect.New(elemType).Elem()
 			if d.readElemTo(e, kind) {
 				k := reflect.ValueOf(name)
-				if convertKey {
-					k = k.Convert(keyType)
+				if t := outt.Key(); t != k.Type() {
+					k = k.Convert(t)
 				}
 				out.SetMapIndex(k, e)
 			}
@@ -323,12 +312,13 @@ func (d *decoder) readArrayDocTo(out reflect.Value) {
 }
 
 func (d *decoder) readSliceDoc(t reflect.Type) interface{} {
-	tmp := make([]reflect.Value, 0, 8)
 	elemType := t.Elem()
 	if elemType == typeRawDocElem {
 		d.dropElem(0x04)
 		return reflect.Zero(t).Interface()
 	}
+
+	slice := reflect.MakeSlice(t, 0, 8)
 
 	end := int(d.readInt32())
 	end += d.i - 4
@@ -346,7 +336,7 @@ func (d *decoder) readSliceDoc(t reflect.Type) interface{} {
 		d.i++
 		e := reflect.New(elemType).Elem()
 		if d.readElemTo(e, kind) {
-			tmp = append(tmp, e)
+			slice = reflect.Append(slice, e)
 		}
 		if d.i >= end {
 			corrupted()
@@ -357,52 +347,22 @@ func (d *decoder) readSliceDoc(t reflect.Type) interface{} {
 		corrupted()
 	}
 
-	n := len(tmp)
-	slice := reflect.MakeSlice(t, n, n)
-	for i := 0; i != n; i++ {
-		slice.Index(i).Set(tmp[i])
-	}
 	return slice.Interface()
 }
 
 var typeSlice = reflect.TypeOf([]interface{}{})
 var typeIface = typeSlice.Elem()
 
-func (d *decoder) readDocElems(typ reflect.Type) reflect.Value {
-	docType := d.docType
-	d.docType = typ
-	slice := make([]DocElem, 0, 8)
-	d.readDocWith(func(kind byte, name string) {
-		e := DocElem{Name: name}
-		v := reflect.ValueOf(&e.Value)
-		if d.readElemTo(v.Elem(), kind) {
-			slice = append(slice, e)
-		}
-	})
-	slicev := reflect.New(typ).Elem()
-	slicev.Set(reflect.ValueOf(slice))
-	d.docType = docType
-	return slicev
-}
+func (d *decoder) readDocElems(out reflect.Value, outt reflect.Type) bool {
+	elemType := outt.Elem()
+	if elemType != typeDocElem && elemType != typeRawDocElem {
+		return false
+	}
 
-func (d *decoder) readRawDocElems(typ reflect.Type) reflect.Value {
 	docType := d.docType
-	d.docType = typ
-	slice := make([]RawDocElem, 0, 8)
-	d.readDocWith(func(kind byte, name string) {
-		e := RawDocElem{Name: name}
-		v := reflect.ValueOf(&e.Value)
-		if d.readElemTo(v.Elem(), kind) {
-			slice = append(slice, e)
-		}
-	})
-	slicev := reflect.New(typ).Elem()
-	slicev.Set(reflect.ValueOf(slice))
-	d.docType = docType
-	return slicev
-}
+	d.docType = outt
+	slice := reflect.MakeSlice(outt, 0, 8)
 
-func (d *decoder) readDocWith(f func(kind byte, name string)) {
 	end := int(d.readInt32())
 	end += d.i - 4
 	if end <= d.i || end > len(d.in) || d.in[end-1] != '\x00' {
@@ -414,7 +374,13 @@ func (d *decoder) readDocWith(f func(kind byte, name string)) {
 		if d.i >= end {
 			corrupted()
 		}
-		f(kind, name)
+
+		e := reflect.New(elemType).Elem()
+		if d.readElemTo(e.FieldByName("Value"), kind) {
+			e.FieldByName("Name").SetString(name)
+			slice = reflect.Append(slice, e)
+		}
+
 		if d.i >= end {
 			corrupted()
 		}
@@ -423,6 +389,10 @@ func (d *decoder) readDocWith(f func(kind byte, name string)) {
 	if d.i != end {
 		corrupted()
 	}
+
+	d.docType = docType
+	out.Set(slice)
+	return true
 }
 
 // --------------------------------------------------------------------------
@@ -455,12 +425,7 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 			return true
 		}
 		if outk == reflect.Slice {
-			switch outt.Elem() {
-			case typeDocElem:
-				out.Set(d.readDocElems(outt))
-			case typeRawDocElem:
-				out.Set(d.readRawDocElems(outt))
-			}
+			d.readDocElems(out, outt)
 			return true
 		}
 		d.readDocTo(blackHole)
