@@ -619,24 +619,6 @@ func getStructInfo(st reflect.Type) (*structInfo, error) {
 			continue
 		}
 
-		// XXX Drop this after a few releases.
-		if s := strings.Index(tag, "/"); s >= 0 {
-			recommend := tag[:s]
-			for _, c := range tag[s+1:] {
-				switch c {
-				case 'c':
-					recommend += ",omitempty"
-				case 's':
-					recommend += ",minsize"
-				default:
-					msg := fmt.Sprintf("Unsupported flag %q in tag %q of type %s", string([]byte{uint8(c)}), tag, st)
-					panic(externalPanic(msg))
-				}
-			}
-			msg := fmt.Sprintf("Replace tag %q in field %s of type %s by %q", tag, field.Name, st, recommend)
-			panic(externalPanic(msg))
-		}
-
 		inline := false
 		fields := strings.Split(tag, ",")
 		if len(fields) > 1 {
