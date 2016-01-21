@@ -475,6 +475,7 @@ func Marshal(in interface{}) (out []byte, err error) {
 
 // Unmarshal deserializes data from in into the out value.  The out value
 // must be a map, a pointer to a struct, or a pointer to a bson.D value.
+// In the case of struct values, only exported fields will be deserialized.
 // The lowercased field name is used as the key for each exported field,
 // but this behavior may be changed using the respective field tag.
 // The tag may also contain flags to tweak the marshalling behavior for
