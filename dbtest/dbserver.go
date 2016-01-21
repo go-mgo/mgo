@@ -111,7 +111,7 @@ func (dbs *DBServer) Stop() {
 	}
 	if dbs.server != nil {
 		dbs.tomb.Kill(nil)
-		dbs.server.Process.Kill()
+		dbs.server.Process.Signal(os.Interrupt)
 		select {
 		case <-dbs.tomb.Dead():
 		case <-time.After(5 * time.Second):
