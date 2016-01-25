@@ -172,7 +172,7 @@ type ObjectId string
 func ObjectIdHex(s string) ObjectId {
 	d, err := hex.DecodeString(s)
 	if err != nil || len(d) != 12 {
-		panic(fmt.Sprintf("Invalid input to ObjectIdHex: %q", s))
+		panic(fmt.Sprintf("invalid input to ObjectIdHex: %q", s))
 	}
 	return ObjectId(d)
 }
@@ -281,12 +281,12 @@ func (id *ObjectId) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	if len(data) != 26 || data[0] != '"' || data[25] != '"' {
-		return errors.New(fmt.Sprintf("Invalid ObjectId in JSON: %s", string(data)))
+		return errors.New(fmt.Sprintf("invalid ObjectId in JSON: %s", string(data)))
 	}
 	var buf [12]byte
 	_, err := hex.Decode(buf[:], data[1:25])
 	if err != nil {
-		return errors.New(fmt.Sprintf("Invalid ObjectId in JSON: %s (%s)", string(data), err))
+		return errors.New(fmt.Sprintf("invalid ObjectId in JSON: %s (%s)", string(data), err))
 	}
 	*id = ObjectId(string(buf[:]))
 	return nil
@@ -304,12 +304,12 @@ func (id *ObjectId) UnmarshalText(data []byte) error {
 		return nil
 	}
 	if len(data) != 24 {
-		return fmt.Errorf("Invalid ObjectId in Text: %s", data)
+		return fmt.Errorf("invalid ObjectId: %s", data)
 	}
 	var buf [12]byte
 	_, err := hex.Decode(buf[:], data[:])
 	if err != nil {
-		return fmt.Errorf("Invalid ObjectId in Text: %s (%s)", data, err)
+		return fmt.Errorf("invalid ObjectId: %s (%s)", data, err)
 	}
 	*id = ObjectId(string(buf[:]))
 	return nil
@@ -324,7 +324,7 @@ func (id ObjectId) Valid() bool {
 // Calling this function with an invalid id will cause a runtime panic.
 func (id ObjectId) byteSlice(start, end int) []byte {
 	if len(id) != 12 {
-		panic(fmt.Sprintf("Invalid ObjectId: %q", string(id)))
+		panic(fmt.Sprintf("invalid ObjectId: %q", string(id)))
 	}
 	return []byte(string(id)[start:end])
 }

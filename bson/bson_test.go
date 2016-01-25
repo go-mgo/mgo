@@ -1537,12 +1537,12 @@ var jsonIdTests = []struct {
 	unmarshal: true,
 }, {
 	json:      `{"Id":"4d88e15b60f486e428412dc9A"}`,
-	error:     `Invalid ObjectId in JSON: "4d88e15b60f486e428412dc9A"`,
+	error:     `invalid ObjectId in JSON: "4d88e15b60f486e428412dc9A"`,
 	marshal:   false,
 	unmarshal: true,
 }, {
 	json:      `{"Id":"4d88e15b60f486e428412dcZ"}`,
-	error:     `Invalid ObjectId in JSON: "4d88e15b60f486e428412dcZ" .*`,
+	error:     `invalid ObjectId in JSON: "4d88e15b60f486e428412dcZ" .*`,
 	marshal:   false,
 	unmarshal: true,
 }}
@@ -1650,12 +1650,12 @@ var textIdTests = []struct {
 	text:      "4d88e15b60f486e428412dc9A",
 	marshal:   false,
 	unmarshal: true,
-	error:     `Invalid ObjectId in Text: 4d88e15b60f486e428412dc9A`,
+	error:     `invalid ObjectId: 4d88e15b60f486e428412dc9A`,
 }, {
 	text:      "4d88e15b60f486e428412dcZ",
 	marshal:   false,
 	unmarshal: true,
-	error:     `Invalid ObjectId in Text: 4d88e15b60f486e428412dcZ .*`,
+	error:     `invalid ObjectId: 4d88e15b60f486e428412dcZ .*`,
 }}
 
 func (s *S) TestObjectIdTextMarshaling(c *C) {
@@ -1712,12 +1712,12 @@ var xmlIdTests = []struct {
 	xml:       "<xmlType><Id>4d88e15b60f486e428412dc9A</Id></xmlType>",
 	marshal:   false,
 	unmarshal: true,
-	error:     `Invalid ObjectId in Text: 4d88e15b60f486e428412dc9A`,
+	error:     `invalid ObjectId: 4d88e15b60f486e428412dc9A`,
 }, {
 	xml:       "<xmlType><Id>4d88e15b60f486e428412dcZ</Id></xmlType>",
 	marshal:   false,
 	unmarshal: true,
-	error:     `Invalid ObjectId in Text: 4d88e15b60f486e428412dcZ .*`,
+	error:     `invalid ObjectId: 4d88e15b60f486e428412dcZ .*`,
 }}
 
 func (s *S) TestObjectIdXMLMarshaling(c *C) {
