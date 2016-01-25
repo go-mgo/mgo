@@ -201,7 +201,6 @@ func readRandomUint32() uint32 {
 	return uint32((uint32(b[0]) << 0) | (uint32(b[1]) << 8) | (uint32(b[2]) << 16) | (uint32(b[3]) << 24))
 }
 
-
 // machineId stores machine id generated once and used in subsequent calls
 // to NewObjectId function.
 var machineId = readMachineId()
@@ -288,6 +287,29 @@ func (id *ObjectId) UnmarshalJSON(data []byte) error {
 	_, err := hex.Decode(buf[:], data[1:25])
 	if err != nil {
 		return errors.New(fmt.Sprintf("Invalid ObjectId in JSON: %s (%s)", string(data), err))
+	}
+	*id = ObjectId(string(buf[:]))
+	return nil
+}
+
+// MarshalText turns bson.ObjectId into an encoding.TextMarshaler.
+func (id ObjectId) MarshalText() ([]byte, error) {
+	return []byte(fmt.Sprintf("%x", string(id))), nil
+}
+
+// UnmarshalText turns *bson.ObjectId into an encoding.TextUnmarshaler.
+func (id *ObjectId) UnmarshalText(data []byte) error {
+	if len(data) == 1 && data[0] == ' ' || len(data) == 0 {
+		*id = ""
+		return nil
+	}
+	if len(data) != 24 {
+		return fmt.Errorf("Invalid ObjectId in Text: %s", data)
+	}
+	var buf [12]byte
+	_, err := hex.Decode(buf[:], data[:])
+	if err != nil {
+		return fmt.Errorf("Invalid ObjectId in Text: %s (%s)", data, err)
 	}
 	*id = ObjectId(string(buf[:]))
 	return nil
