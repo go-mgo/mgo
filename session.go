@@ -195,6 +195,19 @@ const defaultPrefetch = 0.25
 //         must be relaxed to Monotonic or Eventual via SetMode.
 //
 //
+//	   connect=replicaSet
+//
+//		   Equivalent to the default connection behavior, but is a valid
+//		   connection option that will not cause an error to be thrown.
+//
+//
+//	   replicaSet=<setname>
+//
+//		   Defines the set name for the topology being monitored, and informs the
+//		   automatic server discovery logic that the topology being monitored is
+//		   a replica set.
+//
+//
 //     authSource=<db>
 //
 //         Informs the database used to establish credentials and privileges
@@ -212,6 +225,7 @@ const defaultPrefetch = 0.25
 //
 //        Defines the service name to use when authenticating with the GSSAPI
 //        mechanism. Defaults to "mongodb".
+//
 //
 //     maxPoolSize=<limit>
 //
