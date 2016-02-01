@@ -548,7 +548,6 @@ func (socket *mongoSocket) readLoop() {
 	s := make([]byte, 4)
 	conn := socket.conn // No locking, conn never changes.
 	for {
-		// XXX Handle timeouts, , etc
 		err := fill(conn, p)
 		if err != nil {
 			socket.kill(err, true)
