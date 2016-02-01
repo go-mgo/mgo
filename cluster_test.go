@@ -1951,6 +1951,9 @@ func (s *S) TestDoNotFallbackToMonotonic(c *C) {
 	// falling back to Monotonic mode. This test ensures all listIndexes
 	// commands go to the primary, as should happen since the session is
 	// in Strong mode.
+	if !s.versionAtLeast(3, 0) {
+		c.Skip("command-counting logic depends on 3.0+")
+	}
 
 	session, err := mgo.Dial("localhost:40012")
 	c.Assert(err, IsNil)
