@@ -2415,8 +2415,12 @@ func (c *Collection) UpdateId(id interface{}, update interface{}) error {
 
 // ChangeInfo holds details about the outcome of an update operation.
 type ChangeInfo struct {
-	Updated    int         // Number of existing documents updated
+	// Updated reports the number of existing documents modified.
+	// Due to server limitations, this reports the same value as the Matched field when
+	// talking to MongoDB <= 2.4 and on Upsert and Apply (findAndModify) operations.
+	Updated    int
 	Removed    int         // Number of documents removed
+	Matched    int         // Number of documents matched but not necessarily changed
 	UpsertedId interface{} // Upserted _id field, when not explicitly provided
 }
 
@@ -2445,7 +2449,7 @@ func (c *Collection) UpdateAll(selector interface{}, update interface{}) (info *
 	}
 	lerr, err := c.writeOp(&op, true)
 	if err == nil && lerr != nil {
-		info = &ChangeInfo{Updated: lerr.N}
+		info = &ChangeInfo{Updated: lerr.modified, Matched: lerr.N}
 	}
 	return info, err
 }
@@ -2478,7 +2482,8 @@ func (c *Collection) Upsert(selector interface{}, update interface{}) (info *Cha
 	if err == nil && lerr != nil {
 		info = &ChangeInfo{}
 		if lerr.UpdatedExisting {
-			info.Updated = lerr.N
+			info.Matched = lerr.N
+			info.Updated = lerr.modified
 		} else {
 			info.UpsertedId = lerr.UpsertedId
 		}
@@ -2540,7 +2545,7 @@ func (c *Collection) RemoveAll(selector interface{}) (info *ChangeInfo, err erro
 	}
 	lerr, err := c.writeOp(&deleteOp{c.FullName, selector, 0, 0}, true)
 	if err == nil && lerr != nil {
-		info = &ChangeInfo{Removed: lerr.N}
+		info = &ChangeInfo{Removed: lerr.N, Matched: lerr.N}
 	}
 	return info, err
 }
@@ -4223,8 +4228,10 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 	lerr := &doc.LastError
 	if lerr.UpdatedExisting {
 		info.Updated = lerr.N
+		info.Matched = lerr.N
 	} else if change.Remove {
 		info.Removed = lerr.N
+		info.Matched = lerr.N
 	} else if change.Upsert {
 		info.UpsertedId = lerr.UpsertedId
 	}
@@ -4612,6 +4619,8 @@ func (c *Collection) writeOpQuery(socket *mongoSocket, safeOp *queryOp, op inter
 		}
 		return result, result
 	}
+	// With MongoDB <2.6 we don't know how many actually changed, so make it the same as matched.
+	result.modified = result.N
 	return result, nil
 }
 
