@@ -196,7 +196,7 @@ const defaultPrefetch = 0.25
 //
 //
 //     connect=replicaSet
-//  
+//
 //  	   Discover replica sets automatically. Default connection behavior.
 //
 //
@@ -4504,7 +4504,7 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 	if socket.ServerInfo().MaxWireVersion >= 2 {
 		// Servers with a more recent write protocol benefit from write commands.
 		if op, ok := op.(*insertOp); ok && len(op.documents) > 1000 {
-			var ecases []BulkErrorCase
+			var lerr LastError
 
 			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
 			all := op.documents
@@ -4514,57 +4514,59 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 					l = len(all)
 				}
 				op.documents = all[i:l]
-				lerr, err := c.writeOpCommand(socket, safeOp, op, ordered, bypassValidation)
+				oplerr, err := c.writeOpCommand(socket, safeOp, op, ordered, bypassValidation)
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
 				if err != nil {
 					for ei := range lerr.ecases {
-						lerr.ecases[ei].Index += i
+						oplerr.ecases[ei].Index += i
 					}
-					ecases = append(ecases, lerr.ecases...)
+					lerr.ecases = append(lerr.ecases, oplerr.ecases...)
 					if op.flags&1 == 0 {
-						return &LastError{ecases: ecases}, err
+						return &lerr, err
 					}
 				}
 			}
-			if len(ecases) == 0 {
-				return nil, nil
+			if len(lerr.ecases) != 0 {
+				return &lerr, lerr.ecases[0].Err
 			}
-			return &LastError{ecases: ecases}, ecases[0].Err
+			return &lerr, nil
 		}
 		return c.writeOpCommand(socket, safeOp, op, ordered, bypassValidation)
 	} else if updateOps, ok := op.(bulkUpdateOp); ok {
 		var lerr LastError
 		for i, updateOp := range updateOps {
 			oplerr, err := c.writeOpQuery(socket, safeOp, updateOp, ordered)
+			lerr.N += oplerr.N
+			lerr.modified += oplerr.modified
 			if err != nil {
-				lerr.N += oplerr.N
-				lerr.modified += oplerr.modified
 				lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
 				if ordered {
 					break
 				}
 			}
 		}
-		if len(lerr.ecases) == 0 {
-			return nil, nil
+		if len(lerr.ecases) != 0 {
+			return &lerr, lerr.ecases[0].Err
 		}
-		return &lerr, lerr.ecases[0].Err
+		return &lerr, nil
 	} else if deleteOps, ok := op.(bulkDeleteOp); ok {
 		var lerr LastError
 		for i, deleteOp := range deleteOps {
 			oplerr, err := c.writeOpQuery(socket, safeOp, deleteOp, ordered)
+			lerr.N += oplerr.N
+			lerr.modified += oplerr.modified
 			if err != nil {
-				lerr.N += oplerr.N
-				lerr.modified += oplerr.modified
 				lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
 				if ordered {
 					break
 				}
 			}
 		}
-		if len(lerr.ecases) == 0 {
-			return nil, nil
+		if len(lerr.ecases) != 0 {
+			return &lerr, lerr.ecases[0].Err
 		}
-		return &lerr, lerr.ecases[0].Err
+		return &lerr, nil
 	}
 	return c.writeOpQuery(socket, safeOp, op, ordered)
 }
