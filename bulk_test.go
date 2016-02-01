@@ -384,7 +384,7 @@ func (s *S) TestBulkUpdateAll(c *C) {
 
 	bulk := coll.Bulk()
 	bulk.UpdateAll(M{"n": 1}, M{"$set": M{"n": 10}})
-	bulk.UpdateAll(M{"n": 2}, M{"$set": M{"n": 2}})
+	bulk.UpdateAll(M{"n": 2}, M{"$set": M{"n": 2}})  // Won't change.
 	bulk.UpdateAll(M{"n": 5}, M{"$set": M{"n": 50}}) // Won't match.
 	bulk.UpdateAll(M{}, M{"$inc": M{"n": 1}}, M{"n": 11}, M{"$set": M{"n": 5}})
 	r, err := bulk.Run()

@@ -2742,7 +2742,8 @@ func (s *S) TestQueryErrorNext(c *C) {
 
 	iter := coll.Find(M{"a": 1}).Select(M{"a": M{"b": 1}}).Iter()
 
-	ok := iter.Next(nil)
+	var result struct{}
+	ok := iter.Next(&result)
 	c.Assert(ok, Equals, false)
 
 	err = iter.Close()
