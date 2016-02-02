@@ -354,16 +354,12 @@ type MongoTimestamp int64
 
 // Time returns the time part of ts which is stored with second precision.
 func (ts MongoTimestamp) Time() time.Time {
-	b := make([]byte, 8, 8)
-	binary.BigEndian.PutUint64(b, uint64(ts))
-	return time.Unix(int64(binary.BigEndian.Uint32(b[:4])), 0)
+	return time.Unix(int64(uint64(ts) >> 32), 0)
 }
 
 // Counter returns the counter part of ts.
 func (ts MongoTimestamp) Counter() uint32 {
-	b := make([]byte, 8, 8)
-	binary.BigEndian.PutUint64(b, uint64(ts))
-	return binary.BigEndian.Uint32(b[4:])
+	return uint32(ts)
 }
 
 // NewMongoTimestamp creates a timestamp using the given date t with second precision
