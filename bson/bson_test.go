@@ -31,6 +31,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"net/url"
 	"reflect"
@@ -549,6 +550,10 @@ var unmarshalItems = []testItemType{
 	// Decode old binary without length. According to the spec, this shouldn't happen.
 	{bson.M{"_": []byte("old")},
 		"\x05_\x00\x03\x00\x00\x00\x02old"},
+
+	// Decode a doc within a doc in to a slice within a doc; shouldn't error
+	{&struct{ Foo []string }{},
+		"\x03\x66\x6f\x6f\x00\x05\x00\x00\x00\x00"},
 }
 
 func (s *S) TestUnmarshalOneWayItems(c *C) {
@@ -1532,12 +1537,12 @@ var jsonIdTests = []struct {
 	unmarshal: true,
 }, {
 	json:      `{"Id":"4d88e15b60f486e428412dc9A"}`,
-	error:     `Invalid ObjectId in JSON: "4d88e15b60f486e428412dc9A"`,
+	error:     `invalid ObjectId in JSON: "4d88e15b60f486e428412dc9A"`,
 	marshal:   false,
 	unmarshal: true,
 }, {
 	json:      `{"Id":"4d88e15b60f486e428412dcZ"}`,
-	error:     `Invalid ObjectId in JSON: "4d88e15b60f486e428412dcZ" .*`,
+	error:     `invalid ObjectId in JSON: "4d88e15b60f486e428412dcZ" .*`,
 	marshal:   false,
 	unmarshal: true,
 }}
@@ -1619,6 +1624,123 @@ func (s *S) TestSpecTests(c *C) {
 			err = bson.Unmarshal(encoded, &decoded)
 			c.Assert(err, NotNil)
 			c.Logf("Failed with: %v", err)
+		}
+	}
+}
+
+// --------------------------------------------------------------------------
+// ObjectId Text encoding.TextUnmarshaler.
+
+var textIdTests = []struct {
+	value     bson.ObjectId
+	text      string
+	marshal   bool
+	unmarshal bool
+	error     string
+}{{
+	value:     bson.ObjectIdHex("4d88e15b60f486e428412dc9"),
+	text:      "4d88e15b60f486e428412dc9",
+	marshal:   true,
+	unmarshal: true,
+}, {
+	text:      "",
+	marshal:   true,
+	unmarshal: true,
+}, {
+	text:      "4d88e15b60f486e428412dc9A",
+	marshal:   false,
+	unmarshal: true,
+	error:     `invalid ObjectId: 4d88e15b60f486e428412dc9A`,
+}, {
+	text:      "4d88e15b60f486e428412dcZ",
+	marshal:   false,
+	unmarshal: true,
+	error:     `invalid ObjectId: 4d88e15b60f486e428412dcZ .*`,
+}}
+
+func (s *S) TestObjectIdTextMarshaling(c *C) {
+	for _, test := range textIdTests {
+		if test.marshal {
+			data, err := test.value.MarshalText()
+			if test.error == "" {
+				c.Assert(err, IsNil)
+				c.Assert(string(data), Equals, test.text)
+			} else {
+				c.Assert(err, ErrorMatches, test.error)
+			}
+		}
+
+		if test.unmarshal {
+			err := test.value.UnmarshalText([]byte(test.text))
+			if test.error == "" {
+				c.Assert(err, IsNil)
+				if test.value != "" {
+					value := bson.ObjectIdHex(test.text)
+					c.Assert(value, DeepEquals, test.value)
+				}
+			} else {
+				c.Assert(err, ErrorMatches, test.error)
+			}
+		}
+	}
+}
+
+// --------------------------------------------------------------------------
+// ObjectId XML marshalling.
+
+type xmlType struct {
+	Id bson.ObjectId
+}
+
+var xmlIdTests = []struct {
+	value     xmlType
+	xml       string
+	marshal   bool
+	unmarshal bool
+	error     string
+}{{
+	value:     xmlType{Id: bson.ObjectIdHex("4d88e15b60f486e428412dc9")},
+	xml:       "<xmlType><Id>4d88e15b60f486e428412dc9</Id></xmlType>",
+	marshal:   true,
+	unmarshal: true,
+}, {
+	value:     xmlType{},
+	xml:       "<xmlType><Id></Id></xmlType>",
+	marshal:   true,
+	unmarshal: true,
+}, {
+	xml:       "<xmlType><Id>4d88e15b60f486e428412dc9A</Id></xmlType>",
+	marshal:   false,
+	unmarshal: true,
+	error:     `invalid ObjectId: 4d88e15b60f486e428412dc9A`,
+}, {
+	xml:       "<xmlType><Id>4d88e15b60f486e428412dcZ</Id></xmlType>",
+	marshal:   false,
+	unmarshal: true,
+	error:     `invalid ObjectId: 4d88e15b60f486e428412dcZ .*`,
+}}
+
+func (s *S) TestObjectIdXMLMarshaling(c *C) {
+	for _, test := range xmlIdTests {
+		if test.marshal {
+			data, err := xml.Marshal(&test.value)
+			if test.error == "" {
+				c.Assert(err, IsNil)
+				c.Assert(string(data), Equals, test.xml)
+			} else {
+				c.Assert(err, ErrorMatches, test.error)
+			}
+		}
+
+		if test.unmarshal {
+			var value xmlType
+			err := xml.Unmarshal([]byte(test.xml), &value)
+			if test.error == "" {
+				c.Assert(err, IsNil)
+				c.Assert(value, DeepEquals, test.value)
+			} else {
+				c.Assert(err, ErrorMatches, test.error)
+			}
 		}
 	}
 }

@@ -146,6 +146,11 @@ func (s *S) TestInsertFindOne(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result.A, Equals, 1)
 	c.Assert(result.B, Equals, 2)
+
+	err = coll.Find(M{"a": 1}).Sort("-b").One(&result)
+	c.Assert(err, IsNil)
+	c.Assert(result.A, Equals, 1)
+	c.Assert(result.B, Equals, 3)
 }
 
 func (s *S) TestInsertFindOneNil(c *C) {
@@ -446,13 +451,14 @@ func (s *S) TestUpsert(c *C) {
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
-		err := coll.Insert(M{"k": n, "n": n})
+		err := coll.Insert(bson.D{{"k", n}, {"n", n}})
 		c.Assert(err, IsNil)
 	}
 
-	info, err := coll.Upsert(M{"k": 42}, M{"k": 42, "n": 24})
+	info, err := coll.Upsert(M{"k": 42}, bson.D{{"k", 42}, {"n", 24}})
 	c.Assert(err, IsNil)
 	c.Assert(info.Updated, Equals, 1)
+	c.Assert(info.Matched, Equals, 1)
 	c.Assert(info.UpsertedId, IsNil)
 
 	result := M{}
@@ -460,10 +466,18 @@ func (s *S) TestUpsert(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 24)
 
+	// Match but do not change.
+	info, err = coll.Upsert(M{"k": 42}, bson.D{{"k", 42}, {"n", 24}})
+	c.Assert(err, IsNil)
+	c.Assert(info.Updated, Equals, 1) // On 2.6+ this feels like a server mistake.
+	c.Assert(info.Matched, Equals, 1)
+	c.Assert(info.UpsertedId, IsNil)
+
 	// Insert with internally created id.
 	info, err = coll.Upsert(M{"k": 47}, M{"k": 47, "n": 47})
 	c.Assert(err, IsNil)
 	c.Assert(info.Updated, Equals, 0)
+	c.Assert(info.Matched, Equals, 0)
 	c.Assert(info.UpsertedId, NotNil)
 
 	err = coll.Find(M{"k": 47}).One(result)
@@ -479,6 +493,7 @@ func (s *S) TestUpsert(c *C) {
 	info, err = coll.Upsert(M{"k": 48}, M{"k": 48, "n": 48, "_id": 48})
 	c.Assert(err, IsNil)
 	c.Assert(info.Updated, Equals, 0)
+	c.Assert(info.Matched, Equals, 0)
 	if s.versionAtLeast(2, 6) {
 		c.Assert(info.UpsertedId, Equals, 48)
 	} else {
@@ -540,14 +555,20 @@ func (s *S) TestUpdateAll(c *C) {
 		c.Assert(err, IsNil)
 	}
 
-	// Don't actually modify the documents. Should still report 4 matching updates.
 	info, err := coll.UpdateAll(M{"k": M{"$gt": 42}}, M{"$unset": M{"missing": 1}})
 	c.Assert(err, IsNil)
-	c.Assert(info.Updated, Equals, 4)
+	if s.versionAtLeast(2, 6) {
+		c.Assert(info.Updated, Equals, 0)
+		c.Assert(info.Matched, Equals, 4)
+	} else {
+		c.Assert(info.Updated, Equals, 4)
+		c.Assert(info.Matched, Equals, 4)
+	}
 
 	info, err = coll.UpdateAll(M{"k": M{"$gt": 42}}, M{"$inc": M{"n": 1}})
 	c.Assert(err, IsNil)
 	c.Assert(info.Updated, Equals, 4)
+	c.Assert(info.Matched, Equals, 4)
 
 	result := make(M)
 	err = coll.Find(M{"k": 42}).One(result)
@@ -654,6 +675,7 @@ func (s *S) TestRemoveAll(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(info.Updated, Equals, 0)
 	c.Assert(info.Removed, Equals, 4)
+	c.Assert(info.Matched, Equals, 4)
 	c.Assert(info.UpsertedId, IsNil)
 
 	result := &struct{ N int }{}
@@ -671,6 +693,7 @@ func (s *S) TestRemoveAll(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(info.Updated, Equals, 0)
 	c.Assert(info.Removed, Equals, 3)
+	c.Assert(info.Matched, Equals, 3)
 	c.Assert(info.UpsertedId, IsNil)
 
 	n, err := coll.Find(nil).Count()
@@ -812,6 +835,76 @@ func (s *S) TestCreateCollectionForceIndex(c *C) {
 	c.Assert(indexes, HasLen, 1)
 }
 
+func (s *S) TestCreateCollectionValidator(c *C) {
+	if !s.versionAtLeast(3, 2) {
+		c.Skip("validation depends on MongoDB 3.2+")
+	}
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	db := session.DB("mydb")
+	coll := db.C("mycoll")
+
+	// Test Validator.
+	info := &mgo.CollectionInfo{
+		Validator: M{"b": M{"$exists": true}},
+	}
+	err = coll.Create(info)
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{"a": 1})
+	c.Assert(err, ErrorMatches, "Document failed validation")
+	err = coll.DropCollection()
+	c.Assert(err, IsNil)
+
+	// Test ValidatorAction.
+	info = &mgo.CollectionInfo{
+		Validator:        M{"b": M{"$exists": true}},
+		ValidationAction: "warn",
+	}
+	err = coll.Create(info)
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{"a": 1})
+	c.Assert(err, IsNil)
+	err = coll.DropCollection()
+	c.Assert(err, IsNil)
+
+	// Test ValidationLevel.
+	info = &mgo.CollectionInfo{
+		Validator:       M{"a": M{"$exists": true}},
+		ValidationLevel: "moderate",
+	}
+	err = coll.Create(info)
+	err = coll.Insert(M{"a": 1})
+	c.Assert(err, IsNil)
+	err = db.Run(bson.D{{"collMod", "mycoll"}, {"validator", M{"b": M{"$exists": true}}}}, nil)
+	c.Assert(err, IsNil)
+	err = coll.Insert(M{"a": 2})
+	c.Assert(err, ErrorMatches, "Document failed validation")
+	err = coll.Update(M{"a": 1}, M{"c": 1})
+	c.Assert(err, IsNil)
+	err = coll.DropCollection()
+	c.Assert(err, IsNil)
+}
+
+func (s *S) TestCreateCollectionStorageEngine(c *C) {
+	if !s.versionAtLeast(3, 0) {
+		c.Skip("storageEngine option depends on MongoDB 3.0+")
+	}
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	db := session.DB("mydb")
+	coll := db.C("mycoll")
+
+	info := &mgo.CollectionInfo{
+		StorageEngine: M{"test": M{}},
+	}
+	err = coll.Create(info)
+	c.Assert(err, ErrorMatches, "test is not a registered storage engine for this server")
+}
+
 func (s *S) TestIsDupValues(c *C) {
 	c.Assert(mgo.IsDup(nil), Equals, false)
 	c.Assert(mgo.IsDup(&mgo.LastError{Code: 1}), Equals, false)
@@ -921,13 +1014,15 @@ func (s *S) TestFindAndModify(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], Equals, 42)
 	c.Assert(info.Updated, Equals, 1)
+	c.Assert(info.Matched, Equals, 1)
 	c.Assert(info.Removed, Equals, 0)
 	c.Assert(info.UpsertedId, IsNil)
 
 	// A nil result parameter should be acceptable.
 	info, err = coll.Find(M{"n": 43}).Apply(mgo.Change{Update: M{"$unset": M{"missing": 1}}}, nil)
 	c.Assert(err, IsNil)
-	c.Assert(info.Updated, Equals, 1)
+	c.Assert(info.Updated, Equals, 1) // On 2.6+ this feels like a server mistake.
+	c.Assert(info.Matched, Equals, 1)
 	c.Assert(info.Removed, Equals, 0)
 	c.Assert(info.UpsertedId, IsNil)
 
@@ -1227,6 +1322,20 @@ func (s *S) TestFindOneNotFound(c *C) {
 	c.Assert(err == mgo.ErrNotFound, Equals, true)
 }
 
+func (s *S) TestFindIterNotFound(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	result := struct{ A, B int }{}
+	iter := coll.Find(M{"a": 1}).Iter()
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Err(), IsNil)
+}
+
 func (s *S) TestFindNil(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
@@ -1281,7 +1390,7 @@ func (s *S) TestFindIterAll(c *C) {
 	result := struct{ N int }{}
 	for i := 2; i < 7; i++ {
 		ok := iter.Next(&result)
-		c.Assert(ok, Equals, true)
+		c.Assert(ok, Equals, true, Commentf("err=%v", err))
 		c.Assert(result.N, Equals, ns[i])
 		if i == 1 {
 			stats := mgo.GetStats()
@@ -1298,7 +1407,12 @@ func (s *S) TestFindIterAll(c *C) {
 	stats := mgo.GetStats()
 	c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 2*GET_MORE_OP
 	c.Assert(stats.ReceivedOps, Equals, 3) // and their REPLY_OPs.
-	c.Assert(stats.ReceivedDocs, Equals, 5)
+	if s.versionAtLeast(3, 2) {
+		// In 3.2+ responses come in batches inside the op reply docs.
+		c.Assert(stats.ReceivedDocs, Equals, 3)
+	} else {
+		c.Assert(stats.ReceivedDocs, Equals, 5)
+	}
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
@@ -1310,19 +1424,20 @@ func (s *S) TestFindIterTwiceWithSameQuery(c *C) {
 	coll := session.DB("mydb").C("mycoll")
 
 	for i := 40; i != 47; i++ {
-		coll.Insert(M{"n": i})
+		err := coll.Insert(M{"n": i})
+		c.Assert(err, IsNil)
 	}
 
 	query := coll.Find(M{}).Sort("n")
 
-	result1 := query.Skip(1).Iter()
-	result2 := query.Skip(2).Iter()
+	iter1 := query.Skip(1).Iter()
+	iter2 := query.Skip(2).Iter()
 
-	result := struct{ N int }{}
-	ok := result2.Next(&result)
+	var result struct{ N int }
+	ok := iter2.Next(&result)
 	c.Assert(ok, Equals, true)
 	c.Assert(result.N, Equals, 42)
-	ok = result1.Next(&result)
+	ok = iter1.Next(&result)
 	c.Assert(ok, Equals, true)
 	c.Assert(result.N, Equals, 41)
 }
@@ -1353,7 +1468,8 @@ func (s *S) TestFindIterLimit(c *C) {
 
 	ns := []int{40, 41, 42, 43, 44, 45, 46}
 	for _, n := range ns {
-		coll.Insert(M{"n": n})
+		err := coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
 	}
 
 	session.Refresh() // Release socket.
@@ -1377,9 +1493,16 @@ func (s *S) TestFindIterLimit(c *C) {
 	session.Refresh() // Release socket.
 
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 2)     // 1*QUERY_OP + 1*KILL_CURSORS_OP
-	c.Assert(stats.ReceivedOps, Equals, 1) // and its REPLY_OP
-	c.Assert(stats.ReceivedDocs, Equals, 3)
+	if s.versionAtLeast(3, 2) {
+		// Limit works properly in 3.2+, and results are batched in single doc.
+		c.Assert(stats.SentOps, Equals, 1)     // 1*QUERY_OP
+		c.Assert(stats.ReceivedOps, Equals, 1) // and its REPLY_OP
+		c.Assert(stats.ReceivedDocs, Equals, 1)
+	} else {
+		c.Assert(stats.SentOps, Equals, 2)     // 1*QUERY_OP + 1*KILL_CURSORS_OP
+		c.Assert(stats.ReceivedOps, Equals, 1) // and its REPLY_OP
+		c.Assert(stats.ReceivedDocs, Equals, 3)
+	}
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
@@ -1568,7 +1691,12 @@ func (s *S) TestFindIterLimitWithBatch(c *C) {
 		c.Assert(result.N, Equals, ns[i])
 		if i == 3 {
 			stats := mgo.GetStats()
-			c.Assert(stats.ReceivedDocs, Equals, 2)
+			if s.versionAtLeast(3, 2) {
+				// In 3.2+ responses come in batches inside the op reply docs.
+				c.Assert(stats.ReceivedDocs, Equals, 1)
+			} else {
+				c.Assert(stats.ReceivedDocs, Equals, 2)
+			}
 		}
 	}
 
@@ -1579,9 +1707,18 @@ func (s *S) TestFindIterLimitWithBatch(c *C) {
 	session.Refresh() // Release socket.
 
 	stats := mgo.GetStats()
-	c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 1*GET_MORE_OP + 1*KILL_CURSORS_OP
-	c.Assert(stats.ReceivedOps, Equals, 2) // and its REPLY_OPs
-	c.Assert(stats.ReceivedDocs, Equals, 3)
+	if s.versionAtLeast(3, 2) {
+		// In 3.2+ limit works properly even with multiple batches..
+		c.Assert(stats.SentOps, Equals, 2)     // 1*QUERY_OP + 1*GET_MORE_OP
+		c.Assert(stats.ReceivedOps, Equals, 2) // and its REPLY_OPs
+
+		// In 3.2+ responses come in batches inside the op reply docs.
+		c.Assert(stats.ReceivedDocs, Equals, 2)
+	} else {
+		c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 1*GET_MORE_OP + 1*KILL_CURSORS_OP
+		c.Assert(stats.ReceivedOps, Equals, 2) // and its REPLY_OPs
+		c.Assert(stats.ReceivedDocs, Equals, 3)
+	}
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
@@ -1619,7 +1756,12 @@ func (s *S) TestFindIterSortWithBatch(c *C) {
 		c.Assert(result.N, Equals, ns[i])
 		if i == 3 {
 			stats := mgo.GetStats()
-			c.Assert(stats.ReceivedDocs, Equals, 2)
+			if s.versionAtLeast(3, 2) {
+				// Find command in 3.2+ bundles batches in a single document.
+				c.Assert(stats.ReceivedDocs, Equals, 1)
+			} else {
+				c.Assert(stats.ReceivedDocs, Equals, 2)
+			}
 		}
 	}
 
@@ -1632,7 +1774,12 @@ func (s *S) TestFindIterSortWithBatch(c *C) {
 	stats := mgo.GetStats()
 	c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 2*GET_MORE_OP
 	c.Assert(stats.ReceivedOps, Equals, 3) // and its REPLY_OPs
-	c.Assert(stats.ReceivedDocs, Equals, 5)
+	if s.versionAtLeast(3, 2) {
+		// Find command in 3.2+ bundles batches in a single document.
+		c.Assert(stats.ReceivedDocs, Equals, 3)
+	} else {
+		c.Assert(stats.ReceivedDocs, Equals, 5)
+	}
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
@@ -2018,7 +2165,12 @@ func (s *S) TestFindForOnIter(c *C) {
 		c.Assert(result.N, Equals, ns[i])
 		if i == 1 {
 			stats := mgo.GetStats()
-			c.Assert(stats.ReceivedDocs, Equals, 2)
+			if s.versionAtLeast(3, 2) {
+				// Find command in 3.2+ bundles batches in a single document.
+				c.Assert(stats.ReceivedDocs, Equals, 1)
+			} else {
+				c.Assert(stats.ReceivedDocs, Equals, 2)
+			}
 		}
 		i++
 		return nil
@@ -2030,7 +2182,12 @@ func (s *S) TestFindForOnIter(c *C) {
 	stats := mgo.GetStats()
 	c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 2*GET_MORE_OP
 	c.Assert(stats.ReceivedOps, Equals, 3) // and their REPLY_OPs.
-	c.Assert(stats.ReceivedDocs, Equals, 5)
+	if s.versionAtLeast(3, 2) {
+		// Find command in 3.2+ bundles batches in a single document.
+		c.Assert(stats.ReceivedDocs, Equals, 3)
+	} else {
+		c.Assert(stats.ReceivedDocs, Equals, 5)
+	}
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
@@ -2060,6 +2217,12 @@ func (s *S) TestFindFor(c *C) {
 		if i == 1 {
 			stats := mgo.GetStats()
 			c.Assert(stats.ReceivedDocs, Equals, 2)
+			if s.versionAtLeast(3, 2) {
+				// Find command in 3.2+ bundles batches in a single document.
+				c.Assert(stats.ReceivedDocs, Equals, 1)
+			} else {
+				c.Assert(stats.ReceivedDocs, Equals, 2)
+			}
 		}
 		i++
 		return nil
@@ -2071,7 +2234,12 @@ func (s *S) TestFindFor(c *C) {
 	stats := mgo.GetStats()
 	c.Assert(stats.SentOps, Equals, 3)     // 1*QUERY_OP + 2*GET_MORE_OP
 	c.Assert(stats.ReceivedOps, Equals, 3) // and their REPLY_OPs.
-	c.Assert(stats.ReceivedDocs, Equals, 5)
+	if s.versionAtLeast(3, 2) {
+		// Find command in 3.2+ bundles batches in a single document.
+		c.Assert(stats.ReceivedDocs, Equals, 3)
+	} else {
+		c.Assert(stats.ReceivedDocs, Equals, 5)
+	}
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
@@ -2335,6 +2503,7 @@ func (s *S) TestPrefetching(c *C) {
 	coll := session.DB("mydb").C("mycoll")
 
 	const total = 600
+	const batch = 100
 	mgo.SetDebug(false)
 	docs := make([]interface{}, total)
 	for i := 0; i != total; i++ {
@@ -2351,31 +2520,31 @@ func (s *S) TestPrefetching(c *C) {
 
 		switch testi {
 		case 0: // The default session value.
-			session.SetBatch(100)
+			session.SetBatch(batch)
 			iter = coll.Find(M{}).Iter()
 			beforeMore = 75
 
 		case 2: // Changing the session value.
-			session.SetBatch(100)
+			session.SetBatch(batch)
 			session.SetPrefetch(0.27)
 			iter = coll.Find(M{}).Iter()
 			beforeMore = 73
 
 		case 1: // Changing via query methods.
-			iter = coll.Find(M{}).Prefetch(0.27).Batch(100).Iter()
+			iter = coll.Find(M{}).Prefetch(0.27).Batch(batch).Iter()
 			beforeMore = 73
 
 		case 3: // With prefetch on first document.
-			iter = coll.Find(M{}).Prefetch(1.0).Batch(100).Iter()
+			iter = coll.Find(M{}).Prefetch(1.0).Batch(batch).Iter()
 			beforeMore = 0
 
 		case 4: // Without prefetch.
-			iter = coll.Find(M{}).Prefetch(0).Batch(100).Iter()
+			iter = coll.Find(M{}).Prefetch(0).Batch(batch).Iter()
 			beforeMore = 100
 		}
 
 		pings := 0
-		for batchi := 0; batchi < len(docs)/100-1; batchi++ {
+		for batchi := 0; batchi < len(docs)/batch-1; batchi++ {
 			c.Logf("Iterating over %d documents on batch %d", beforeMore, batchi)
 			var result struct{ N int }
 			for i := 0; i < beforeMore; i++ {
@@ -2389,7 +2558,12 @@ func (s *S) TestPrefetching(c *C) {
 			pings++
 
 			stats := mgo.GetStats()
-			c.Assert(stats.ReceivedDocs, Equals, (batchi+1)*100+pings)
+			if s.versionAtLeast(3, 2) {
+				// Find command in 3.2+ bundles batches in a single document.
+				c.Assert(stats.ReceivedDocs, Equals, (batchi+1)+pings)
+			} else {
+				c.Assert(stats.ReceivedDocs, Equals, (batchi+1)*batch+pings)
+			}
 
 			c.Logf("Iterating over one more document on batch %d", batchi)
 			ok := iter.Next(&result)
@@ -2400,7 +2574,12 @@ func (s *S) TestPrefetching(c *C) {
 			pings++
 
 			stats = mgo.GetStats()
-			c.Assert(stats.ReceivedDocs, Equals, (batchi+2)*100+pings)
+			if s.versionAtLeast(3, 2) {
+				// Find command in 3.2+ bundles batches in a single document.
+				c.Assert(stats.ReceivedDocs, Equals, (batchi+2)+pings)
+			} else {
+				c.Assert(stats.ReceivedDocs, Equals, (batchi+2)*batch+pings)
+			}
 		}
 	}
 }
@@ -2561,22 +2740,17 @@ func (s *S) TestQueryErrorOne(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
-	result := struct {
-		Err string "$err"
-	}{}
-
-	err = coll.Find(M{"a": 1}).Select(M{"a": M{"b": 1}}).One(&result)
+	err = coll.Find(M{"a": 1}).Select(M{"a": M{"b": 1}}).One(nil)
 	c.Assert(err, ErrorMatches, ".*Unsupported projection option:.*")
 	c.Assert(err.(*mgo.QueryError).Message, Matches, ".*Unsupported projection option:.*")
-	if s.versionAtLeast(2, 6) {
-		// Oh, the dance of error codes. :-(
+	// Oh, the dance of error codes. :-(
+	if s.versionAtLeast(3, 2) {
+		c.Assert(err.(*mgo.QueryError).Code, Equals, 2)
+	} else if s.versionAtLeast(2, 6) {
 		c.Assert(err.(*mgo.QueryError).Code, Equals, 17287)
 	} else {
 		c.Assert(err.(*mgo.QueryError).Code, Equals, 13097)
 	}
-
-	// The result should be properly unmarshalled with QueryError
-	c.Assert(result.Err, Matches, ".*Unsupported projection option:.*")
 }
 
 func (s *S) TestQueryErrorNext(c *C) {
@@ -2586,28 +2760,24 @@ func (s *S) TestQueryErrorNext(c *C) {
 
 	coll := session.DB("mydb").C("mycoll")
 
-	result := struct {
-		Err string "$err"
-	}{}
-
 	iter := coll.Find(M{"a": 1}).Select(M{"a": M{"b": 1}}).Iter()
 
+	var result struct{}
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, false)
 
 	err = iter.Close()
 	c.Assert(err, ErrorMatches, ".*Unsupported projection option:.*")
 	c.Assert(err.(*mgo.QueryError).Message, Matches, ".*Unsupported projection option:.*")
-	if s.versionAtLeast(2, 6) {
-		// Oh, the dance of error codes. :-(
+	// Oh, the dance of error codes. :-(
+	if s.versionAtLeast(3, 2) {
+		c.Assert(err.(*mgo.QueryError).Code, Equals, 2)
+	} else if s.versionAtLeast(2, 6) {
 		c.Assert(err.(*mgo.QueryError).Code, Equals, 17287)
 	} else {
 		c.Assert(err.(*mgo.QueryError).Code, Equals, 13097)
 	}
 	c.Assert(iter.Err(), Equals, err)
-
-	// The result should be properly unmarshalled with QueryError
-	c.Assert(result.Err, Matches, ".*Unsupported projection option:.*")
 }
 
 var indexTests = []struct {

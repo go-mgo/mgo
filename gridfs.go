@@ -528,10 +528,16 @@ func (file *GridFile) completeWrite() {
 		}
 		file.doc.MD5 = hexsum
 		file.err = file.gfs.Files.Insert(file.doc)
-		file.gfs.Chunks.EnsureIndexKey("files_id", "n")
 	}
 	if file.err != nil {
 		file.gfs.Chunks.RemoveAll(bson.D{{"files_id", file.doc.Id}})
+	}
+	if file.err == nil {
+		index := Index{
+			Key:    []string{"files_id", "n"},
+			Unique: true,
+		}
+		file.err = file.gfs.Chunks.EnsureIndex(index)
 	}
 }
 

@@ -1262,6 +1262,22 @@ func (s *S) countQueries(c *C, server string) (n int) {
 	return result.OpCounters.Query
 }
 
+func (s *S) countCommands(c *C, server, commandName string) (n int) {
+	defer func() { c.Logf("Queries for %q: %d", server, n) }()
+	session, err := mgo.Dial(server + "?connect=direct")
+	c.Assert(err, IsNil)
+	defer session.Close()
+	session.SetMode(mgo.Monotonic, true)
+	var result struct {
+		Metrics struct {
+			Commands map[string]struct{ Total int }
+		}
+	}
+	err = session.Run("serverStatus", &result)
+	c.Assert(err, IsNil)
+	return result.Metrics.Commands[commandName].Total
+}
+
 func (s *S) TestMonotonicSlaveOkFlagWithMongos(c *C) {
 	session, err := mgo.Dial("localhost:40021")
 	c.Assert(err, IsNil)
@@ -1927,5 +1943,36 @@ func (s *S) TestSelectServersWithMongos(c *C) {
 		c.Check(q23b-q23a, Equals, 0)
 	default:
 		c.Fatal("Uh?")
+	}
+}
+
+func (s *S) TestDoNotFallbackToMonotonic(c *C) {
+	// There was a bug at some point that some functions were
+	// falling back to Monotonic mode. This test ensures all listIndexes
+	// commands go to the primary, as should happen since the session is
+	// in Strong mode.
+	if !s.versionAtLeast(3, 0) {
+		c.Skip("command-counting logic depends on 3.0+")
+	}
+
+	session, err := mgo.Dial("localhost:40012")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	for i := 0; i < 15; i++ {
+		q11a := s.countCommands(c, "localhost:40011", "listIndexes")
+		q12a := s.countCommands(c, "localhost:40012", "listIndexes")
+		q13a := s.countCommands(c, "localhost:40013", "listIndexes")
+
+		_, err := session.DB("local").C("system.indexes").Indexes()
+		c.Assert(err, IsNil)
+
+		q11b := s.countCommands(c, "localhost:40011", "listIndexes")
+		q12b := s.countCommands(c, "localhost:40012", "listIndexes")
+		q13b := s.countCommands(c, "localhost:40013", "listIndexes")
+
+		c.Assert(q11b, Equals, q11a+1)
+		c.Assert(q12b, Equals, q12a)
+		c.Assert(q13b, Equals, q13a)
 	}
 }

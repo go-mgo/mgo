@@ -131,7 +131,7 @@ func (s *S) TestBulkInsertErrorUnorderedSplitBatch(c *C) {
 	c.Assert(res.Id, Equals, 1500)
 }
 
-func (s *S) TestBulkError(c *C) {
+func (s *S) TestBulkErrorString(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -174,6 +174,118 @@ func (s *S) TestBulkError(c *C) {
 		c.Assert(err, ErrorMatches, ".*array.*")
 	}
 	c.Assert(mgo.IsDup(err), Equals, false)
+}
+
+func (s *S) TestBulkErrorCases_2_6(c *C) {
+	if !s.versionAtLeast(2, 6) {
+		c.Skip("2.4- has poor bulk reporting")
+	}
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	bulk := coll.Bulk()
+	bulk.Unordered()
+
+	// There's a limit of 1000 operations per command, so
+	// this forces the more complex indexing logic to act.
+	for i := 0; i < 1010; i++ {
+		switch i {
+		case 3, 14:
+			bulk.Insert(M{"_id": "dupone"})
+		case 5, 106:
+			bulk.Update(M{"_id": i - 1}, M{"$set": M{"_id": 4}})
+		case 7, 1008:
+			bulk.Insert(M{"_id": "duptwo"})
+		default:
+			bulk.Insert(M{"_id": i})
+		}
+	}
+
+	_, err = bulk.Run()
+	ecases := err.(*mgo.BulkError).Cases()
+
+	c.Check(ecases[0].Err, ErrorMatches, ".*duplicate.*dupone.*")
+	c.Check(ecases[0].Index, Equals, 14)
+	c.Check(ecases[1].Err, ErrorMatches, ".*update.*_id.*")
+	c.Check(ecases[1].Index, Equals, 106)
+	c.Check(ecases[2].Err, ErrorMatches, ".*duplicate.*duptwo.*")
+	c.Check(ecases[2].Index, Equals, 1008)
+}
+
+func (s *S) TestBulkErrorCases_2_4(c *C) {
+	if s.versionAtLeast(2, 6) {
+		c.Skip("2.6+ has better reporting")
+	}
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	bulk := coll.Bulk()
+	bulk.Unordered()
+
+	// There's a limit of 1000 operations per command, so
+	// this forces the more complex indexing logic to act.
+	for i := 0; i < 1010; i++ {
+		switch i {
+		case 3, 14:
+			bulk.Insert(M{"_id": "dupone"})
+		case 5:
+			bulk.Update(M{"_id": i - 1}, M{"$set": M{"n": 4}})
+		case 106:
+			bulk.Update(M{"_id": i - 1}, M{"$bogus": M{"n": 4}})
+		case 7, 1008:
+			bulk.Insert(M{"_id": "duptwo"})
+		default:
+			bulk.Insert(M{"_id": i})
+		}
+	}
+
+	_, err = bulk.Run()
+	ecases := err.(*mgo.BulkError).Cases()
+
+	c.Check(ecases[0].Err, ErrorMatches, ".*duplicate.*duptwo.*")
+	c.Check(ecases[0].Index, Equals, -1)
+	c.Check(ecases[1].Err, ErrorMatches, `.*\$bogus.*`)
+	c.Check(ecases[1].Index, Equals, 106)
+}
+
+func (s *S) TestBulkErrorCasesOrdered(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	bulk := coll.Bulk()
+
+	// There's a limit of 1000 operations per command, so
+	// this forces the more complex indexing logic to act.
+	for i := 0; i < 20; i++ {
+		switch i {
+		case 3, 14:
+			bulk.Insert(M{"_id": "dupone"})
+		case 7, 17:
+			bulk.Insert(M{"_id": "duptwo"})
+		default:
+			bulk.Insert(M{"_id": i})
+		}
+	}
+
+	_, err = bulk.Run()
+	ecases := err.(*mgo.BulkError).Cases()
+
+	c.Check(ecases[0].Err, ErrorMatches, ".*duplicate.*dupone.*")
+	if s.versionAtLeast(2, 6) {
+		c.Check(ecases[0].Index, Equals, 14)
+	} else {
+		c.Check(ecases[0].Index, Equals, -1)
+	}
+	c.Check(ecases, HasLen, 1)
 }
 
 func (s *S) TestBulkUpdate(c *C) {
@@ -272,7 +384,7 @@ func (s *S) TestBulkUpdateAll(c *C) {
 
 	bulk := coll.Bulk()
 	bulk.UpdateAll(M{"n": 1}, M{"$set": M{"n": 10}})
-	bulk.UpdateAll(M{"n": 2}, M{"$set": M{"n": 2}})
+	bulk.UpdateAll(M{"n": 2}, M{"$set": M{"n": 2}})  // Won't change.
 	bulk.UpdateAll(M{"n": 5}, M{"$set": M{"n": 50}}) // Won't match.
 	bulk.UpdateAll(M{}, M{"$inc": M{"n": 1}}, M{"n": 11}, M{"$set": M{"n": 5}})
 	r, err := bulk.Run()
@@ -390,4 +502,3 @@ func (s *S) TestBulkRemoveAll(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(res, DeepEquals, []doc{{3}})
 }
-

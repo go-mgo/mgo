@@ -162,6 +162,11 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 		// Cannot do this because it lacks timeout support. :-(
 		//conn, err = net.DialTCP("tcp", nil, server.tcpaddr)
 		conn, err = net.DialTimeout("tcp", server.ResolvedAddr, timeout)
+		if tcpconn, ok := conn.(*net.TCPConn); ok {
+			tcpconn.SetKeepAlive(true)
+		} else {
+			panic("internal error: obtained TCP connection is not a *net.TCPConn!?")
+		}
 	case dial.old != nil:
 		conn, err = dial.old(server.tcpaddr)
 	case dial.new != nil:
