@@ -2,8 +2,9 @@ package mgo
 
 import (
 	"bytes"
-	"gopkg.in/mgo.v2-unstable/bson"
 	"sort"
+
+	"gopkg.in/mgo.v2-unstable/bson"
 )
 
 // Bulk represents an operation that can be prepared with several
@@ -106,7 +107,7 @@ func (slice bulkErrorCases) Swap(i, j int)      { slice[i], slice[j] = slice[j],
 // for bulk inserts and without any positional information, so the Index
 // field is set to -1 in these cases.
 type BulkErrorCase struct {
-	Index int   // Position of operation that failed, or -1 if unknown.
+	Index int // Position of operation that failed, or -1 if unknown.
 	Err   error
 }
 

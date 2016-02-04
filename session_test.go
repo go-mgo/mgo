@@ -859,7 +859,7 @@ func (s *S) TestCreateCollectionValidator(c *C) {
 
 	// Test ValidatorAction.
 	info = &mgo.CollectionInfo{
-		Validator: M{"b": M{"$exists": true}},
+		Validator:        M{"b": M{"$exists": true}},
 		ValidationAction: "warn",
 	}
 	err = coll.Create(info)
@@ -871,7 +871,7 @@ func (s *S) TestCreateCollectionValidator(c *C) {
 
 	// Test ValidationLevel.
 	info = &mgo.CollectionInfo{
-		Validator: M{"a": M{"$exists": true}},
+		Validator:       M{"a": M{"$exists": true}},
 		ValidationLevel: "moderate",
 	}
 	err = coll.Create(info)

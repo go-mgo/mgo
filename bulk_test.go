@@ -196,7 +196,7 @@ func (s *S) TestBulkErrorCases_2_6(c *C) {
 		case 3, 14:
 			bulk.Insert(M{"_id": "dupone"})
 		case 5, 106:
-			bulk.Update(M{"_id": i-1}, M{"$set": M{"_id": 4}})
+			bulk.Update(M{"_id": i - 1}, M{"$set": M{"_id": 4}})
 		case 7, 1008:
 			bulk.Insert(M{"_id": "duptwo"})
 		default:
@@ -235,9 +235,9 @@ func (s *S) TestBulkErrorCases_2_4(c *C) {
 		case 3, 14:
 			bulk.Insert(M{"_id": "dupone"})
 		case 5:
-			bulk.Update(M{"_id": i-1}, M{"$set": M{"n": 4}})
+			bulk.Update(M{"_id": i - 1}, M{"$set": M{"n": 4}})
 		case 106:
-			bulk.Update(M{"_id": i-1}, M{"$bogus": M{"n": 4}})
+			bulk.Update(M{"_id": i - 1}, M{"$bogus": M{"n": 4}})
 		case 7, 1008:
 			bulk.Insert(M{"_id": "duptwo"})
 		default:
@@ -502,4 +502,3 @@ func (s *S) TestBulkRemoveAll(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(res, DeepEquals, []doc{{3}})
 }
-
