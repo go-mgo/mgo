@@ -3165,10 +3165,10 @@ type findCmd struct {
 //     https://docs.mongodb.org/master/reference/command/getMore/#dbcmd.getMore
 //
 type getMoreCmd struct {
-	CursorId   int64       `bson:"getMore"`
-	Collection string      `bson:"collection"`
-	BatchSize  interface{} `bson:"batchSize,omitempty"`
-	MaxTimeMS  int64       `bson:"maxTimeMS,omitempty"`
+	CursorId   int64  `bson:"getMore"`
+	Collection string `bson:"collection"`
+	BatchSize  int32  `bson:"batchSize,omitempty"`
+	MaxTimeMS  int64  `bson:"maxTimeMS,omitempty"`
 }
 
 // run duplicates the behavior of collection.Find(query).One(&result)
