@@ -1586,6 +1586,39 @@ func (s *S) TestTooManyItemsLimitBug(c *C) {
 	c.Assert(iters, Equals, limit)
 }
 
+func (s *S) TestBatchSizeZeroGetMore(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
+
+	mgo.SetDebug(false)
+	coll := session.DB("mydb").C("mycoll")
+	words := strings.Split("foo bar baz", " ")
+	for i := 0; i < 5; i++ {
+		words = append(words, words...)
+	}
+	doc := bson.D{{"words", words}}
+	inserts := 10000
+	iters := 0
+	for i := 0; i < inserts; i++ {
+		err := coll.Insert(&doc)
+		c.Assert(err, IsNil)
+	}
+	iter := coll.Find(nil).Iter()
+	for iter.Next(&doc) {
+		if iters%100 == 0 {
+			c.Logf("Seen %d docments", iters)
+		}
+		iters++
+	}
+	c.Assert(iter.Close(), IsNil)
+}
+
 func serverCursorsOpen(session *mgo.Session) int {
 	var result struct {
 		Cursors struct {
