@@ -667,6 +667,11 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 				out.SetInt(0)
 			}
 			return true
+		case reflect.String:
+			if parseInt, err := strconv.ParseInt(inv.String(), 10, 64); err == nil {
+				out.SetInt(parseInt)
+			}
+			return true
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 			panic("can't happen: no uint types in BSON (!?)")
 		}
