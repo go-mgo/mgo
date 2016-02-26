@@ -489,8 +489,15 @@ func handleErr(err *error) {
 //     }
 //
 func Marshal(in interface{}) (out []byte, err error) {
+	return MarshalBuffer(in, make([]byte, 0, initialBufferSize))
+}
+
+// MarshalBuffer behaves the same way as Marshal, except that instead of
+// allocating a new byte slice it tries to use the received byte slice and
+// only allocates more memory if necessary to fit the marshaled value.
+func MarshalBuffer(in interface{}, buf []byte) (out []byte, err error) {
 	defer handleErr(&err)
-	e := &encoder{make([]byte, 0, initialBufferSize)}
+	e := &encoder{buf}
 	e.addDoc(reflect.ValueOf(in))
 	return e.out, nil
 }

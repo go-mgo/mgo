@@ -372,13 +372,22 @@ func (socket *mongoSocket) SimpleQuery(op *queryOp) (data []byte, err error) {
 	return data, err
 }
 
+var bytesBufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 0, 256)
+	},
+}
+
 func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 
 	if lops := socket.flushLogout(); len(lops) > 0 {
 		ops = append(lops, ops...)
 	}
 
-	buf := make([]byte, 0, 256)
+	buf := bytesBufferPool.Get().([]byte)
+	defer func() {
+		bytesBufferPool.Put(buf[:0])
+	}()
 
 	// Serialize operations synchronously to avoid interrupting
 	// other goroutines while we can't really be sending data.
@@ -674,11 +683,11 @@ func addBSON(b []byte, doc interface{}) ([]byte, error) {
 	if doc == nil {
 		return append(b, 5, 0, 0, 0, 0), nil
 	}
-	data, err := bson.Marshal(doc)
+	data, err := bson.MarshalBuffer(doc, b)
 	if err != nil {
 		return b, err
 	}
-	return append(b, data...), nil
+	return data, nil
 }
 
 func setInt32(b []byte, pos int, i int32) {
