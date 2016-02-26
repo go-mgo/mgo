@@ -34,6 +34,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	. "gopkg.in/check.v1"
@@ -4091,4 +4092,47 @@ func (s *S) BenchmarkFindIterRaw(c *C) {
 	c.StopTimer()
 	c.Assert(iter.Err(), IsNil)
 	c.Assert(i, Equals, c.N)
+}
+
+func BenchmarkInsertSingle(b *testing.B) {
+	session, err := mgo.Dial("localhost:40001")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer session.Close()
+
+	doc := bson.D{
+		{"A", strings.Repeat("*", 256)},
+	}
+	coll := session.DB("mydb").C("benchmarkcoll")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := coll.Insert(doc)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkInsertMultiple(b *testing.B) {
+	session, err := mgo.Dial("localhost:40001")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer session.Close()
+
+	docs := make([]interface{}, 100)
+	for i := range docs {
+		docs[i] = bson.D{
+			{"A", strings.Repeat("*", 256)},
+		}
+	}
+	coll := session.DB("mydb").C("benchmarkcoll")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := coll.Insert(docs...)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
 }
