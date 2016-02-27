@@ -1170,6 +1170,30 @@ func (s *S) TestCountSkipLimit(c *C) {
 	c.Assert(n, Equals, 4)
 }
 
+func (s *S) TestCountTimeout(c *C) {
+	if !s.versionAtLeast(2, 6) {
+		c.Skip("SetMaxTime only supported in 2.6+")
+	}
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	for i := 0; i < 5000; i++ {
+		err := coll.Insert(M{
+			"n": i,
+			"a": i % 10,
+			"b": i % 8,
+			"c": i % 5,
+		})
+		c.Assert(err, IsNil)
+	}
+
+	_, err = coll.Find(M{"a": 9, "b": 1, "c": 2}).SetMaxTime(time.Millisecond).Count()
+	c.Assert(err, ErrorMatches, "*operation exceeded time limit")
+}
+
 func (s *S) TestQueryExplain(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
