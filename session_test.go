@@ -3755,6 +3755,55 @@ func (s *S) TestRepairCursor(c *C) {
 	}
 }
 
+func (s *S) TestExists(c *C) {
+	// version check...
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll4")
+	err = coll.DropCollection()
+
+	c.Assert(coll.Exists(nil), Equals, false)
+
+	err = coll.Create(&mgo.CollectionInfo{})
+	c.Assert(err, IsNil)
+
+	c.Assert(coll.Exists(nil), Equals, true)
+}
+
+func (s *S) TestIsCapped(c *C) {
+	// version check...
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll4")
+	err = coll.DropCollection()
+
+	c.Assert(coll.IsCapped(), Equals, false)
+
+	err = coll.Create(&mgo.CollectionInfo{})
+	c.Assert(err, IsNil)
+
+	c.Assert(coll.IsCapped(), Equals, false)
+
+	err = coll.DropCollection()
+
+	info := &mgo.CollectionInfo{
+		Capped:   true,
+		MaxBytes: 1024,
+		MaxDocs:  3,
+	}
+
+	err = coll.Create(info)
+	c.Assert(err, IsNil)
+
+	c.Assert(coll.IsCapped(), Equals, true)
+}
+
 func (s *S) TestPipeIter(c *C) {
 	if !s.versionAtLeast(2, 1) {
 		c.Skip("Pipe only works on 2.1+")
