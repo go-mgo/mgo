@@ -142,7 +142,7 @@ func (s *S) Stop(host string) {
 	// Give a moment for slaves to sync and avoid getting rollback issues.
 	panicOnWindows()
 	time.Sleep(2 * time.Second)
-	err := run("cd _testdb && supervisorctl stop " + supvName(host))
+	err := run("svc -d _testdb/daemons/" + supvName(host))
 	if err != nil {
 		panic(err)
 	}
@@ -185,8 +185,8 @@ func (s *S) Thaw(host string) {
 func (s *S) StartAll() {
 	if s.stopped {
 		// Restart any stopped nodes.
-		run("cd _testdb && supervisorctl start all")
-		err := run("cd testdb && mongo --nodb wait.js")
+		run("svc -u _testdb/daemons/*")
+		err := run("mongo --nodb testdb/wait.js")
 		if err != nil {
 			panic(err)
 		}
@@ -231,7 +231,7 @@ var supvNames = map[string]string{
 	"40203": "s3",
 }
 
-// supvName returns the supervisord name for the given host address.
+// supvName returns the daemon name for the given host address.
 func supvName(host string) string {
 	host, port, err := net.SplitHostPort(host)
 	if err != nil {
