@@ -1,0 +1,18 @@
+language: go
+
+go_import_path: gopkg.in/mgo.v2
+
+addons:
+    apt:
+        packages:
+            - supervisor
+            - mongodb
+
+before_script:
+    - make startdb
+
+script:
+    - cd bson && go test -check.v
+    - go test -check.v -fast
+
+# vim:ts=4:et
