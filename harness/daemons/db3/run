@@ -7,6 +7,6 @@ exec mongod $COMMONDOPTS \
 	--port 40003 \
 	--auth \
 	--sslMode preferSSL \
-	--sslCAFile ../../server.pem \
-	--sslPEMKeyFile ../../server.pem
+	--sslCAFile ../../certs/server.pem \
+	--sslPEMKeyFile ../../certs/server.pem
 

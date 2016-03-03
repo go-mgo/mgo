@@ -6,4 +6,4 @@ exec mongod $COMMONDOPTS \
 	--shardsvr \
 	--replSet rs3 \
 	--port 40033 \
-	--keyFile=../../keyfile
+	--keyFile=../../certs/keyfile

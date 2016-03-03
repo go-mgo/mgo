@@ -93,7 +93,7 @@ func (s *S) SetUpSuite(c *C) {
 }
 
 func (s *S) SetUpTest(c *C) {
-	err := run("mongo --nodb harness/dropall.js")
+	err := run("mongo --nodb harness/mongojs/dropall.js")
 	if err != nil {
 		panic(err.Error())
 	}
@@ -186,7 +186,7 @@ func (s *S) StartAll() {
 	if s.stopped {
 		// Restart any stopped nodes.
 		run("svc -u _harness/daemons/*")
-		err := run("mongo --nodb harness/wait.js")
+		err := run("mongo --nodb harness/mongojs/wait.js")
 		if err != nil {
 			panic(err)
 		}

@@ -3,12 +3,12 @@
 LINE="---------------"
 
 start() {
-    mkdir _harness
+    mkdir -p _harness
     cd _harness
-    echo keyfile > keyfile
-    chmod 600 keyfile
-    cp ../harness/server.pem server.pem
     cp -a ../harness/daemons .
+    cp -a ../harness/certs .
+    echo keyfile > certs/keyfile
+    chmod 600 certs/keyfile
     if ! mongod --help | grep -q -- --ssl; then
         rm -rf daemons/db3
     fi
@@ -27,7 +27,7 @@ start() {
         echo "$UP processes up..."
         if [ x$COUNT = x$UP ]; then
             echo "Running setup.js with mongo..."
-            mongo --nodb ../harness/init.js
+            mongo --nodb ../harness/mongojs/init.js
             exit 0
         fi
         sleep 1
