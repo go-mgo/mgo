@@ -93,7 +93,7 @@ func (s *S) SetUpSuite(c *C) {
 }
 
 func (s *S) SetUpTest(c *C) {
-	err := run("mongo --nodb testdb/dropall.js")
+	err := run("mongo --nodb harness/dropall.js")
 	if err != nil {
 		panic(err.Error())
 	}
@@ -142,7 +142,7 @@ func (s *S) Stop(host string) {
 	// Give a moment for slaves to sync and avoid getting rollback issues.
 	panicOnWindows()
 	time.Sleep(2 * time.Second)
-	err := run("svc -d _testdb/daemons/" + supvName(host))
+	err := run("svc -d _harness/daemons/" + supvName(host))
 	if err != nil {
 		panic(err)
 	}
@@ -185,8 +185,8 @@ func (s *S) Thaw(host string) {
 func (s *S) StartAll() {
 	if s.stopped {
 		// Restart any stopped nodes.
-		run("svc -u _testdb/daemons/*")
-		err := run("mongo --nodb testdb/wait.js")
+		run("svc -u _harness/daemons/*")
+		err := run("mongo --nodb harness/wait.js")
 		if err != nil {
 			panic(err)
 		}

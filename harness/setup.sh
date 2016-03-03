@@ -3,12 +3,12 @@
 LINE="---------------"
 
 start() {
-    mkdir _testdb
-    cd _testdb
+    mkdir _harness
+    cd _harness
     echo keyfile > keyfile
     chmod 600 keyfile
-    cp ../testdb/server.pem server.pem
-    cp -a ../testdb/daemons .
+    cp ../harness/server.pem server.pem
+    cp -a ../harness/daemons .
     if ! mongod --help | grep -q -- --ssl; then
         rm -rf daemons/db3
     fi
@@ -27,18 +27,18 @@ start() {
         echo "$UP processes up..."
         if [ x$COUNT = x$UP ]; then
             echo "Running setup.js with mongo..."
-            mongo --nodb ../testdb/init.js
+            mongo --nodb ../harness/init.js
             exit 0
         fi
         sleep 1
     done
-    echo "Failed to start processes. svstat _testdb/daemons/* output:"
+    echo "Failed to start processes. svstat _harness/daemons/* output:"
     echo $LINE
     svstat daemons/*
     echo $LINE
     for DAEMON in daemons/*; do
         if $(svstat $DAEMON | grep ' up ' | grep ' [0-3] seconds' > /dev/null); then
-            echo "Logs for _testdb/$DAEMON:"
+            echo "Logs for _harness/$DAEMON:"
             echo $LINE
             cat $DAEMON/log/log.txt
             echo $LINE
@@ -48,8 +48,8 @@ start() {
 }
 
 stop() {
-    if [ -d _testdb ]; then
-        cd _testdb
+    if [ -d _harness ]; then
+        cd _harness
         if [ -f svscan.pid ]; then
             kill -9 $(cat svscan.pid) 2> /dev/null || true
             svc -dx daemons/* daemons/*/log > /dev/null 2>&1 || true
@@ -67,7 +67,7 @@ stop() {
             echo "Done."
         fi
         cd ..
-        rm -rf _testdb
+        rm -rf _harness
     fi
 }
 
