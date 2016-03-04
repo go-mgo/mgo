@@ -4525,7 +4525,7 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 				lerr.N += oplerr.N
 				lerr.modified += oplerr.modified
 				if err != nil {
-					for ei := range lerr.ecases {
+					for ei := range oplerr.ecases {
 						oplerr.ecases[ei].Index += i
 					}
 					lerr.ecases = append(lerr.ecases, oplerr.ecases...)
