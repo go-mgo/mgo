@@ -3,6 +3,10 @@
 LINE="---------------"
 
 start() {
+    if [ -d _harness ]; then
+        echo "Daemon setup already in place, stop it first."
+        exit 1
+    fi
     mkdir -p _harness
     cd _harness
     cp -a ../harness/daemons .
