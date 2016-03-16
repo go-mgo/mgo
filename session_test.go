@@ -1097,6 +1097,20 @@ func (s *S) TestFindAndModifyBug997828(c *C) {
 	}
 }
 
+func (s *S) TestFindAndModifyErrmsgDoc(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"errmsg": "an error"})
+
+	var result M
+	_, err = coll.Find(M{}).Apply(mgo.Change{Update: M{"$set": M{"n": 1}}}, &result)
+	c.Assert(err, IsNil)
+}
+
 func (s *S) TestCountCollection(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
