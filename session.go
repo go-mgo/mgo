@@ -1235,7 +1235,7 @@ func (c *Collection) EnsureIndex(index Index) error {
 		Min:              index.Minf,
 		Max:              index.Maxf,
 		BucketSize:       index.BucketSize,
-		ExpireAfter:      int(index.ExpireAfter / time.Second),
+		ExpireAfter:      int(index.ExpireAfter),
 		Weights:          keyInfo.weights,
 		DefaultLanguage:  index.DefaultLanguage,
 		LanguageOverride: index.LanguageOverride,
@@ -2332,7 +2332,7 @@ type queryError struct {
 	ErrMsg        string
 	Assertion     string
 	Code          int
-	AssertionCode int        "assertionCode"
+	AssertionCode int "assertionCode"
 }
 
 type QueryError struct {
