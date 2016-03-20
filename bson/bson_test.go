@@ -41,6 +41,7 @@ import (
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/mgo.v2-unstable/bson"
+	"gopkg.in/mgo.v2-unstable/decimal"
 	"gopkg.in/yaml.v2"
 )
 
@@ -124,6 +125,8 @@ func (s *S) TestUnmarshalSampleItems(c *C) {
 // length and last \x00 from the document. wrapInDoc() computes them.
 // Note that all of them should be supported as two-way conversions.
 
+var dcml, _ = decimal.Parse("0.1")
+
 var allItems = []testItemType{
 	{bson.M{},
 		""},
@@ -170,6 +173,8 @@ var allItems = []testItemType{
 		"\x12_\x00\x02\x01\x00\x00\x00\x00\x00\x00"},
 	{bson.M{"_": int64(258 << 32)},
 		"\x12_\x00\x00\x00\x00\x00\x02\x01\x00\x00"},
+	{bson.M{"_": dcml},
+		"\x13_\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x3e\x30"},
 	{bson.M{"_": bson.MaxKey},
 		"\x7F_\x00"},
 	{bson.M{"_": bson.MinKey},
@@ -1820,4 +1825,213 @@ func (s *S) BenchmarkUnmarshalRaw(c *C) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+// --------------------------------------------------------------------------
+// Tests for parsing and marshaling decimals.
+
+// makeManyString returns a concatenation of s, length times
+func makeManyString(s string, length int) string {
+	var ret string;
+	for i := 0; i < length; i++ {
+		ret += s
+	}
+	return ret
+}
+
+func (s *S) TestDecimalStringInfinity(c *C) {
+	positiveInfinity := bson.Dec128ToDecimal([2]uint64{0, 0x7800000000000000})
+	negativeInfinity := bson.Dec128ToDecimal([2]uint64{0, 0xf800000000000000})
+	c.Assert(positiveInfinity, Equals, "Inf")
+	c.Assert(negativeInfinity, Equals, "-Inf")
+}
+
+func (s *S) TestDecimalStringNaN(c *C) {
+	pNaN := bson.Dec128ToDecimal([2]uint64{0, 0x7c00000000000000})
+	nNaN := bson.Dec128ToDecimal([2]uint64{0, 0xfc00000000000000})
+	psNaN := bson.Dec128ToDecimal([2]uint64{0, 0x7e00000000000000})
+	nsNaN := bson.Dec128ToDecimal([2]uint64{0, 0xfe00000000000000})
+	payloadNaN := bson.Dec128ToDecimal([2]uint64{12, 0x7e00000000000000})
+	c.Assert(pNaN, Equals, "NaN")
+	c.Assert(nNaN, Equals, "NaN")
+	c.Assert(psNaN, Equals, "NaN")
+	c.Assert(nsNaN, Equals, "NaN")
+	c.Assert(payloadNaN, Equals, "NaN")
+}
+
+func (s *S) TestDecimalStringRegular(c *C) {
+	one := bson.Dec128ToDecimal([2]uint64{0x0000000000000001, 0x3040000000000000})
+	// 10E-1
+	oneShift := bson.Dec128ToDecimal([2]uint64{0x000000000000000a, 0x303e000000000000})
+	zero := bson.Dec128ToDecimal([2]uint64{0x0000000000000000, 0x3040000000000000})
+	two  := bson.Dec128ToDecimal([2]uint64{0x0000000000000002, 0x3040000000000000})
+	negativeOne := bson.Dec128ToDecimal([2]uint64{0x0000000000000001, 0xb040000000000000})
+	negativeZero := bson.Dec128ToDecimal([2]uint64{0x0000000000000000, 0xb040000000000000})
+	// 0.1
+	tenth := bson.Dec128ToDecimal([2]uint64{0x0000000000000001, 0x303e000000000000})
+	// 0.001234
+	smallestRegular := bson.Dec128ToDecimal([2]uint64{0x00000000000004d2, 0x3034000000000000})
+	// 12345789012
+	largestRegular  := bson.Dec128ToDecimal([2]uint64{0x0000001cbe991a14, 0x3040000000000000})
+	// 0.00123400000
+	trailingZeros := bson.Dec128ToDecimal([2]uint64{0x00000000075aef40, 0x302a000000000000})
+	// 0.1234567890123456789012345678901234
+	allDigits := bson.Dec128ToDecimal([2]uint64{0xde825cd07e96aff2, 0x2ffc3cde6fff9732})
+	c.Assert(one, Equals, "1")
+	c.Assert(oneShift, Equals, "1.0")
+	c.Assert(zero, Equals, "0")
+	c.Assert(two , Equals, "2")
+	c.Assert(negativeOne, Equals, "-1")
+	c.Assert(negativeZero, Equals, "-0")
+	c.Assert(tenth, Equals, "0.1")
+	c.Assert(smallestRegular, Equals, "0.001234")
+	c.Assert(largestRegular , Equals, "123456789012")
+	c.Assert(trailingZeros, Equals, "0.00123400000")
+	c.Assert(allDigits, Equals, "0.1234567890123456789012345678901234")
+}
+
+func (s *S) TestDecimalStringScientific(c *C) {
+	// 1.000000000000000000000000000000000E+6144
+	huge := bson.Dec128ToDecimal([2]uint64{0x38c15b0a00000000, 0x5ffe314dc6448d93})
+	// 1E-6176
+	tiny := bson.Dec128ToDecimal([2]uint64{0x0000000000000001, 0x0000000000000000})
+	// -1E-6176i
+	negTiny := bson.Dec128ToDecimal([2]uint64{0x0000000000000001, 0x8000000000000000})
+	// 9.999987654321E+112
+	large := bson.Dec128ToDecimal([2]uint64{0x000009184db63eb1, 0x3108000000000000})
+	// 9.999999999999999999999999999999999E+6144
+	largest := bson.Dec128ToDecimal([2]uint64{0x378d8e63ffffffff, 0x5fffed09bead87c0})
+	// 9.999999999999999999999999999999999E-6143
+	tiniest := bson.Dec128ToDecimal([2]uint64{0x378d8e63ffffffff, 0x0001ed09bead87c0})
+	// 5.192296858534827628530496329220095E+33
+	fullHouse := bson.Dec128ToDecimal([2]uint64{0xffffffffffffffff, 0x3040ffffffffffff})
+	c.Assert(huge, Equals, "1.000000000000000000000000000000000E+6144")
+	c.Assert(tiny, Equals, "1E-6176")
+	c.Assert(negTiny, Equals, "-1E-6176")
+	c.Assert(large, Equals, "9.999987654321E+112")
+	c.Assert(largest, Equals, "9.999999999999999999999999999999999E+6144")
+	c.Assert(tiniest, Equals, "9.999999999999999999999999999999999E-6143")
+	c.Assert(fullHouse, Equals, "5192296858534827628530496329220095")
+}
+
+func (s *S) TestDecimalStringZeros(c *C) {
+	// 0
+	zero := bson.Dec128ToDecimal([2]uint64{0x0000000000000000, 0x3040000000000000})
+	// 0E+300
+	posExpZero := bson.Dec128ToDecimal([2]uint64{0x0000000000000000, 0x3298000000000000})
+	// 0E-600
+	negExpZero := bson.Dec128ToDecimal([2]uint64{0x0000000000000000, 0x2b90000000000000})
+	c.Assert(zero, Equals, "0")
+	c.Assert(posExpZero, Equals, "0E+300")
+	c.Assert(negExpZero, Equals, "0E-600")
+}
+
+func (s *S) TestDecimalFromStringNaN(c *C) {
+	c.Assert(bson.DecimalToDec128("NaN"), Equals, [2]uint64{0x0000000000000000, 0x7c00000000000000})
+	c.Assert(bson.DecimalToDec128("-NaN"), Equals, [2]uint64{0x0000000000000000, 0x7c00000000000000})
+}
+
+func (s *S) TestDecimalFromStringInfinity(c *C) {
+	c.Assert(bson.DecimalToDec128("Infinity"),
+		     Equals, [2]uint64{0x0000000000000000, 0x7800000000000000})
+	c.Assert(bson.DecimalToDec128("-Infinity"),
+			 Equals, [2]uint64{0x0000000000000000, 0xf800000000000000})
+}
+
+func (s *S) TestDecimalFromStringSimple(c *C) {
+	one := bson.DecimalToDec128("1")
+	negativeOne := bson.DecimalToDec128("-1")
+	zero := bson.DecimalToDec128("0")
+	negativeZero := bson.DecimalToDec128("-0")
+	number := bson.DecimalToDec128("12345678901234567")
+	numberTwo := bson.DecimalToDec128("989898983458")
+	negativeNumber := bson.DecimalToDec128("-12345678901234567")
+	fractionalNumber := bson.DecimalToDec128("0.12345")
+	leadingZero := bson.DecimalToDec128("0.0012345")
+	leadingInsignificantZeros := bson.DecimalToDec128("00012345678901234567")
+	c.Assert(one, Equals, [2]uint64{0x0000000000000001, 0x3040000000000000})
+	c.Assert(negativeOne, Equals, [2]uint64{0x0000000000000001, 0xb040000000000000})
+	c.Assert(zero, Equals, [2]uint64{0x0000000000000000, 0x3040000000000000})
+	c.Assert(negativeZero, Equals, [2]uint64{0x0000000000000000, 0xb040000000000000})
+	c.Assert(number, Equals, [2]uint64{0x002bdc545d6b4b87, 0x3040000000000000})
+	c.Assert(numberTwo, Equals, [2]uint64{0x000000e67a93c822, 0x3040000000000000})
+	c.Assert(negativeNumber, Equals, [2]uint64{0x002bdc545d6b4b87, 0xb040000000000000})
+	c.Assert(fractionalNumber, Equals, [2]uint64{0x0000000000003039, 0x3036000000000000})
+	c.Assert(leadingZero, Equals, [2]uint64{0x0000000000003039, 0x3032000000000000})
+	c.Assert(leadingInsignificantZeros, Equals, [2]uint64{0x002bdc545d6b4b87, 0x3040000000000000})
+}
+
+func (s *S) TestDecimalFromStringLarge(c *C) {
+	large := bson.DecimalToDec128("12345689012345789012345")
+	allDigits := bson.DecimalToDec128("1234567890123456789012345678901234")
+	largest := bson.DecimalToDec128("9999999999999999999999999999999999" + makeManyString("0", 6111))
+	tiniest := bson.DecimalToDec128("0." + makeManyString("0", 6142) + "9999999999999999999999999999999999")
+	fullHouse := bson.DecimalToDec128("5192296858534827628530496329220095")
+
+	c.Assert(large, Equals, [2]uint64{0x42da3a76f9e0d979, 0x304000000000029d})
+	c.Assert(allDigits, Equals, [2]uint64{0xde825cd07e96aff2, 0x30403cde6fff9732})
+	c.Assert(largest, Equals, [2]uint64{0x378d8e63ffffffff, 0x5fffed09bead87c0})
+	c.Assert(tiniest, Equals, [2]uint64{0x378d8e63ffffffff, 0x0001ed09bead87c0})
+	c.Assert(fullHouse, Equals, [2]uint64{0xffffffffffffffff, 0x3040ffffffffffff})
+}
+
+func (s *S) TestDecimalFromStringNormalization(c *C) {
+	trailingZeros := bson.DecimalToDec128("1000000000000000000000000000000000000000")
+	oneNormalize := bson.DecimalToDec128("10000000000000000000000000000000000")
+	noNormalize := bson.DecimalToDec128("1000000000000000000000000000000000")
+	aDisaster := bson.DecimalToDec128("10000000000000000000000000000000000000000000000000000000000000000000")
+
+	zero := bson.DecimalToDec128("0." + makeManyString("0", 6176) + "1")
+
+	c.Assert(trailingZeros, Equals, [2]uint64{0x38c15b0a00000000, 0x304c314dc6448d93})
+	c.Assert(oneNormalize, Equals, [2]uint64{0x38c15b0a00000000, 0x3042314dc6448d93})
+	c.Assert(noNormalize, Equals, [2]uint64{0x38c15b0a00000000, 0x3040314dc6448d93})
+	c.Assert(aDisaster, Equals, [2]uint64{0x38c15b0a00000000, 0x3084314dc6448d93})
+	c.Assert(zero, Equals, [2]uint64{0x0000000000000000, 0x0000000000000000})
+}
+
+func (s *S) TestDecimalFromStringZeros(c *C) {
+	zero := bson.DecimalToDec128("0")
+	negativeZero := bson.DecimalToDec128("-0")
+
+	c.Assert(zero, Equals, [2]uint64{0x0000000000000000, 0x3040000000000000})
+	c.Assert(negativeZero, Equals, [2]uint64{0x0000000000000000, 0xb040000000000000})
+}
+
+func (s *S) TestDecimalFromStringRound(c *C) {
+	truncate := bson.DecimalToDec128("0." + makeManyString("0", 6175) + "10")
+	up := bson.DecimalToDec128("0." + makeManyString("0", 6175) + "15")
+	checkTieUp := bson.DecimalToDec128("0." + makeManyString("0", 6175) + "251")
+	checkTieTrunc := bson.DecimalToDec128("0." + makeManyString("0", 6175) + "250")
+
+	extraDigitUp := bson.DecimalToDec128("10000000000000000000000000000000006")
+	extraDigitDown := bson.DecimalToDec128("10000000000000000000000000000000003")
+	extraDigitTie := bson.DecimalToDec128("10000000000000000000000000000000005")
+	extraDigitTieBreak := bson.DecimalToDec128("100000000000000000000000000000000051")
+
+	tooBig := bson.DecimalToDec128("10000000000000000000000000000000006" + makeManyString("0", 6111))
+
+	largestBinary := bson.DecimalToDec128("12980742146337069071326240823050239")
+
+	roundPropagate := bson.DecimalToDec128("99999999999999999999999999999999999")
+	roundPropagateLarge := bson.DecimalToDec128("9999999999999999999999999999999999999999999999999999999999999999999")
+	notInf := bson.DecimalToDec128("9999999999999999999999999999999999" + makeManyString("0", 6111))
+	roundPropagateInf := bson.DecimalToDec128("99999999999999999999999999999999999" + makeManyString("0", 6144))
+
+	c.Assert(truncate, Equals, [2]uint64{0x0000000000000001, 0x0000000000000000})
+	c.Assert(up, Equals, [2]uint64{0x0000000000000002, 0x0000000000000000})
+	c.Assert(checkTieUp, Equals, [2]uint64{0x0000000000000003, 0x0000000000000000})
+	c.Assert(checkTieTrunc, Equals, [2]uint64{0x0000000000000002, 0x0000000000000000})
+
+	c.Assert(extraDigitUp, Equals, [2]uint64{0x38c15b0a00000001, 0x3042314dc6448d93})
+	c.Assert(extraDigitDown, Equals, [2]uint64{0x38c15b0a00000000, 0x3042314dc6448d93})
+	c.Assert(extraDigitTie, Equals, [2]uint64{0x38c15b0a00000000, 0x3042314dc6448d93})
+	c.Assert(extraDigitTieBreak, Equals, [2]uint64{0x38c15b0a00000001, 0x3044314dc6448d93})
+
+	c.Assert(tooBig, Equals, [2]uint64{0x0000000000000000, 0x7800000000000000})
+	c.Assert(largestBinary, Equals, [2]uint64{0x0000000000000000, 0x3042400000000000})
+	c.Assert(roundPropagate, Equals, [2]uint64{0x38c15b0a00000000, 0x3044314dc6448d93})
+	c.Assert(roundPropagateLarge, Equals, [2]uint64{0x38c15b0a00000000, 0x3084314dc6448d93})
+	c.Assert(notInf, Equals, [2]uint64{0x378d8e63ffffffff, 0x5fffed09bead87c0})
+	c.Assert(roundPropagateInf, Equals, [2]uint64{0x0000000000000000, 0x7800000000000000})
 }

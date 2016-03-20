@@ -35,6 +35,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"gopkg.in/mgo.v2-unstable/decimal"
 )
 
 type decoder struct {
@@ -539,6 +541,8 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 		in = MongoTimestamp(d.readInt64())
 	case 0x12: // Int64
 		in = d.readInt64()
+	case 0x13: // Decimal
+		in = d.readDecimal()
 	case 0x7F: // Max key
 		in = MaxKey
 	case 0xFF: // Min key
@@ -822,6 +826,29 @@ func (d *decoder) readInt64() int64 {
 		(uint64(b[7]) << 56))
 }
 
+func (d *decoder) readDecimal() decimal.Decimal {
+	b := d.readBytes(16)
+	low64 := uint64((uint64(b[0]) << 0) |
+		(uint64(b[1]) << 8) |
+		(uint64(b[2]) << 16) |
+		(uint64(b[3]) << 24) |
+		(uint64(b[4]) << 32) |
+		(uint64(b[5]) << 40) |
+		(uint64(b[6]) << 48) |
+		(uint64(b[7]) << 56))
+	high64 := uint64((uint64(b[8]) << 0) |
+		(uint64(b[9]) << 8) |
+		(uint64(b[10]) << 16) |
+		(uint64(b[11]) << 24) |
+		(uint64(b[12]) << 32) |
+		(uint64(b[13]) << 40) |
+		(uint64(b[14]) << 48) |
+		(uint64(b[15]) << 56))
+	str := Dec128ToDecimal([2]uint64{low64, high64})
+	dcml, _ := decimal.Parse(str)
+	return dcml
+}
+
 func (d *decoder) readByte() byte {
 	i := d.i
 	d.i++
@@ -841,4 +868,192 @@ func (d *decoder) readBytes(length int32) []byte {
 		corrupted()
 	}
 	return d.in[start : start+int(length)]
+}
+
+// --------------------------------------------------------------------------
+// Parser helpers.
+
+// divide1B divides a uint128 (in 32 bit chunks) by 1000000000 (1 billion) and
+// computes the quotient and remainder
+func divide1B(value [4]uint32) ([4]uint32, uint32) {
+	var quotient [4]uint32
+	var remainder uint64
+	var divisor uint32 = 1000 * 1000 * 1000
+
+	if value[0] == 0 && value[1] == 0 &&
+	   value[2] == 0 && value[3] == 0 {
+		quotient = value
+		return quotient, uint32(remainder)
+	}
+
+	for i := 0; i <= 3; i++ {
+		// Adjust remainder to match value of next dividend
+		remainder <<= 32
+		// Add the dividend to remainder
+		remainder += uint64(value[i])
+		quotient[i] = uint32(remainder / uint64(divisor))
+		remainder %= uint64(divisor)
+	}
+
+	return quotient, uint32(remainder)
+}
+
+// Dec128ToDecimal converts two 64 bit uints to a decimal string
+func Dec128ToDecimal(dec128 [2]uint64) string {
+	var combinationMask uint32 = 0x1f    // Extract least significant 5 bits
+	var exponentMask uint32 = 0x3fff     // Extract least significant 14 bits
+	var combinationInfinity uint32 = 30  // Value of combination field for Inf
+	var combinationNaN uint32 = 31		 // Value of combination field for NaN
+	var exponentBias uint32 = 6176       // decimal128 exponent bias
+
+	var outStr string
+
+	var low = uint32(dec128[0])		     // Bits 0 - 31
+	var midl = uint32(dec128[0] >> 32)   // Bits 32 - 63
+	var midh = uint32(dec128[1])        // Bits 64 - 95
+	var high = uint32(dec128[1] >> 32)  // Bits 96 - 107
+	var combination uint32               // Bits 1 - 5
+	var biasedExponent uint32            // Decoded 14 bit biased exponent
+	var significandDigits uint32         // Number of significand digits
+	var significand [36]uint32           // Base 10 digits in significand
+	var exponent int32	                 // Unbiased exponent
+	var isZero bool 	                 // True if the number is zero
+	var significandMSB uint              // Most significant bits (50 - 46)
+
+	// dec is negative
+	if int64(dec128[1]) < 0 {
+		outStr += "-"
+	}
+
+	// Decode combination field and exponent
+	combination = (high >> 26) & combinationMask
+
+	if (combination >> 3) == 3 {
+		// Check for special values
+		if combination == combinationInfinity {
+			outStr += "Inf"
+			return outStr
+		} else if combination == combinationNaN {
+			// Drop the sign, +NaN and -NaN behave the same in MongoDB
+			outStr = "NaN"
+			return outStr
+		} else {
+			biasedExponent = (high >> 15) & exponentMask
+			significandMSB = uint(0x8 + (high >> 14) & 0x01)
+		}
+	} else {
+		biasedExponent = (high >> 17) & exponentMask
+		significandMSB = uint(high >> 14) & 0x7
+	}
+
+	exponent = int32(biasedExponent - exponentBias)
+
+	// Convert 114 bit binary number in the significand to at most
+	// 34 decimal digits using modulo and division.
+	var significand128 = [4]uint32{
+		(high & exponentMask) + (uint32(significandMSB & 0xf) << 14),
+		midh,
+		midl,
+		low,
+	}
+
+	if significand128[0] == 0 && significand128[1] == 0 &&
+	   significand128[2] == 0 && significand128[3] == 0 {
+	   	isZero = true
+	} else {
+		var leastDigits uint32
+		for k := 3; k >= 0; k-- {
+			significand128, leastDigits = divide1B(significand128)
+
+			// We now have the 9 least significand digits (in base 2).
+			// Convert and output to a string
+			if leastDigits == 0 {
+				continue
+			}
+
+			for j := 8; j >= 0; j-- {
+				significand[k * 9 + j] = leastDigits % 10
+				leastDigits /= 10
+			}
+		}
+	}
+
+	var significandRead uint32
+	if isZero {
+		significandDigits = 1
+		significandRead = 0
+	} else {
+		significandDigits = 36
+		// Move significandRead to where the significand is not led with zeros
+		for significandRead < 35 && significand[significandRead] == 0 {
+			significandDigits--
+			significandRead++
+		}
+	}
+
+	var scientificExponent = int32(significandDigits) - 1 + exponent
+
+	// It is much cheaper to represent our string as scientific notation if expessing
+	// it in regular format if the exponent is very large
+	if scientificExponent > 34 || scientificExponent <= -6 ||
+	   exponent > 0 || (isZero && scientificExponent != 0) {
+		// Scientific format
+		outStr += string(significand[significandRead] + '0')
+		significandRead++
+		significandDigits--
+
+		if significandDigits != 0 {
+			outStr += "."
+		}
+
+		for i := uint32(0); i < significandDigits; i++ {
+			outStr += string(significand[significandRead] + '0')
+			significandRead++
+		}
+		// Exponent
+		outStr += "E"
+		if scientificExponent > 0 {
+			outStr += "+"
+		}
+		outStr += strconv.Itoa(int(scientificExponent))
+	} else {
+		// Regular format
+		if exponent >= 0 {
+			for i := uint32(0); i < significandDigits; i++ {
+				outStr += string(significand[significandRead] + '0')
+				significandRead++
+			}
+		} else {
+			var radixPosition = int32(significandDigits) + exponent
+			if radixPosition > 0 {
+				// If we have non-zero digits before the radix
+				for i := int32(0); i< radixPosition; i++ {
+					outStr += string(significand[significandRead] + '0')
+					significandRead++
+				}
+			} else {
+				// Add a leading zero before radix point
+				outStr += "0"
+			}
+
+			outStr += "."
+			for radixPosition < 0 {
+				// Add leading zeros after radix point
+				outStr += "0"
+				radixPosition++
+			}
+			var maxRadixPosition uint32
+			if radixPosition - 1 > 0 {
+				maxRadixPosition = uint32(radixPosition - 1)
+			}
+			for i := uint32(0); i < significandDigits - maxRadixPosition; i++ {
+				outStr += string(significand[significandRead] + '0')
+				if significandRead >= uint32(len(significand) - 1) {
+					break
+				}
+				significandRead++
+			}
+		}
+	}
+	return outStr
 }
