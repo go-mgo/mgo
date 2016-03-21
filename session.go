@@ -2983,7 +2983,7 @@ func checkQueryError(fullname string, d []byte) error {
 Error:
 	result := &queryError{}
 	bson.Unmarshal(d, result)
-	if result.LastError != nil {
+	if result.LastError != nil && result.LastError.Code != 0 {
 		return result.LastError
 	}
 	if result.Err == "" && result.ErrMsg == "" {
