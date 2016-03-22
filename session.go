@@ -1493,8 +1493,6 @@ func simpleIndexKey(realKey bson.D) (key []string) {
 		case string:
 			key = append(key, "$"+value.(string)+":"+field)
 			continue
-		default:
-			panic("Got unknown index key type for field " + field)
 		}
 		if vi == 1 {
 			key = append(key, field)
@@ -1504,6 +1502,7 @@ func simpleIndexKey(realKey bson.D) (key []string) {
 			key = append(key, "-"+field)
 			continue
 		}
+		panic("Got unknown index key type for field " + field)
 	}
 	return
 }
