@@ -1055,7 +1055,7 @@ type inlineBadKeyMap struct {
 }
 type inlineUnexported struct {
 	M          map[string]interface{} ",inline"
-	unexported         ",inline"
+	unexported ",inline"
 }
 type unexported struct {
 	A int
@@ -1580,6 +1580,9 @@ func (s *S) TestObjectIdJSONMarshaling(c *C) {
 	}
 }
 
+// --------------------------------------------------------------------------
+// Spec tests
+
 type specTest struct {
 	Description string
 	Documents   []struct {
@@ -1633,6 +1636,48 @@ func (s *S) TestSpecTests(c *C) {
 			c.Assert(err, NotNil)
 			c.Logf("Failed with: %v", err)
 		}
+	}
+}
+
+// --------------------------------------------------------------------------
+// Decimal tests
+
+type decimalTests struct {
+	Valid []struct {
+		Description string `json:"description"`
+		Subject     string `json:"subject"`
+		String      string `json:"string"`
+		ExtJSON     struct {
+			D struct {
+				NumberDecimal string `json:"$numberDecimal"`
+			} `json:"d"`
+		} `json:"extjson"`
+	} `json:"valid"`
+}
+
+func (s *S) TestDecimalTests(c *C) {
+	var tests decimalTests
+	err := json.Unmarshal([]byte(decimalTestsJSON), &tests)
+	c.Assert(err, IsNil)
+
+	// These also conform to the spec and are used by Go elsewhere.
+	goStr := map[string]string{
+		"Infinity":  "Inf",
+		"-Infinity": "-Inf",
+	}
+
+	for _, test := range tests.Valid {
+		c.Logf("Running decimal128 test: %s", test.Description)
+		subject, err := hex.DecodeString(test.Subject)
+		var value struct{ D interface{} }
+		err = bson.Unmarshal(subject, &value)
+		c.Assert(err, IsNil)
+		d, isDecimal := value.D.(bson.Decimal128)
+		c.Assert(isDecimal, Equals, true)
+		if s, ok := goStr[test.String]; ok {
+			test.String = s
+		}
+		c.Assert(d.String(), Equals, test.String)
 	}
 }
 
