@@ -193,14 +193,14 @@ var decimalTestsJSON = `
         {
             "description": "Special - Canonical Positive Infinity",
             "subject": "180000001364000000000000000000000000000000007800",
-            "string": "Infinity",
-            "extjson": "{\"d\" : {\"$numberDecimal\" : \"Infinity\"}}"
+            "string": "Inf",
+            "extjson": "{\"d\" : {\"$numberDecimal\" : \"Inf\"}}"
         },
         {
             "description": "Special - Canonical Negative Infinity",
             "subject": "18000000136400000000000000000000000000000000F800",
-            "string": "-Infinity",
-            "extjson": "{\"d\" : {\"$numberDecimal\" : \"-Infinity\"}}"
+            "string": "-Inf",
+            "extjson": "{\"d\" : {\"$numberDecimal\" : \"-Inf\"}}"
         },
         {
             "description": "Special - Invalid representation treated as 0",
@@ -426,70 +426,70 @@ var decimalTestsJSON = `
         {
             "description": "Non-Canonical Parsing - +infinity",
             "subject": "180000001364000000000000000000000000000000007800",
-            "string": "Infinity",
+            "string": "Inf",
             "to_extjson": false,
             "extjson": "{\"d\" : {\"$numberDecimal\" : \"+infinity\"}}"
         },
         {
             "description": "Non-Canonical Parsing - infinity",
             "subject": "180000001364000000000000000000000000000000007800",
-            "string": "Infinity",
+            "string": "Inf",
             "to_extjson": false,
             "extjson": "{\"d\" : {\"$numberDecimal\" : \"infinity\"}}"
         },
         {
             "description": "Non-Canonical Parsing - infiniTY",
             "subject": "180000001364000000000000000000000000000000007800",
-            "string": "Infinity",
+            "string": "Inf",
             "to_extjson": false,
             "extjson": "{\"d\" : {\"$numberDecimal\" : \"infiniTY\"}}"
         },
         {
             "description": "Non-Canonical Parsing - inf",
             "subject": "180000001364000000000000000000000000000000007800",
-            "string": "Infinity",
+            "string": "Inf",
             "to_extjson": false,
             "extjson": "{\"d\" : {\"$numberDecimal\" : \"inf\"}}"
         },
         {
             "description": "Non-Canonical Parsing - inF",
             "subject": "180000001364000000000000000000000000000000007800",
-            "string": "Infinity",
+            "string": "Inf",
             "to_extjson": false,
             "extjson": "{\"d\" : {\"$numberDecimal\" : \"inF\"}}"
         },
         {
             "description": "Non-Canonical Parsing - -infinity",
             "subject": "18000000136400000000000000000000000000000000F800",
-            "string": "-Infinity",
+            "string": "-Inf",
             "to_extjson": false,
             "extjson": "{\"d\" : {\"$numberDecimal\" : \"-infinity\"}}"
         },
         {
             "description": "Non-Canonical Parsing - -infiniTy",
             "subject": "18000000136400000000000000000000000000000000F800",
-            "string": "-Infinity",
+            "string": "-Inf",
             "to_extjson": false,
             "extjson": "{\"d\" : {\"$numberDecimal\" : \"-infiniTy\"}}"
         },
         {
             "description": "Non-Canonical Parsing - -Inf",
             "subject": "18000000136400000000000000000000000000000000F800",
-            "string": "-Infinity",
+            "string": "-Inf",
             "to_extjson": false,
-            "extjson": "{\"d\" : {\"$numberDecimal\" : \"-Inf\"}}"
+            "extjson": "{\"d\" : {\"$numberDecimal\" : \"-Infinity\"}}"
         },
         {
             "description": "Non-Canonical Parsing - -inf",
             "subject": "18000000136400000000000000000000000000000000F800",
-            "string": "-Infinity",
+            "string": "-Inf",
             "to_extjson": false,
             "extjson": "{\"d\" : {\"$numberDecimal\" : \"-inf\"}}"
         },
         {
             "description": "Non-Canonical Parsing - -inF",
             "subject": "18000000136400000000000000000000000000000000F800",
-            "string": "-Infinity",
+            "string": "-Inf",
             "to_extjson": false,
             "extjson": "{\"d\" : {\"$numberDecimal\" : \"-inF\"}}"
         }
@@ -586,6 +586,18 @@ var decimalTestsJSON = `
         {
             "description": "Empty string",
             "subject": ""
+        },
+        {
+            "description": "leading white space positive number",
+            "subject": " 1"
+        },
+        {
+            "description": "leading white space negative number",
+            "subject": " -1"
+        },
+        {
+            "description": "trailing white space",
+            "subject": "1 "
         },
         {
             "description": "Invalid",
