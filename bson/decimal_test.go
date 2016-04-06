@@ -72,12 +72,6 @@ func (s *S) TestDecimalTests(c *C) {
 	err := json.Unmarshal([]byte(decimalTestsJSON), &tests)
 	c.Assert(err, IsNil)
 
-	// These also conform to the spec and are used by Go elsewhere.
-	goStr := map[string]string{
-		"Infinity":  "Inf",
-		"-Infinity": "-Inf",
-	}
-
 	for _, test := range tests.Valid {
 		c.Logf("Running decimal128 test: %s (string %q)", test.Description, test.String)
 		subject, err := hex.DecodeString(test.Subject)
@@ -89,26 +83,23 @@ func (s *S) TestDecimalTests(c *C) {
 		d, isDecimal := value.D.(bson.Decimal128)
 		c.Assert(isDecimal, Equals, true)
 
-		wantStr := test.String
-		if s, ok := goStr[test.String]; ok {
-			wantStr = s
-		}
-		c.Assert(d.String(), Equals, wantStr)
+		// Generate canonical representation.
+		c.Assert(d.String(), Equals, test.String)
 
 		// Parse Go variant representation (Inf vs. Infinity).
-		parsed, err := bson.ParseDecimal128(wantStr)
+		parsed, err := bson.ParseDecimal128(test.String)
 		c.Assert(err, IsNil)
-		c.Assert(parsed.String(), Equals, wantStr)
+		c.Assert(parsed.String(), Equals, test.String)
 
 		// Parse original output representation.
 		parsed, err = bson.ParseDecimal128(test.String)
 		c.Assert(err, IsNil)
-		c.Assert(parsed.String(), Equals, wantStr)
+		c.Assert(parsed.String(), Equals, test.String)
 
 		// Parse non-canonical input representation.
 		parsed, err = bson.ParseDecimal128(extJSONRepr(test.ExtJSON))
 		c.Assert(err, IsNil)
-		c.Assert(parsed.String(), Equals, wantStr)
+		c.Assert(parsed.String(), Equals, test.String)
 
 		// Marshal back into BSON data.
 		data, err := bson.Marshal(value)
