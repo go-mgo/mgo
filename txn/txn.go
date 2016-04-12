@@ -380,8 +380,6 @@ func (r *Runner) ChangeLog(logc *mgo.Collection) {
 // used during the normal operation of an application. Its purpose is to put
 // a system that has seen unavoidable corruption back in a working state.
 func (r *Runner) PurgeMissing(collections ...string) error {
-	type M map[string]interface{}
-	type S []interface{}
 
 	type TDoc struct {
 		Id       interface{} "_id"
@@ -389,6 +387,16 @@ func (r *Runner) PurgeMissing(collections ...string) error {
 	}
 
 	found := make(map[bson.ObjectId]bool)
+	txnExists := func(txnId bson.ObjectId) bool {
+		if found[txnId] {
+			return true
+		}
+		if r.tc.FindId(txnId).One(nil) == nil {
+			found[txnId] = true
+			return true
+		}
+		return false
+	}
 
 	sort.Strings(collections)
 	for _, collection := range collections {
@@ -397,18 +405,12 @@ func (r *Runner) PurgeMissing(collections ...string) error {
 		var tdoc TDoc
 		for iter.Next(&tdoc) {
 			for _, txnToken := range tdoc.TxnQueue {
-				txnId := bson.ObjectIdHex(txnToken[:24])
-				if found[txnId] {
-					continue
-				}
-				if r.tc.FindId(txnId).One(nil) == nil {
-					found[txnId] = true
-					continue
-				}
-				logf("WARNING: purging from document %s/%v the missing transaction id %s", collection, tdoc.Id, txnId)
-				err := c.UpdateId(tdoc.Id, M{"$pull": M{"txn-queue": M{"$regex": "^" + txnId.Hex() + "_*"}}})
-				if err != nil {
-					return fmt.Errorf("error purging missing transaction %s: %v", txnId.Hex(), err)
+				txnId := tokenToId(txnToken)
+				if !txnExists(txnId) {
+					logf("WARNING: purging from document %s/%v the missing transaction id %s", collection, tdoc.Id, txnId)
+					if err := pullTxn(c, tdoc.Id, txnId); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -426,18 +428,12 @@ func (r *Runner) PurgeMissing(collections ...string) error {
 	var stdoc StashTDoc
 	for iter.Next(&stdoc) {
 		for _, txnToken := range stdoc.TxnQueue {
-			txnId := bson.ObjectIdHex(txnToken[:24])
-			if found[txnId] {
-				continue
-			}
-			if r.tc.FindId(txnId).One(nil) == nil {
-				found[txnId] = true
-				continue
-			}
-			logf("WARNING: purging from stash document %s/%v the missing transaction id %s", stdoc.Id.C, stdoc.Id.Id, txnId)
-			err := r.sc.UpdateId(stdoc.Id, M{"$pull": M{"txn-queue": M{"$regex": "^" + txnId.Hex() + "_*"}}})
-			if err != nil {
-				return fmt.Errorf("error purging missing transaction %s: %v", txnId.Hex(), err)
+			txnId := tokenToId(txnToken)
+			if !txnExists(txnId) {
+				logf("WARNING: purging from stash document %s/%v the missing transaction id %s", stdoc.Id.C, stdoc.Id.Id, txnId)
+				if err := pullTxn(r.sc, stdoc.Id, txnId); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -445,6 +441,19 @@ func (r *Runner) PurgeMissing(collections ...string) error {
 		return fmt.Errorf("transaction stash iteration error: %v", err)
 	}
 
+	return nil
+}
+
+func tokenToId(token string) bson.ObjectId {
+	return bson.ObjectIdHex(token[:24])
+}
+
+func pullTxn(collection *mgo.Collection, docId interface{}, txnId bson.ObjectId) error {
+	type M bson.M
+	err := collection.UpdateId(docId, M{"$pull": M{"txn-queue": M{"$regex": "^" + txnId.Hex() + "_*"}}})
+	if err != nil {
+		return fmt.Errorf("error purging missing transaction %s: %v", txnId.Hex(), err)
+	}
 	return nil
 }
 
