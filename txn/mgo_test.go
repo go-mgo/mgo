@@ -2,7 +2,7 @@ package txn_test
 
 import (
 	"bytes"
-	"gopkg.in/mgo.v2"
+	"github.com/lyft/mgo"
 	. "gopkg.in/check.v1"
 	"os/exec"
 	"time"
