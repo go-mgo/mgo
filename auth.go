@@ -34,8 +34,8 @@ import (
 	"fmt"
 	"sync"
 
-	"gopkg.in/mgo.v2/bson"
-	"gopkg.in/mgo.v2/internal/scram"
+	"github.com/lyft/mgo/bson"
+	"github.com/lyft/mgo/internal/scram"
 )
 
 type authCmd struct {
