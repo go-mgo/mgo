@@ -3,12 +3,13 @@ package json
 // Extension holds a set of additional rules to be used when unmarshaling
 // strict JSON or JSON-like content.
 type Extension struct {
-	funcs map[string]funcExt
-	keyed map[string]func() interface{}
+	funcs   map[string]funcExt
+	keyed   map[string]func([]byte) interface{}
+	replace []func(value interface{}) interface{}
 }
 
 type funcExt struct {
-	key string
+	key  string
 	args []string
 }
 
@@ -26,11 +27,17 @@ func (e *Extension) Func(name string, key string, args ...string) {
 }
 
 // KeyedDoc defines a key that when observed as the first element inside a
-// JSON document or sub-document triggers the parsing of that document as
-// the value returned by the provided function.
-func (e *Extension) KeyedDoc(key string, new func() interface{}) {
+// JSON document triggers the decoding of that document via the provided
+// decode function.
+func (e *Extension) KeyedDoc(key string, decode func(data []byte) interface{}) {
 	if e.keyed == nil {
-		e.keyed = make(map[string]func() interface{})
+		e.keyed = make(map[string]func([]byte) interface{})
 	}
-	e.keyed[key] = new
+	e.keyed[key] = decode
+}
+
+// PreEncode registers the replace function to be called before any value is encoded.
+// The returned value will be encoded in place of the original value.
+func (e *Extension) PreEncode(replace func(value interface{}) interface{}) {
+	e.replace = append(e.replace, replace)
 }

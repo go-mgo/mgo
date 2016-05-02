@@ -17,6 +17,20 @@ type funcs struct {
 	Func1 *funcN `json:"$func1"`
 }
 
+type funcsText struct {
+	Func1 jsonText `json:"$func1"`
+	Func2 jsonText `json:"$func2"`
+}
+
+type jsonText struct {
+	json string
+}
+
+func (jt *jsonText) UnmarshalJSON(data []byte) error {
+	jt.json = string(data)
+	return nil
+}
+
 var ext Extension
 
 func init() {
@@ -25,10 +39,10 @@ func init() {
 }
 
 type extensionTest struct {
-	in        string
-	ptr       interface{}
-	out       interface{}
-	err       error
+	in  string
+	ptr interface{}
+	out interface{}
+	err error
 }
 
 var extensionTests = []extensionTest{
@@ -45,14 +59,19 @@ var extensionTests = []extensionTest{
 		"$func2": map[string]interface{}{"arg1": map[string]interface{}{"$func1": map[string]interface{}{}}},
 	}},
 	{in: `Func2(1, 2, 3)`, ptr: new(interface{}), err: fmt.Errorf("json: too many arguments for function Func2")},
-	{in: `Func3()`, ptr: new(interface{}), err: fmt.Errorf("json: unknown function Func3")},
+	{in: `BadFunc()`, ptr: new(interface{}), err: fmt.Errorf("json: unknown function BadFunc")},
 
 	{in: `Func1()`, ptr: new(funcs), out: funcs{Func1: &funcN{}}},
 	{in: `Func2(1)`, ptr: new(funcs), out: funcs{Func2: &funcN{Arg1: 1}}},
 	{in: `Func2(1, 2)`, ptr: new(funcs), out: funcs{Func2: &funcN{Arg1: 1, Arg2: 2}}},
 
 	{in: `Func2(1, 2, 3)`, ptr: new(funcs), err: fmt.Errorf("json: too many arguments for function Func2")},
-	{in: `Func3()`, ptr: new(funcs), err: fmt.Errorf("json: unknown function Func3")},
+	{in: `BadFunc()`, ptr: new(funcs), err: fmt.Errorf("json: unknown function BadFunc")},
+
+	{in: `Func2(1)`, ptr: new(jsonText), out: jsonText{"Func2(1)"}},
+	{in: `Func2(1, 2)`, ptr: new(funcsText), out: funcsText{Func2: jsonText{"Func2(1, 2)"}}},
+
+	{in: `Func1()`, ptr: new(struct{}), out: struct{}{}},
 }
 
 func TestExtensions(t *testing.T) {
