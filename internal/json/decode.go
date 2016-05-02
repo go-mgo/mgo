@@ -254,6 +254,7 @@ type decodeState struct {
 	nextscan   scanner // for calls to nextValue
 	savedError error
 	useNumber  bool
+	ext        *Extension
 }
 
 // errPhase is used for errors that should not happen unless
@@ -369,6 +370,9 @@ func (d *decodeState) value(v reflect.Value) {
 
 	case scanBeginLiteral:
 		d.literal(v)
+
+	case scanBeginFunc:
+		d.function(v)
 	}
 }
 
@@ -718,6 +722,213 @@ func (d *decodeState) object(v reflect.Value) {
 	}
 }
 
+// function consumes a function from d.data[d.off-1:], decoding into the value v.
+// the first byte of the function name has been read already.
+func (d *decodeState) function(v reflect.Value) {
+	// Check for unmarshaler.
+	u, ut, pv := d.indirect(v, false)
+	if u != nil {
+		d.off--
+		err := u.UnmarshalJSON(d.next())
+		if err != nil {
+			d.error(err)
+		}
+		return
+	}
+	if ut != nil {
+		d.saveError(&UnmarshalTypeError{"object", v.Type(), int64(d.off)})
+		d.off--
+		d.next() // skip over { } in input
+		return
+	}
+	v = pv
+
+	// Decoding into nil interface?  Switch to non-reflect code.
+	if v.Kind() == reflect.Interface && v.NumMethod() == 0 {
+		v.Set(reflect.ValueOf(d.functionInterface()))
+		return
+	}
+
+	nameStart := d.off - 1
+
+	if op := d.scanWhile(scanContinue); op != scanFuncArg {
+		d.error(errPhase)
+	}
+
+	funcName := string(d.data[nameStart : d.off-1])
+	funcData := d.ext.funcs[funcName]
+	if funcData.key == "" {
+		d.error(fmt.Errorf("json: unknown function %s", funcName))
+	}
+
+	// Check type of target:
+	//   struct or
+	//   map[string]T or map[encoding.TextUnmarshaler]T
+	switch v.Kind() {
+	case reflect.Map:
+		// Map key must either have string kind or be an encoding.TextUnmarshaler.
+		t := v.Type()
+		if t.Key().Kind() != reflect.String &&
+			!reflect.PtrTo(t.Key()).Implements(textUnmarshalerType) {
+			d.saveError(&UnmarshalTypeError{"object", v.Type(), int64(d.off)})
+			d.off--
+			d.next() // skip over { } in input
+			return
+		}
+		if v.IsNil() {
+			v.Set(reflect.MakeMap(t))
+		}
+	case reflect.Struct:
+
+	default:
+		d.saveError(&UnmarshalTypeError{"object", v.Type(), int64(d.off)})
+		d.off--
+		d.next() // skip over { } in input
+		return
+	}
+
+	// TODO Fix case of func field as map.
+	//topv := v
+
+	// Figure out field corresponding to function.
+	key := []byte(funcData.key)
+	if v.Kind() == reflect.Map {
+		elemType := v.Type().Elem()
+		v = reflect.New(elemType).Elem()
+	} else {
+		var f *field
+		fields := cachedTypeFields(v.Type())
+		for i := range fields {
+			ff := &fields[i]
+			if bytes.Equal(ff.nameBytes, key) {
+				f = ff
+				break
+			}
+			if f == nil && ff.equalFold(ff.nameBytes, key) {
+				f = ff
+			}
+		}
+		if f != nil {
+			for _, i := range f.index {
+				if v.Kind() == reflect.Ptr {
+					if v.IsNil() {
+						v.Set(reflect.New(v.Type().Elem()))
+					}
+					v = v.Elem()
+				}
+				v = v.Field(i)
+			}
+			if v.Kind() == reflect.Ptr {
+				if v.IsNil() {
+					v.Set(reflect.New(v.Type().Elem()))
+				}
+				v = v.Elem()
+			}
+		}
+	}
+
+	var mapElem reflect.Value
+
+	// Parse function arguments.
+	for i := 0; ; i++ {
+		// closing ) - can only happen on first iteration.
+		op := d.scanWhile(scanSkipSpace)
+		if op == scanEndFunc {
+			break
+		}
+
+		// Back up so d.value can have the byte we just read.
+		d.off--
+		d.scan.undo(op)
+
+		if i >= len(funcData.args) {
+			d.error(fmt.Errorf("json: too many arguments for function %s", funcName))
+		}
+		key := []byte(funcData.args[i])
+
+		// Figure out field corresponding to key.
+		var subv reflect.Value
+		destring := false // whether the value is wrapped in a string to be decoded first
+
+		if v.Kind() == reflect.Map {
+			elemType := v.Type().Elem()
+			if !mapElem.IsValid() {
+				mapElem = reflect.New(elemType).Elem()
+			} else {
+				mapElem.Set(reflect.Zero(elemType))
+			}
+			subv = mapElem
+		} else {
+			var f *field
+			fields := cachedTypeFields(v.Type())
+			for i := range fields {
+				ff := &fields[i]
+				if bytes.Equal(ff.nameBytes, key) {
+					f = ff
+					break
+				}
+				if f == nil && ff.equalFold(ff.nameBytes, key) {
+					f = ff
+				}
+			}
+			if f != nil {
+				subv = v
+				destring = f.quoted
+				for _, i := range f.index {
+					if subv.Kind() == reflect.Ptr {
+						if subv.IsNil() {
+							subv.Set(reflect.New(subv.Type().Elem()))
+						}
+						subv = subv.Elem()
+					}
+					subv = subv.Field(i)
+				}
+			}
+		}
+
+		// Read value.
+		if destring {
+			switch qv := d.valueQuoted().(type) {
+			case nil:
+				d.literalStore(nullLiteral, subv, false)
+			case string:
+				d.literalStore([]byte(qv), subv, true)
+			default:
+				d.saveError(fmt.Errorf("json: invalid use of ,string struct tag, trying to unmarshal unquoted value into %v", subv.Type()))
+			}
+		} else {
+			d.value(subv)
+		}
+
+		// Write value back to map;
+		// if using struct, subv points into struct already.
+		if v.Kind() == reflect.Map {
+			kt := v.Type().Key()
+			var kv reflect.Value
+			switch {
+			case kt.Kind() == reflect.String:
+				kv = reflect.ValueOf(key).Convert(v.Type().Key())
+			case reflect.PtrTo(kt).Implements(textUnmarshalerType):
+				kv = reflect.New(v.Type().Key())
+				d.literalStore(key, kv, true)
+				kv = kv.Elem()
+			default:
+				panic("json: Unexpected key type") // should never occur
+			}
+			v.SetMapIndex(kv, subv)
+		}
+
+		// Next token must be , or ).
+		op = d.scanWhile(scanSkipSpace)
+		if op == scanEndFunc {
+			break
+		}
+		if op != scanFuncArg {
+			d.error(errPhase)
+		}
+	}
+}
+
 // literal consumes a literal from d.data[d.off-1:], decoding into the value v.
 // The first byte of the literal has been read already
 // (that's how the caller knows it's a literal).
@@ -933,6 +1144,8 @@ func (d *decodeState) valueInterface() interface{} {
 		return d.objectInterface()
 	case scanBeginLiteral:
 		return d.literalInterface()
+	case scanBeginFunc:
+		return d.functionInterface()
 	}
 }
 
@@ -1045,6 +1258,49 @@ func (d *decodeState) literalInterface() interface{} {
 		}
 		return n
 	}
+}
+
+// functionInterface is like function but returns map[string]interface{}.
+func (d *decodeState) functionInterface() map[string]interface{} {
+	nameStart := d.off - 1
+
+	if op := d.scanWhile(scanContinue); op != scanFuncArg {
+		d.error(errPhase)
+	}
+
+	funcName := string(d.data[nameStart : d.off-1])
+	funcData := d.ext.funcs[funcName]
+	if funcData.key == "" {
+		d.error(fmt.Errorf("json: unknown function %s", funcName))
+	}
+
+	m := make(map[string]interface{})
+	for i := 0; ; i++ {
+		// Look ahead for ) - can only happen on first iteration.
+		op := d.scanWhile(scanSkipSpace)
+		if op == scanEndFunc {
+			break
+		}
+
+		// Back up so d.value can have the byte we just read.
+		d.off--
+		d.scan.undo(op)
+
+		if i >= len(funcData.args) {
+			d.error(fmt.Errorf("json: too many arguments for function %s", funcName))
+		}
+		m[funcData.args[i]] = d.valueInterface()
+
+		// Next token must be , or ).
+		op = d.scanWhile(scanSkipSpace)
+		if op == scanEndFunc {
+			break
+		}
+		if op != scanFuncArg {
+			d.error(errPhase)
+		}
+	}
+	return map[string]interface{}{funcData.key: m}
 }
 
 // getu4 decodes \uXXXX from the beginning of s, returning the hex value,

@@ -125,6 +125,10 @@ const (
 	scanEndArray            // end array (implies scanArrayValue if possible)
 	scanSkipSpace           // space byte; can skip; known to be last "continue" result
 
+	scanBeginFunc           // begin function call
+	scanFuncArg             // begin function argument
+	scanEndFunc             // end function call
+
 	// Stop.
 	scanEnd   // top-level value ended *before* this byte; known to be first "stop" result
 	scanError // hit an error, scanner.err.
@@ -138,6 +142,8 @@ const (
 	parseObjectKey   = iota // parsing object key (before colon)
 	parseObjectValue        // parsing object value (after colon)
 	parseArrayValue         // parsing array value
+	parseFuncName           // parsing function name
+	parseFuncArg            // parsing function argument value
 )
 
 // reset prepares the scanner for use.
@@ -240,6 +246,10 @@ func stateBeginValue(s *scanner, c byte) int {
 		s.step = state1
 		return scanBeginLiteral
 	}
+	if c == '$' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' {
+		s.step = stateFuncName
+		return scanBeginFunc
+	}
 	return s.error(c, "looking for beginning of value")
 }
 
@@ -310,6 +320,16 @@ func stateEndValue(s *scanner, c byte) int {
 		if c == ']' {
 			s.popParseState()
 			return scanEndArray
+		}
+		return s.error(c, "after array element")
+	case parseFuncArg:
+		if c == ',' {
+			s.step = stateBeginValue
+			return scanFuncArg
+		}
+		if c == ')' {
+			s.popParseState()
+			return scanEndFunc
 		}
 		return s.error(c, "after array element")
 	}
@@ -483,6 +503,30 @@ func stateE0(s *scanner, c byte) int {
 		return scanContinue
 	}
 	return stateEndValue(s, c)
+}
+
+// stateFuncName is the state while reading an unquoted function name.
+func stateFuncName(s *scanner, c byte) int {
+	if c == '$' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' {
+		return scanContinue
+	}
+	if c == '(' {
+		s.step = stateFuncArgOrEmpty
+		s.pushParseState(parseFuncArg)
+		return scanFuncArg
+	}
+	return stateEndValue(s, c)
+}
+
+// stateFuncArgOrEmpty is the state after reading `[`.
+func stateFuncArgOrEmpty(s *scanner, c byte) int {
+	if c <= ' ' && isSpace(c) {
+		return scanSkipSpace
+	}
+	if c == ')' {
+		return stateEndValue(s, c)
+	}
+	return stateBeginValue(s, c)
 }
 
 // stateT is the state after reading `t`.
