@@ -173,6 +173,8 @@ type Encoder struct {
 	indentBuf    *bytes.Buffer
 	indentPrefix string
 	indentValue  string
+
+	ext Extension
 }
 
 // NewEncoder returns a new encoder that writes to w.
@@ -190,6 +192,7 @@ func (enc *Encoder) Encode(v interface{}) error {
 		return enc.err
 	}
 	e := newEncodeState()
+	e.ext = enc.ext
 	err := e.marshal(v, encOpts{escapeHTML: enc.escapeHTML})
 	if err != nil {
 		return err

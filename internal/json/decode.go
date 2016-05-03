@@ -254,7 +254,7 @@ type decodeState struct {
 	nextscan   scanner // for calls to nextValue
 	savedError error
 	useNumber  bool
-	ext        *Extension
+	ext        Extension
 }
 
 // errPhase is used for errors that should not happen unless
@@ -297,8 +297,12 @@ func (d *decodeState) next() []byte {
 	// invent a closing brace/bracket to get it out.
 	if c == '{' {
 		d.scan.step(&d.scan, '}')
-	} else {
+	} else if c == '[' {
 		d.scan.step(&d.scan, ']')
+	} else {
+		// Was inside a function name. Get out of it.
+		d.scan.step(&d.scan, '(')
+		d.scan.step(&d.scan, ')')
 	}
 
 	return item
@@ -577,6 +581,10 @@ func (d *decodeState) object(v reflect.Value) {
 	}
 	v = pv
 
+	if d.storeKeyed(v) {
+		return
+	}
+
 	// Decoding into nil interface?  Switch to non-reflect code.
 	if v.Kind() == reflect.Interface && v.NumMethod() == 0 {
 		v.Set(reflect.ValueOf(d.objectInterface()))
@@ -738,10 +746,14 @@ func (d *decodeState) function(v reflect.Value) {
 	if ut != nil {
 		d.saveError(&UnmarshalTypeError{"object", v.Type(), int64(d.off)})
 		d.off--
-		d.next() // skip over { } in input
+		d.next() // skip over function in input
 		return
 	}
 	v = pv
+
+	if d.storeKeyed(v) {
+		return
+	}
 
 	// Decoding into nil interface?  Switch to non-reflect code.
 	if v.Kind() == reflect.Interface && v.NumMethod() == 0 {
@@ -938,6 +950,75 @@ func (d *decodeState) function(v reflect.Value) {
 			d.error(errPhase)
 		}
 	}
+}
+
+// keyed attempts to decode an object or function using a keyed doc extension,
+// and returns the value and true on success, or nil and false otherwise.
+func (d *decodeState) keyed() (interface{}, bool) {
+	if len(d.ext.keyed) == 0 {
+		return nil, false
+	}
+
+	inObject := d.data[d.off-1] == '{'
+
+	// Look-ahead first key to check for a keyed document extension.
+	d.nextscan.reset()
+	var start, end int
+Loop:
+	for i, c := range d.data[d.off:] {
+		switch op := d.nextscan.step(&d.nextscan, c); op {
+		case scanSkipSpace:
+		case scanBeginLiteral, scanBeginFunc:
+			start = i
+		case scanContinue:
+		case scanEnd, scanFuncArg:
+			end = i
+			break Loop
+		default:
+			d.error(errPhase)
+		}
+	}
+
+	var key []byte
+	var ok bool
+	if inObject {
+		key, ok = unquoteBytes(d.data[d.off+start : d.off+end])
+		if !ok {
+			d.error(errPhase)
+		}
+	} else {
+		funcData, ok := d.ext.funcs[string(d.data[d.off+start-1 : d.off+end])]
+		if !ok {
+			return nil, false
+		}
+		key = []byte(funcData.key)
+	}
+
+	decode, ok := d.ext.keyed[string(key)]
+	if !ok {
+		return nil, false
+	}
+
+	d.off--
+	out, err := decode(d.next())
+	if err != nil {
+		d.error(err)
+	}
+	return out, true
+}
+
+func (d *decodeState) storeKeyed(v reflect.Value) bool {
+	keyed, ok := d.keyed()
+	if !ok {
+		return false
+	}
+	keyedv := reflect.ValueOf(keyed)
+	if keyedv.Type().AssignableTo(v.Type()) {
+		v.Set(keyedv)
+	} else {
+		d.saveError(&UnmarshalTypeError{"object", v.Type(), int64(d.off)})
+	}
+	return true
 }
 
 // literal consumes a literal from d.data[d.off-1:], decoding into the value v.
@@ -1152,10 +1233,18 @@ func (d *decodeState) valueInterface() interface{} {
 	case scanBeginArray:
 		return d.arrayInterface()
 	case scanBeginObject:
+		v, ok := d.keyed()
+		if ok {
+			return v
+		}
 		return d.objectInterface()
 	case scanBeginLiteral:
 		return d.literalInterface()
 	case scanBeginFunc:
+		v, ok := d.keyed()
+		if ok {
+			return v
+		}
 		return d.functionInterface()
 	}
 }

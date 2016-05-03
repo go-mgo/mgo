@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"reflect"
+	"strconv"
 	"testing"
 )
 
@@ -31,23 +32,54 @@ func (jt *jsonText) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-var ext Extension
-
-func init() {
-	ext.Func("Func1", "$func1")
-	ext.Func("Func2", "$func2", "arg1", "arg2")
+type nestedText struct {
+	F jsonText
+	B bool
 }
 
-type extensionTest struct {
+var ext Extension
+
+type keyed string
+
+func decodeKeyed(data []byte) (interface{}, error) {
+	return keyed(data), nil
+}
+
+type keyedType struct {
+	K keyed
+	I int
+}
+
+type docint int
+
+func init() {
+	ext.DecodeFunc("Func1", "$func1")
+	ext.DecodeFunc("Func2", "$func2", "arg1", "arg2")
+	ext.DecodeFunc("Func3", "$func3", "arg1")
+
+	ext.DecodeKeyed("$key1", decodeKeyed)
+	ext.DecodeKeyed("$func3", decodeKeyed)
+
+	ext.EncodeType(docint(0), func(v interface{}) ([]byte, error) {
+		s := `{"$docint": ` + strconv.Itoa(int(v.(docint))) + `}`
+		return []byte(s), nil
+	})
+}
+
+type extDecodeTest struct {
 	in  string
 	ptr interface{}
 	out interface{}
 	err error
 }
 
-var extensionTests = []extensionTest{
+var extDecodeTests = []extDecodeTest{
+	// Functions.
 	{in: `Func1()`, ptr: new(interface{}), out: map[string]interface{}{
 		"$func1": map[string]interface{}{},
+	}},
+	{in: `{"v": Func1()}`, ptr: new(interface{}), out: map[string]interface{}{
+		"v": map[string]interface{}{"$func1": map[string]interface{}{}},
 	}},
 	{in: `Func2(1)`, ptr: new(interface{}), out: map[string]interface{}{
 		"$func2": map[string]interface{}{"arg1": float64(1)},
@@ -70,12 +102,33 @@ var extensionTests = []extensionTest{
 
 	{in: `Func2(1)`, ptr: new(jsonText), out: jsonText{"Func2(1)"}},
 	{in: `Func2(1, 2)`, ptr: new(funcsText), out: funcsText{Func2: jsonText{"Func2(1, 2)"}}},
+	{in: `{"f": Func2(1, 2), "b": true}`, ptr: new(nestedText), out: nestedText{jsonText{"Func2(1, 2)"}, true}},
 
 	{in: `Func1()`, ptr: new(struct{}), out: struct{}{}},
+
+	// Keyed documents.
+	{in: `{"v": {"$key1": 1}}`, ptr: new(interface{}), out: map[string]interface{}{"v": keyed(`{"$key1": 1}`)}},
+	{in: `{"k": {"$key1": 1}}`, ptr: new(keyedType), out: keyedType{K: keyed(`{"$key1": 1}`)}},
+	{in: `{"i": {"$key1": 1}}`, ptr: new(keyedType), err: &UnmarshalTypeError{"object", reflect.TypeOf(0), 18}},
+
+	// Keyed function documents.
+	{in: `{"v": Func3()}`, ptr: new(interface{}), out: map[string]interface{}{"v": keyed(`Func3()`)}},
+	{in: `{"k": Func3()}`, ptr: new(keyedType), out: keyedType{K: keyed(`Func3()`)}},
+	{in: `{"i": Func3()}`, ptr: new(keyedType), err: &UnmarshalTypeError{"object", reflect.TypeOf(0), 13}},
 }
 
-func TestExtensions(t *testing.T) {
-	for i, tt := range extensionTests {
+type extEncodeTest struct {
+	in  interface{}
+	out string
+	err error
+}
+
+var extEncodeTests = []extEncodeTest{
+	{in: docint(13), out: "{\"$docint\":13}\n"},
+}
+
+func TestExtensionDecode(t *testing.T) {
+	for i, tt := range extDecodeTests {
 		var scan scanner
 		in := []byte(tt.in)
 		if err := checkValid(in, &scan); err != nil {
@@ -105,6 +158,23 @@ func TestExtensions(t *testing.T) {
 			data, _ = Marshal(tt.out)
 			t.Logf("%s", string(data))
 			continue
+		}
+	}
+}
+
+func TestExtensionEncode(t *testing.T) {
+	var buf bytes.Buffer
+	for i, tt := range extEncodeTests {
+		buf.Truncate(0)
+		enc := NewEncoder(&buf)
+		enc.Extend(&ext)
+		err := enc.Encode(tt.in)
+		if !reflect.DeepEqual(err, tt.err) {
+			t.Errorf("#%d: %v, want %v", i, err, tt.err)
+			continue
+		}
+		if buf.String() != tt.out {
+			t.Errorf("#%d: mismatch\nhave: %q\nwant: %q", i, buf.String(), tt.out)
 		}
 	}
 }

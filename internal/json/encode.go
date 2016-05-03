@@ -247,6 +247,7 @@ var hex = "0123456789abcdef"
 type encodeState struct {
 	bytes.Buffer // accumulated output
 	scratch      [64]byte
+	ext          Extension
 }
 
 var encodeStatePool sync.Pool
@@ -349,7 +350,23 @@ func typeEncoder(t reflect.Type) encoderFunc {
 
 	// Compute fields without lock.
 	// Might duplicate effort but won't hold other computations back.
-	f = newTypeEncoder(t, true)
+	innerf := newTypeEncoder(t, true)
+	f = func(e *encodeState, v reflect.Value, opts encOpts) {
+		encode, ok := e.ext.encode[v.Type()]
+		if !ok {
+			innerf(e, v, opts)
+			return
+		}
+
+		b, err := encode(v.Interface())
+		if err == nil {
+			// copy JSON into buffer, checking validity.
+			err = compact(&e.Buffer, b, opts.escapeHTML)
+		}
+		if err != nil {
+			e.error(&MarshalerError{v.Type(), err})
+		}
+	}
 	wg.Done()
 	encoderCache.Lock()
 	encoderCache.m[t] = f
