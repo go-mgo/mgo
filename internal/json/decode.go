@@ -1013,8 +1013,12 @@ func (d *decodeState) storeKeyed(v reflect.Value) bool {
 		return false
 	}
 	keyedv := reflect.ValueOf(keyed)
-	if keyedv.Type().AssignableTo(v.Type()) {
+	keyedt := keyedv.Type()
+	vt := v.Type()
+	if keyedt.AssignableTo(vt) {
 		v.Set(keyedv)
+	} else if keyedt.ConvertibleTo(vt) {
+		v.Set(keyedv.Convert(vt))
 	} else {
 		d.saveError(&UnmarshalTypeError{"object", v.Type(), int64(d.off)})
 	}

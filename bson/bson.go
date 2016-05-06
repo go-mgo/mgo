@@ -38,6 +38,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -276,6 +277,22 @@ var nullBytes = []byte("null")
 
 // UnmarshalJSON turns *bson.ObjectId into a json.Unmarshaller.
 func (id *ObjectId) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && (data[0] == '{' || data[0] == 'O') {
+		var v struct {
+			Id json.RawMessage `json:"$oid"`
+			Func struct {
+				Id json.RawMessage
+			} `json:"$oidFunc"`
+		}
+		err := jdec(data, &v)
+		if err == nil {
+			if len(v.Id) > 0 {
+				data = []byte(v.Id)
+			} else {
+				data = []byte(v.Func.Id)
+			}
+		}
+	}
 	if len(data) == 2 && data[0] == '"' && data[1] == '"' || bytes.Equal(data, nullBytes) {
 		*id = ""
 		return nil
