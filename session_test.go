@@ -3970,6 +3970,64 @@ func (s *S) TestFindIterCloseKillsCursor(c *C) {
 	c.Assert(serverCursorsOpen(session), Equals, cursors)
 }
 
+func (s *S) TestFindIterDoneWithBatches(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{40, 41, 42, 43, 44, 45, 46}
+	for _, n := range ns {
+		coll.Insert(M{"n": n})
+	}
+
+	iter := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2).Iter()
+	result := struct{ N int }{}
+	for i := 2; i < 7; i++ {
+		// first check will be with pending local record;
+		// second will be with open cursor ID but no local
+		// records
+		c.Assert(iter.Done(), Equals, false)
+		ok := iter.Next(&result)
+		c.Assert(ok, Equals, true, Commentf("err=%v", err))
+	}
+
+	c.Assert(iter.Done(), Equals, true)
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Close(), IsNil)
+}
+
+func (s *S) TestFindIterDoneErr(c *C) {
+	session, err := mgo.Dial("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	iter := coll.Find(nil).Iter()
+
+	result := struct{}{}
+	ok := iter.Next(&result)
+	c.Assert(iter.Done(), Equals, true)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Err(), ErrorMatches, "unauthorized.*|not authorized.*")
+}
+
+func (s *S) TestFindIterDoneNotFound(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	result := struct{ A, B int }{}
+	iter := coll.Find(M{"a": 1}).Iter()
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Done(), Equals, true)
+}
+
 func (s *S) TestLogReplay(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
