@@ -375,7 +375,7 @@ func (d *decodeState) value(v reflect.Value) {
 	case scanBeginLiteral:
 		d.literal(v)
 
-	case scanBeginFunc:
+	case scanBeginName:
 		d.function(v)
 	}
 }
@@ -763,7 +763,7 @@ func (d *decodeState) function(v reflect.Value) {
 
 	nameStart := d.off - 1
 
-	if op := d.scanWhile(scanContinue); op != scanFuncArg {
+	if op := d.scanWhile(scanContinue); op != scanParam {
 		d.error(errPhase)
 	}
 
@@ -856,7 +856,7 @@ func (d *decodeState) function(v reflect.Value) {
 	for i := 0; ; i++ {
 		// closing ) - can only happen on first iteration.
 		op := d.scanWhile(scanSkipSpace)
-		if op == scanEndFunc {
+		if op == scanEndParams {
 			break
 		}
 
@@ -943,10 +943,10 @@ func (d *decodeState) function(v reflect.Value) {
 
 		// Next token must be , or ).
 		op = d.scanWhile(scanSkipSpace)
-		if op == scanEndFunc {
+		if op == scanEndParams {
 			break
 		}
-		if op != scanFuncArg {
+		if op != scanParam {
 			d.error(errPhase)
 		}
 	}
@@ -968,10 +968,10 @@ Loop:
 	for i, c := range d.data[d.off:] {
 		switch op := d.nextscan.step(&d.nextscan, c); op {
 		case scanSkipSpace:
-		case scanBeginLiteral, scanBeginFunc:
+		case scanBeginLiteral, scanBeginName:
 			start = i
 		case scanContinue:
-		case scanEnd, scanFuncArg:
+		case scanEnd, scanParam:
 			end = i
 			break Loop
 		default:
@@ -1244,7 +1244,7 @@ func (d *decodeState) valueInterface() interface{} {
 		return d.objectInterface()
 	case scanBeginLiteral:
 		return d.literalInterface()
-	case scanBeginFunc:
+	case scanBeginName:
 		v, ok := d.keyed()
 		if ok {
 			return v
@@ -1368,7 +1368,7 @@ func (d *decodeState) literalInterface() interface{} {
 func (d *decodeState) functionInterface() map[string]interface{} {
 	nameStart := d.off - 1
 
-	if op := d.scanWhile(scanContinue); op != scanFuncArg {
+	if op := d.scanWhile(scanContinue); op != scanParam {
 		d.error(errPhase)
 	}
 
@@ -1382,7 +1382,7 @@ func (d *decodeState) functionInterface() map[string]interface{} {
 	for i := 0; ; i++ {
 		// Look ahead for ) - can only happen on first iteration.
 		op := d.scanWhile(scanSkipSpace)
-		if op == scanEndFunc {
+		if op == scanEndParams {
 			break
 		}
 
@@ -1397,10 +1397,10 @@ func (d *decodeState) functionInterface() map[string]interface{} {
 
 		// Next token must be , or ).
 		op = d.scanWhile(scanSkipSpace)
-		if op == scanEndFunc {
+		if op == scanEndParams {
 			break
 		}
-		if op != scanFuncArg {
+		if op != scanParam {
 			d.error(errPhase)
 		}
 	}
