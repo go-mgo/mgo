@@ -52,10 +52,16 @@ type keyedType struct {
 
 type docint int
 
+type const1Type struct{}
+
+var const1 = new(const1Type)
+
 func init() {
 	ext.DecodeFunc("Func1", "$func1")
 	ext.DecodeFunc("Func2", "$func2", "arg1", "arg2")
 	ext.DecodeFunc("Func3", "$func3", "arg1")
+
+	ext.DecodeConst("Const1", const1)
 
 	ext.DecodeKeyed("$key1", decodeKeyed)
 	ext.DecodeKeyed("$func3", decodeKeyed)
@@ -91,20 +97,24 @@ var extDecodeTests = []extDecodeTest{
 		"$func2": map[string]interface{}{"arg1": map[string]interface{}{"$func1": map[string]interface{}{}}},
 	}},
 	{in: `Func2(1, 2, 3)`, ptr: new(interface{}), err: fmt.Errorf("json: too many arguments for function Func2")},
-	{in: `BadFunc()`, ptr: new(interface{}), err: fmt.Errorf("json: unknown function BadFunc")},
+	{in: `BadFunc()`, ptr: new(interface{}), err: fmt.Errorf(`json: unknown function "BadFunc"`)},
 
 	{in: `Func1()`, ptr: new(funcs), out: funcs{Func1: &funcN{}}},
 	{in: `Func2(1)`, ptr: new(funcs), out: funcs{Func2: &funcN{Arg1: 1}}},
 	{in: `Func2(1, 2)`, ptr: new(funcs), out: funcs{Func2: &funcN{Arg1: 1, Arg2: 2}}},
 
 	{in: `Func2(1, 2, 3)`, ptr: new(funcs), err: fmt.Errorf("json: too many arguments for function Func2")},
-	{in: `BadFunc()`, ptr: new(funcs), err: fmt.Errorf("json: unknown function BadFunc")},
+	{in: `BadFunc()`, ptr: new(funcs), err: fmt.Errorf(`json: unknown function "BadFunc"`)},
 
 	{in: `Func2(1)`, ptr: new(jsonText), out: jsonText{"Func2(1)"}},
 	{in: `Func2(1, 2)`, ptr: new(funcsText), out: funcsText{Func2: jsonText{"Func2(1, 2)"}}},
 	{in: `{"f": Func2(1, 2), "b": true}`, ptr: new(nestedText), out: nestedText{jsonText{"Func2(1, 2)"}, true}},
 
 	{in: `Func1()`, ptr: new(struct{}), out: struct{}{}},
+
+	// Constants
+	{in: `Const1`, ptr: new(interface{}), out: const1},
+	{in: `{"c": Const1}`, ptr: new(struct{ C *const1Type}), out: struct{ C *const1Type}{const1}},
 
 	// Keyed documents.
 	{in: `{"v": {"$key1": 1}}`, ptr: new(interface{}), out: map[string]interface{}{"v": keyed(`{"$key1": 1}`)}},

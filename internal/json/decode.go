@@ -763,14 +763,24 @@ func (d *decodeState) function(v reflect.Value) {
 
 	nameStart := d.off - 1
 
-	if op := d.scanWhile(scanContinue); op != scanParam {
-		d.error(errPhase)
-	}
+	op := d.scanWhile(scanContinue)
 
 	funcName := string(d.data[nameStart : d.off-1])
+
+	if op != scanParam {
+		if constValue, ok := d.ext.consts[funcName]; ok {
+			// Back up so the byte just read is consumed next.
+			d.off--
+			d.scan.undo(op)
+			d.storeValue(v, constValue)
+			return
+		}
+		d.error(fmt.Errorf("json: unknown constant %q", funcName))
+	}
+
 	funcData := d.ext.funcs[funcName]
 	if funcData.key == "" {
-		d.error(fmt.Errorf("json: unknown function %s", funcName))
+		d.error(fmt.Errorf("json: unknown function %q", funcName))
 	}
 
 	// Check type of target:
@@ -1012,13 +1022,20 @@ func (d *decodeState) storeKeyed(v reflect.Value) bool {
 	if !ok {
 		return false
 	}
-	keyedv := reflect.ValueOf(keyed)
-	keyedt := keyedv.Type()
+	return d.storeValue(v, keyed)
+}
+
+func (d *decodeState) storeValue(v reflect.Value, from interface{}) bool {
 	vt := v.Type()
-	if keyedt.AssignableTo(vt) {
-		v.Set(keyedv)
-	} else if keyedt.ConvertibleTo(vt) {
-		v.Set(keyedv.Convert(vt))
+	fromv := reflect.ValueOf(from)
+	for fromv.Kind() == reflect.Ptr && !fromv.IsNil() {
+		fromv = fromv.Elem()
+	}
+	fromt := fromv.Type()
+	if fromt.AssignableTo(vt) {
+		v.Set(fromv)
+	} else if fromt.ConvertibleTo(vt) {
+		v.Set(fromv.Convert(vt))
 	} else {
 		d.saveError(&UnmarshalTypeError{"object", v.Type(), int64(d.off)})
 	}
@@ -1237,18 +1254,10 @@ func (d *decodeState) valueInterface() interface{} {
 	case scanBeginArray:
 		return d.arrayInterface()
 	case scanBeginObject:
-		v, ok := d.keyed()
-		if ok {
-			return v
-		}
 		return d.objectInterface()
 	case scanBeginLiteral:
 		return d.literalInterface()
 	case scanBeginName:
-		v, ok := d.keyed()
-		if ok {
-			return v
-		}
 		return d.functionInterface()
 	}
 }
@@ -1282,7 +1291,12 @@ func (d *decodeState) arrayInterface() []interface{} {
 }
 
 // objectInterface is like object but returns map[string]interface{}.
-func (d *decodeState) objectInterface() map[string]interface{} {
+func (d *decodeState) objectInterface() interface{} {
+	v, ok := d.keyed()
+	if ok {
+		return v
+	}
+
 	m := make(map[string]interface{})
 	for {
 		// Read opening " of string key or closing }.
@@ -1365,17 +1379,31 @@ func (d *decodeState) literalInterface() interface{} {
 }
 
 // functionInterface is like function but returns map[string]interface{}.
-func (d *decodeState) functionInterface() map[string]interface{} {
-	nameStart := d.off - 1
-
-	if op := d.scanWhile(scanContinue); op != scanParam {
-		d.error(errPhase)
+func (d *decodeState) functionInterface() interface{} {
+	v, ok := d.keyed()
+	if ok {
+		return v
 	}
 
+	nameStart := d.off - 1
+
+	op := d.scanWhile(scanContinue)
+
 	funcName := string(d.data[nameStart : d.off-1])
+
+	if op != scanParam {
+		if v, ok := d.ext.consts[funcName]; ok {
+			// Back up so the byte just read is consumed next.
+			d.off--
+			d.scan.undo(op)
+			return v
+		}
+		d.error(fmt.Errorf("json: unknown constant %q", funcName))
+	}
+
 	funcData := d.ext.funcs[funcName]
 	if funcData.key == "" {
-		d.error(fmt.Errorf("json: unknown function %s", funcName))
+		d.error(fmt.Errorf("json: unknown function %q", funcName))
 	}
 
 	m := make(map[string]interface{})

@@ -7,9 +7,10 @@ import (
 // Extension holds a set of additional rules to be used when unmarshaling
 // strict JSON or JSON-like content.
 type Extension struct {
-	funcs   map[string]funcExt
-	keyed   map[string]func([]byte) (interface{}, error)
-	encode  map[reflect.Type]func(v interface{}) ([]byte, error)
+	funcs  map[string]funcExt
+	consts map[string]interface{}
+	keyed  map[string]func([]byte) (interface{}, error)
+	encode map[reflect.Type]func(v interface{}) ([]byte, error)
 }
 
 type funcExt struct {
@@ -27,6 +28,9 @@ func (enc *Encoder) Extend(ext *Extension) { enc.ext = *ext }
 func (e *Extension) Extend(ext *Extension) {
 	for name, fext := range ext.funcs {
 		e.DecodeFunc(name, fext.key, fext.args...)
+	}
+	for name, value := range ext.consts {
+		e.DecodeConst(name, value)
 	}
 	for key, decode := range ext.keyed {
 		e.DecodeKeyed(key, decode)
@@ -49,10 +53,19 @@ func (e *Extension) DecodeFunc(name string, key string, args ...string) {
 	e.funcs[name] = funcExt{key, args}
 }
 
+// DecodeConst defines a constant name that may be observed inside JSON content
+// and will be decoded with the provided value.
+func (e *Extension) DecodeConst(name string, value interface{}) {
+	if e.consts == nil {
+		e.consts = make(map[string]interface{})
+	}
+	e.consts[name] = value
+}
+
 // DecodeKeyed defines a key that when observed as the first element inside a
 // JSON document triggers the decoding of that document via the provided
 // decode function.
-func (e *Extension) DecodeKeyed(key string, decode func(data []byte) (interface{}, error) ) {
+func (e *Extension) DecodeKeyed(key string, decode func(data []byte) (interface{}, error)) {
 	if e.keyed == nil {
 		e.keyed = make(map[string]func([]byte) (interface{}, error))
 	}
