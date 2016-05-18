@@ -1580,6 +1580,143 @@ func (s *S) TestObjectIdJSONMarshaling(c *C) {
 	}
 }
 
+var asUpdateTests = []struct {
+	description string
+	obj         interface{}
+	expect      bson.Update
+	expectError string
+}{{
+	obj: struct{ X int }{},
+	expect: bson.Update{
+		Set:   bson.M{"x": 0},
+		Unset: bson.M{},
+	},
+}, {
+	obj: struct {
+		X int `bson:"y"`
+	}{},
+	expect: bson.Update{
+		Set:   bson.M{"y": 0},
+		Unset: bson.M{},
+	},
+}, {
+	obj: struct {
+		X int `bson:",omitempty"`
+		Y string
+	}{
+		Y: "hello",
+	},
+	expect: bson.Update{
+		Set:   bson.M{"y": "hello"},
+		Unset: bson.M{"x": nil},
+	},
+}, {
+	obj: map[string]interface{}{
+		"A": "b",
+		"C": 213,
+	},
+	expect: bson.Update{
+		Set:   bson.M{"A": "b", "C": 213},
+		Unset: bson.M{},
+	},
+}, {
+	obj: &typeWithGetter{
+		result: &typeWithGetter{
+			result: struct{ A int }{1},
+		},
+	},
+	expect: bson.Update{
+		Set:   bson.M{"a": 1},
+		Unset: bson.M{},
+	},
+}, {
+	obj: &bson.Raw{0x03, []byte(wrapInDoc("\x0Aa\x00\x0Ac\x00\x0Ab\x00\x08d\x00\x01"))},
+	expect: bson.Update{
+		Set: bson.M{
+			"a": bson.Raw{0x0a, []byte{}},
+			"c": bson.Raw{0x0a, []byte{}},
+			"b": bson.Raw{0x0a, []byte{}},
+			"d": bson.Raw{0x08, []byte("\x01")},
+		},
+		Unset: bson.M{},
+	},
+}, {
+	obj:         34,
+	expectError: `cannot marshal: Can't marshal int as a BSON document`,
+}, {
+	obj: &typeWithGetter{
+		err: errors.New("some error"),
+	},
+	expectError: `GetBSON failed: some error`,
+}, {
+	obj: &inlineInt{struct{ A, B int }{1, 2}},
+	expect: bson.Update{
+		Set: bson.M{
+			"a": 1,
+			"b": 2,
+		},
+		Unset: bson.M{},
+	},
+}, {
+	obj: &inlineMap{A: 1, M: map[string]interface{}{"b": 2}},
+	expect: bson.Update{
+		Set: bson.M{
+			"a": 1,
+			"b": 2,
+		},
+		Unset: bson.M{},
+	},
+}, {
+	obj:         &structWithDupKeys{},
+	expectError: `Duplicated key 'name' in struct bson_test.structWithDupKeys`,
+}, {
+	obj:         &inlineMap{A: 1, M: map[string]interface{}{"a": 1}},
+	expectError: `Can't have key "a" in inlined map; conflicts with struct field`,
+}, {
+	obj:         &bson.Raw{0x0a, []byte{}},
+	expectError: `cannot marshal: Attempted to marshal Raw kind 10 as a document`,
+}, {
+	obj:         99,
+	expectError: `cannot marshal: Can't marshal int as a BSON document`,
+}, {
+	obj: struct {
+		Id string `bson:"_id"`
+		A  int
+	}{"hello", 1},
+	expect: bson.Update{
+		Set: bson.M{
+			"a": 1,
+		},
+		Unset: bson.M{},
+	},
+}, {
+	obj: map[string]string{
+		"_id": "hello",
+		"a":   "goodbye",
+	},
+	expect: bson.Update{
+		Set: bson.M{
+			"a": "goodbye",
+		},
+		Unset: bson.M{},
+	},
+}, {
+	obj:         map[int]string{34: "hello"},
+	expectError: `map key not a string`,
+}}
+
+func (s *S) TestAsUpdate(c *C) {
+	for _, test := range asUpdateTests {
+		u, err := bson.AsUpdate(test.obj)
+		if test.expectError != "" {
+			c.Assert(err, ErrorMatches, test.expectError)
+		} else {
+			c.Assert(err, Equals, nil)
+			c.Assert(u, DeepEquals, test.expect)
+		}
+	}
+}
+
 type specTest struct {
 	Description string
 	Documents   []struct {
