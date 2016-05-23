@@ -440,10 +440,10 @@ func (d *decodeState) indirect(v reflect.Value, decodingNull bool) (Unmarshaler,
 		}
 		if v.Type().NumMethod() > 0 {
 			if u, ok := v.Interface().(Unmarshaler); ok {
-				return u, nil, reflect.Value{}
+				return u, nil, v
 			}
 			if u, ok := v.Interface().(encoding.TextUnmarshaler); ok {
-				return nil, u, reflect.Value{}
+				return nil, u, v
 			}
 		}
 		v = v.Elem()
@@ -565,6 +565,9 @@ var textUnmarshalerType = reflect.TypeOf(new(encoding.TextUnmarshaler)).Elem()
 func (d *decodeState) object(v reflect.Value) {
 	// Check for unmarshaler.
 	u, ut, pv := d.indirect(v, false)
+	if d.storeKeyed(pv) {
+		return
+	}
 	if u != nil {
 		d.off--
 		err := u.UnmarshalJSON(d.next())
@@ -580,10 +583,6 @@ func (d *decodeState) object(v reflect.Value) {
 		return
 	}
 	v = pv
-
-	if d.storeKeyed(v) {
-		return
-	}
 
 	// Decoding into nil interface?  Switch to non-reflect code.
 	if v.Kind() == reflect.Interface && v.NumMethod() == 0 {
@@ -735,6 +734,9 @@ func (d *decodeState) object(v reflect.Value) {
 func (d *decodeState) function(v reflect.Value) {
 	// Check for unmarshaler.
 	u, ut, pv := d.indirect(v, false)
+	if d.storeKeyed(pv) {
+		return
+	}
 	if u != nil {
 		d.off--
 		err := u.UnmarshalJSON(d.next())
@@ -750,10 +752,6 @@ func (d *decodeState) function(v reflect.Value) {
 		return
 	}
 	v = pv
-
-	if d.storeKeyed(v) {
-		return
-	}
 
 	// Decoding into nil interface?  Switch to non-reflect code.
 	if v.Kind() == reflect.Interface && v.NumMethod() == 0 {
@@ -974,19 +972,16 @@ func (d *decodeState) keyed() (interface{}, bool) {
 	// Look-ahead first key to check for a keyed document extension.
 	d.nextscan.reset()
 	var start, end int
-Loop:
 	for i, c := range d.data[d.off:] {
 		switch op := d.nextscan.step(&d.nextscan, c); op {
-		case scanSkipSpace:
+		case scanSkipSpace, scanContinue:
+			continue
 		case scanBeginLiteral, scanBeginName:
 			start = i
-		case scanContinue:
-		case scanEnd, scanParam:
-			end = i
-			break Loop
-		default:
-			d.error(errPhase)
+			continue
 		}
+		end = i
+		break
 	}
 
 	var key []byte
@@ -1026,12 +1021,15 @@ func (d *decodeState) storeKeyed(v reflect.Value) bool {
 }
 
 func (d *decodeState) storeValue(v reflect.Value, from interface{}) bool {
-	vt := v.Type()
 	fromv := reflect.ValueOf(from)
 	for fromv.Kind() == reflect.Ptr && !fromv.IsNil() {
 		fromv = fromv.Elem()
 	}
 	fromt := fromv.Type()
+	for v.Kind() == reflect.Ptr && !v.IsNil() {
+		v = v.Elem()
+	}
+	vt := v.Type()
 	if fromt.AssignableTo(vt) {
 		v.Set(fromv)
 	} else if fromt.ConvertibleTo(vt) {
