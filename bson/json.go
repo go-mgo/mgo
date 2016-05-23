@@ -2,8 +2,11 @@ package bson
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"gopkg.in/mgo.v2-unstable/internal/json"
+	"strconv"
+	"time"
 )
 
 func UnmarshalJSON(data []byte, value interface{}) error {
@@ -35,7 +38,31 @@ func jdec(data []byte, value interface{}) error {
 var jsonExt json.Extension
 var funcExt json.Extension
 
+// TODO
+// - Shell regular expressions ("/regexp/opts")
+
 func init() {
+	funcExt.DecodeFunc("BinData", "$binaryFunc", "$type", "$binary")
+	jsonExt.DecodeKeyed("$binary", jdecBinary)
+	jsonExt.DecodeKeyed("$binaryFunc", jdecBinary)
+	jsonExt.EncodeType([]byte(nil), jencBinarySlice)
+	jsonExt.EncodeType(Binary{}, jencBinaryType)
+
+	funcExt.DecodeFunc("ISODate", "$dateFunc", "S")
+	funcExt.DecodeFunc("new Date", "$dateFunc", "N")
+	jsonExt.DecodeKeyed("$date", jdecDate)
+	jsonExt.DecodeKeyed("$dateFunc", jdecDate)
+	jsonExt.EncodeType(time.Time{}, jencDate)
+
+	funcExt.DecodeFunc("Timestamp", "$timestamp", "t", "i")
+	jsonExt.DecodeKeyed("$timestamp", jdecTimestamp)
+	jsonExt.EncodeType(MongoTimestamp(0), jencTimestamp)
+
+	funcExt.DecodeConst("undefined", Undefined)
+
+	jsonExt.DecodeKeyed("$regex", jdecRegEx)
+	jsonExt.EncodeType(RegEx{}, jencRegEx)
+
 	funcExt.DecodeFunc("ObjectId", "$oidFunc", "Id")
 	jsonExt.DecodeKeyed("$oid", jdecObjectId)
 	jsonExt.DecodeKeyed("$oidFunc", jdecObjectId)
@@ -50,6 +77,8 @@ func init() {
 	jsonExt.EncodeType(int64(0), jencNumberLong)
 	jsonExt.EncodeType(int(0), jencInt)
 
+	funcExt.DecodeConst("MinKey", MinKey)
+	funcExt.DecodeConst("MaxKey", MaxKey)
 	jsonExt.DecodeKeyed("$minKey", jdecMinKey)
 	jsonExt.DecodeKeyed("$maxKey", jdecMaxKey)
 	jsonExt.EncodeType(orderKey(0), jencMinMaxKey)
@@ -66,8 +95,143 @@ func fbytes(format string, args ...interface{}) []byte {
 	return buf.Bytes()
 }
 
+func jdecBinary(data []byte) (interface{}, error) {
+	var v struct {
+		Binary []byte `json:"$binary"`
+		Type   string `json:"$type"`
+		Func   struct {
+			Binary []byte `json:"$binary"`
+			Type   int64  `json:"$type"`
+		} `json:"$binaryFunc"`
+	}
+	err := jdec(data, &v)
+	if err != nil {
+		return nil, err
+	}
+
+	var binData []byte
+	var binKind int64
+	if v.Type == "" && v.Binary == nil {
+		binData = v.Func.Binary
+		binKind = v.Func.Type
+	} else if v.Type == "" {
+		return v.Binary, nil
+	} else {
+		binData = v.Binary
+		binKind, err = strconv.ParseInt(v.Type, 0, 64)
+		if err != nil {
+			binKind = -1
+		}
+	}
+
+	if binKind == 0 {
+		return binData, nil
+	}
+	if binKind < 0 || binKind > 255 {
+		return nil, fmt.Errorf("invalid type in binary object: %s", data)
+	}
+
+	return Binary{Kind: byte(binKind), Data: binData}, nil
+}
+
+func jencBinarySlice(v interface{}) ([]byte, error) {
+	in := v.([]byte)
+	out := make([]byte, base64.StdEncoding.EncodedLen(len(in)))
+	base64.StdEncoding.Encode(out, in)
+	return fbytes(`{"$binary":"%s","$type":"0x0"}`, out), nil
+}
+
+func jencBinaryType(v interface{}) ([]byte, error) {
+	in := v.(Binary)
+	out := make([]byte, base64.StdEncoding.EncodedLen(len(in.Data)))
+	base64.StdEncoding.Encode(out, in.Data)
+	return fbytes(`{"$binary":"%s","$type":"0x%x"}`, out, in.Kind), nil
+}
+
+const jdateFormat = "2006-01-02T15:04:05.999Z"
+
+func jdecDate(data []byte) (interface{}, error) {
+	var v struct {
+		S    string `json:"$date"`
+		Func struct {
+			S string
+			N *int64
+		} `json:"$dateFunc"`
+	}
+	err := jdec(data, &v)
+	if err != nil {
+		var vn struct {
+			Date struct {
+				N int64 `json:"$numberLong,string"`
+			} `json:"$date"`
+		}
+		err = jdec(data, &vn)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse date: %q", data)
+		}
+		return time.Unix(vn.Date.N/1000, vn.Date.N%1000*1e6).UTC(), nil
+	}
+	if v.Func.N != nil {
+		n := *v.Func.N
+		return time.Unix(n/1000, n%1000*1e6).UTC(), nil
+	}
+	s := v.S
+	if s == "" {
+		s = v.Func.S
+	}
+	t, err := time.Parse(jdateFormat, s)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse date: %q", s)
+	}
+	return t, nil
+}
+
+func jencDate(v interface{}) ([]byte, error) {
+	t := v.(time.Time)
+	return fbytes(`{"$date":%q}`, t.Format(jdateFormat)), nil
+}
+
+func jdecTimestamp(data []byte) (interface{}, error) {
+	var v struct {
+		Func struct {
+			T int32 `json:"t"`
+			I int32 `json:"i"`
+		} `json:"$timestamp"`
+	}
+	err := jdec(data, &v)
+	if err != nil {
+		return nil, err
+	}
+	return MongoTimestamp(uint64(v.Func.T)<<32 | uint64(uint32(v.Func.I))), nil
+}
+
+func jencTimestamp(v interface{}) ([]byte, error) {
+	ts := uint64(v.(MongoTimestamp))
+	return fbytes(`{"$timestamp":{"t":%d,"i":%d}}`, ts>>32, uint32(ts)), nil
+}
+
+func jdecRegEx(data []byte) (interface{}, error) {
+	var v struct {
+		Regex   string `json:"$regex"`
+		Options string `json:"$options"`
+	}
+	err := jdec(data, &v)
+	if err != nil {
+		return nil, err
+	}
+	return RegEx{v.Regex, v.Options}, nil
+}
+
+func jencRegEx(v interface{}) ([]byte, error) {
+	re := v.(RegEx)
+	type regex struct {
+		Regex   string `json:"$regex"`
+		Options string `json:"$options"`
+	}
+	return json.Marshal(regex{re.Pattern, re.Options})
+}
+
 func jdecObjectId(data []byte) (interface{}, error) {
-	println("Here!")
 	var v struct {
 		Id   string `json:"$oid"`
 		Func struct {

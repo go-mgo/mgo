@@ -6,16 +6,59 @@ import (
 	. "gopkg.in/check.v1"
 	"reflect"
 	"strings"
+	"time"
 )
 
 type jsonTest struct {
-	a interface{}
-	b string
-	c interface{}
-	e string
+	a interface{} // value encoded into JSON (optional)
+	b string      // JSON expected as output of <a>, and used as input to <c>
+	c interface{} // Value expected from decoding <b>, defaults to <a>
+	e string      // error string, if decoding (b) should fail
 }
 
 var jsonTests = []jsonTest{
+	// $binary
+	{
+		a: []byte("foo"),
+		b: `{"$binary":"Zm9v","$type":"0x0"}`,
+	}, {
+		a: bson.Binary{Kind: 2, Data: []byte("foo")},
+		b: `{"$binary":"Zm9v","$type":"0x2"}`,
+	}, {
+		b: `BinData(2,"Zm9v")`,
+		c: bson.Binary{Kind: 2, Data: []byte("foo")},
+	},
+
+	// $date
+	{
+		a: time.Date(2016, 5, 15, 1, 2, 3, 4000000, time.UTC),
+		b: `{"$date":"2016-05-15T01:02:03.004Z"}`,
+	}, {
+		b: `{"$date": {"$numberLong": "1002"}}`,
+		c: time.Date(1970, 1, 1, 0, 0, 1, 2e6, time.UTC),
+	}, {
+		b: `ISODate("2016-05-15T01:02:03.004Z")`,
+		c: time.Date(2016, 5, 15, 1, 2, 3, 4000000, time.UTC),
+	//}, {
+	//	b: `new Date(1000)`,
+	//	c: time.Date(1970, 1, 1, 0, 0, 1, 0, time.UTC),
+	},
+
+	// $timestamp
+	{
+		a: bson.MongoTimestamp(4294967298),
+		b: `{"$timestamp":{"t":1,"i":2}}`,
+	}, {
+		b: `Timestamp(1, 2)`,
+		c: bson.MongoTimestamp(4294967298),
+	},
+
+	// $regex
+	{
+		a: bson.RegEx{"pattern", "options"},
+		b: `{"$regex":"pattern","$options":"options"}`,
+	},
+
 	// $oid
 	{
 		a: bson.ObjectIdHex("0123456789abcdef01234567"),
@@ -61,6 +104,12 @@ var jsonTests = []jsonTest{
 		a: bson.MaxKey,
 		b: `{"$maxKey":1}`,
 	}, {
+		b: `MinKey`,
+		c: bson.MinKey,
+	}, {
+		b: `MaxKey`,
+		c: bson.MaxKey,
+	}, {
 		b: `{"$minKey":0}`,
 		e: `invalid $minKey object: {"$minKey":0}`,
 	}, {
@@ -68,10 +117,15 @@ var jsonTests = []jsonTest{
 		e: `invalid $maxKey object: {"$maxKey":0}`,
 	},
 
-	// $undefined
 	{
 		a: bson.Undefined,
 		b: `{"$undefined":true}`,
+	}, {
+		b: `undefined`,
+		c: bson.Undefined,
+	}, {
+		b: `{"v": undefined}`,
+		c: struct{ V interface{} }{bson.Undefined},
 	},
 }
 
