@@ -123,11 +123,10 @@ const (
 	scanBeginArray          // begin array
 	scanArrayValue          // just finished array value
 	scanEndArray            // end array (implies scanArrayValue if possible)
+	scanBeginName           // begin function call
+	scanParam               // begin function argument
+	scanEndParams           // end function call
 	scanSkipSpace           // space byte; can skip; known to be last "continue" result
-
-	scanBeginName // begin function call
-	scanParam     // begin function argument
-	scanEndParams // end function call
 
 	// Stop.
 	scanEnd   // top-level value ended *before* this byte; known to be first "stop" result
@@ -231,15 +230,6 @@ func stateBeginValue(s *scanner, c byte) int {
 		return scanBeginLiteral
 	case '0': // beginning of 0.123
 		s.step = state0
-		return scanBeginLiteral
-	case 't': // beginning of true
-		s.step = stateT
-		return scanBeginLiteral
-	case 'f': // beginning of false
-		s.step = stateF
-		return scanBeginLiteral
-	case 'n': // beginning of null
-		s.step = stateN
 		return scanBeginLiteral
 	}
 	if '1' <= c && c <= '9' { // beginning of 1234.5

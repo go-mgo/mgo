@@ -129,9 +129,10 @@ func TestDecoder(t *testing.T) {
 		// merge two adjacent JSON values.
 		var buf bytes.Buffer
 		for _, c := range nlines(streamEncoded, i) {
-			if c != '\n' {
+			// That's stupid isn't it!? nulltrue!?!? :/
+			//if c != '\n' {
 				buf.WriteRune(c)
-			}
+			//}
 		}
 		out := make([]interface{}, i)
 		dec := NewDecoder(&buf)

@@ -376,7 +376,7 @@ func (d *decodeState) value(v reflect.Value) {
 		d.literal(v)
 
 	case scanBeginName:
-		d.function(v)
+		d.name(v)
 	}
 }
 
@@ -396,6 +396,12 @@ func (d *decodeState) valueQuoted() interface{} {
 
 	case scanBeginObject:
 		d.object(reflect.Value{})
+
+	case scanBeginName:
+		switch v := d.nameInterface().(type) {
+		case nil, string:
+			return v
+		}
 
 	case scanBeginLiteral:
 		switch v := d.literalInterface().(type) {
@@ -729,9 +735,33 @@ func (d *decodeState) object(v reflect.Value) {
 	}
 }
 
-// function consumes a function from d.data[d.off-1:], decoding into the value v.
+// isNull returns whether there's a null literal at the provided offset.
+func (d *decodeState) isNull(off int) bool {
+	if off+4 >= len(d.data) || d.data[off] != 'n' || d.data[off+1] != 'u' || d.data[off+2] != 'l' || d.data[off+3] != 'l' {
+		return false
+	}
+	d.nextscan.reset()
+	for i, c := range d.data[off:] {
+		if i > 4 {
+			return false
+		}
+		switch d.nextscan.step(&d.nextscan, c) {
+		case scanContinue, scanBeginName:
+			continue
+		}
+		break
+	}
+	return true
+}
+
+// name consumes a const or function from d.data[d.off-1:], decoding into the value v.
 // the first byte of the function name has been read already.
-func (d *decodeState) function(v reflect.Value) {
+func (d *decodeState) name(v reflect.Value) {
+	if d.isNull(d.off-1) {
+		d.literal(v)
+		return
+	}
+
 	// Check for unmarshaler.
 	u, ut, pv := d.indirect(v, false)
 	if d.storeKeyed(pv) {
@@ -755,7 +785,12 @@ func (d *decodeState) function(v reflect.Value) {
 
 	// Decoding into nil interface?  Switch to non-reflect code.
 	if v.Kind() == reflect.Interface && v.NumMethod() == 0 {
-		v.Set(reflect.ValueOf(d.functionInterface()))
+		out := d.nameInterface()
+		if out == nil {
+			v.Set(reflect.Zero(v.Type()))
+		} else {
+			v.Set(reflect.ValueOf(out))
+		}
 		return
 	}
 
@@ -763,19 +798,19 @@ func (d *decodeState) function(v reflect.Value) {
 
 	op := d.scanWhile(scanContinue)
 
-	funcName := string(d.data[nameStart : d.off-1])
-
+	name := d.data[nameStart : d.off-1]
 	if op != scanParam {
-		if constValue, ok := d.ext.consts[funcName]; ok {
-			// Back up so the byte just read is consumed next.
-			d.off--
-			d.scan.undo(op)
-			d.storeValue(v, constValue)
+		// Back up so the byte just read is consumed next.
+		d.off--
+		d.scan.undo(op)
+		if l, ok := d.convertLiteral(name); ok {
+			d.storeValue(v, l)
 			return
 		}
-		d.error(fmt.Errorf("json: unknown constant %q", funcName))
+		d.error(&SyntaxError{fmt.Sprintf("json: unknown constant %q", name), int64(d.off)})
 	}
 
+	funcName := string(name)
 	funcData := d.ext.funcs[funcName]
 	if funcData.key == "" {
 		d.error(fmt.Errorf("json: unknown function %q", funcName))
@@ -1017,10 +1052,28 @@ func (d *decodeState) storeKeyed(v reflect.Value) bool {
 	if !ok {
 		return false
 	}
-	return d.storeValue(v, keyed)
+	d.storeValue(v, keyed)
+	return true
 }
 
-func (d *decodeState) storeValue(v reflect.Value, from interface{}) bool {
+var (
+	trueBytes = []byte("true")
+	falseBytes = []byte("false")
+	nullBytes = []byte("null")
+)
+
+func (d *decodeState) storeValue(v reflect.Value, from interface{}) {
+	switch from {
+	case nil:
+		d.literalStore(nullBytes, v, false)
+		return
+	case true:
+		d.literalStore(trueBytes, v, false)
+		return
+	case false:
+		d.literalStore(falseBytes, v, false)
+		return
+	}
 	fromv := reflect.ValueOf(from)
 	for fromv.Kind() == reflect.Ptr && !fromv.IsNil() {
 		fromv = fromv.Elem()
@@ -1037,7 +1090,30 @@ func (d *decodeState) storeValue(v reflect.Value, from interface{}) bool {
 	} else {
 		d.saveError(&UnmarshalTypeError{"object", v.Type(), int64(d.off)})
 	}
-	return true
+}
+
+func (d *decodeState) convertLiteral(name []byte) (interface{}, bool) {
+	if len(name) == 0 {
+		return nil, false
+	}
+	switch name[0] {
+	case 't':
+		if bytes.Equal(name, trueBytes) {
+			return true, true
+		}
+	case 'f':
+		if bytes.Equal(name, falseBytes) {
+			return false, true
+		}
+	case 'n':
+		if bytes.Equal(name, nullBytes) {
+			return nil, true
+		}
+	}
+	if l, ok := d.ext.consts[string(name)]; ok {
+		return l, true
+	}
+	return nil, false
 }
 
 // literal consumes a literal from d.data[d.off-1:], decoding into the value v.
@@ -1256,7 +1332,7 @@ func (d *decodeState) valueInterface() interface{} {
 	case scanBeginLiteral:
 		return d.literalInterface()
 	case scanBeginName:
-		return d.functionInterface()
+		return d.nameInterface()
 	}
 }
 
@@ -1376,8 +1452,8 @@ func (d *decodeState) literalInterface() interface{} {
 	}
 }
 
-// functionInterface is like function but returns map[string]interface{}.
-func (d *decodeState) functionInterface() interface{} {
+// nameInterface is like function but returns map[string]interface{}.
+func (d *decodeState) nameInterface() interface{} {
 	v, ok := d.keyed()
 	if ok {
 		return v
@@ -1387,18 +1463,18 @@ func (d *decodeState) functionInterface() interface{} {
 
 	op := d.scanWhile(scanContinue)
 
-	funcName := string(d.data[nameStart : d.off-1])
-
+	name := d.data[nameStart : d.off-1]
 	if op != scanParam {
-		if v, ok := d.ext.consts[funcName]; ok {
-			// Back up so the byte just read is consumed next.
-			d.off--
-			d.scan.undo(op)
-			return v
+		// Back up so the byte just read is consumed next.
+		d.off--
+		d.scan.undo(op)
+		if l, ok := d.convertLiteral(name); ok {
+			return l
 		}
-		d.error(fmt.Errorf("json: unknown constant %q", funcName))
+		d.error(&SyntaxError{fmt.Sprintf("json: unknown constant %q", name), int64(d.off)})
 	}
 
+	funcName := string(name)
 	funcData := d.ext.funcs[funcName]
 	if funcData.key == "" {
 		d.error(fmt.Errorf("json: unknown function %q", funcName))
