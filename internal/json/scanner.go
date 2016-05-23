@@ -231,6 +231,9 @@ func stateBeginValue(s *scanner, c byte) int {
 	case '0': // beginning of 0.123
 		s.step = state0
 		return scanBeginLiteral
+	case 'n':
+		s.step = stateNew0
+		return scanBeginName
 	}
 	if '1' <= c && c <= '9' { // beginning of 1234.5
 		s.step = state1
@@ -493,6 +496,35 @@ func stateE0(s *scanner, c byte) int {
 		return scanContinue
 	}
 	return stateEndValue(s, c)
+}
+
+// stateNew0 is the state after reading `n`.
+func stateNew0(s *scanner, c byte) int {
+	if c == 'e' {
+		s.step = stateNew1
+		return scanContinue
+	}
+	s.step = stateName
+	return stateName(s, c)
+}
+
+// stateNew1 is the state after reading `ne`.
+func stateNew1(s *scanner, c byte) int {
+	if c == 'w' {
+		s.step = stateNew2
+		return scanContinue
+	}
+	s.step = stateName
+	return stateName(s, c)
+}
+
+// stateNew2 is the state after reading `new`.
+func stateNew2(s *scanner, c byte) int {
+	s.step = stateName
+	if c == ' ' {
+		return scanContinue
+	}
+	return stateName(s, c)
 }
 
 // stateName is the state while reading an unquoted function name.

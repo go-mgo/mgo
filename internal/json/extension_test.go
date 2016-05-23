@@ -60,6 +60,7 @@ func init() {
 	ext.DecodeFunc("Func1", "$func1")
 	ext.DecodeFunc("Func2", "$func2", "arg1", "arg2")
 	ext.DecodeFunc("Func3", "$func3", "arg1")
+	ext.DecodeFunc("new Func4", "$func4", "arg1")
 
 	ext.DecodeConst("Const1", const1)
 
@@ -80,7 +81,7 @@ type extDecodeTest struct {
 }
 
 var extDecodeTests = []extDecodeTest{
-	// Functions.
+	// Functions
 	{in: `Func1()`, ptr: new(interface{}), out: map[string]interface{}{
 		"$func1": map[string]interface{}{},
 	}},
@@ -112,16 +113,21 @@ var extDecodeTests = []extDecodeTest{
 
 	{in: `Func1()`, ptr: new(struct{}), out: struct{}{}},
 
+	// Functions with "new" prefix
+	{in: `new Func4(1)`, ptr: new(interface{}), out: map[string]interface{}{
+		"$func4": map[string]interface{}{"arg1": float64(1)},
+	}},
+
 	// Constants
 	{in: `Const1`, ptr: new(interface{}), out: const1},
 	{in: `{"c": Const1}`, ptr: new(struct{ C *const1Type}), out: struct{ C *const1Type}{const1}},
 
-	// Keyed documents.
+	// Keyed documents
 	{in: `{"v": {"$key1": 1}}`, ptr: new(interface{}), out: map[string]interface{}{"v": keyed(`{"$key1": 1}`)}},
 	{in: `{"k": {"$key1": 1}}`, ptr: new(keyedType), out: keyedType{K: keyed(`{"$key1": 1}`)}},
 	{in: `{"i": {"$key1": 1}}`, ptr: new(keyedType), err: &UnmarshalTypeError{"object", reflect.TypeOf(0), 18}},
 
-	// Keyed function documents.
+	// Keyed function documents
 	{in: `{"v": Func3()}`, ptr: new(interface{}), out: map[string]interface{}{"v": keyed(`Func3()`)}},
 	{in: `{"k": Func3()}`, ptr: new(keyedType), out: keyedType{K: keyed(`Func3()`)}},
 	{in: `{"i": Func3()}`, ptr: new(keyedType), err: &UnmarshalTypeError{"object", reflect.TypeOf(0), 13}},
