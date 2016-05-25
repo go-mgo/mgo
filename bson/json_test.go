@@ -39,9 +39,12 @@ var jsonTests = []jsonTest{
 	}, {
 		b: `ISODate("2016-05-15T01:02:03.004Z")`,
 		c: time.Date(2016, 5, 15, 1, 2, 3, 4000000, time.UTC),
-	//}, {
-	//	b: `new Date(1000)`,
-	//	c: time.Date(1970, 1, 1, 0, 0, 1, 0, time.UTC),
+	}, {
+		b: `new Date(1000)`,
+		c: time.Date(1970, 1, 1, 0, 0, 1, 0, time.UTC),
+	}, {
+		b: `new Date("2016-05-15")`,
+		c: time.Date(2016, 5, 15, 0, 0, 0, 0, time.UTC),
 	},
 
 	// $timestamp
@@ -136,8 +139,8 @@ var jsonTests = []jsonTest{
 }
 
 func (s *S) TestJSON(c *C) {
-	for _, item := range jsonTests {
-		c.Logf("------------")
+	for i, item := range jsonTests {
+		c.Logf("------------ (#%d)", i)
 		c.Logf("A: %#v", item.a)
 		c.Logf("B: %#v", item.b)
 

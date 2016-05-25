@@ -52,7 +52,7 @@ func init() {
 	jsonExt.EncodeType(Binary{}, jencBinaryType)
 
 	funcExt.DecodeFunc("ISODate", "$dateFunc", "S")
-	funcExt.DecodeFunc("new Date", "$dateFunc", "N")
+	funcExt.DecodeFunc("new Date", "$dateFunc", "S")
 	jsonExt.DecodeKeyed("$date", jdecDate)
 	jsonExt.DecodeKeyed("$dateFunc", jdecDate)
 	jsonExt.EncodeType(time.Time{}, jencDate)
@@ -158,35 +158,39 @@ func jdecDate(data []byte) (interface{}, error) {
 		S    string `json:"$date"`
 		Func struct {
 			S string
-			N *int64
 		} `json:"$dateFunc"`
 	}
-	err := jdec(data, &v)
-	if err != nil {
-		var vn struct {
-			Date struct {
-				N int64 `json:"$numberLong,string"`
-			} `json:"$date"`
+	_ = jdec(data, &v)
+	if v.S == "" {
+		v.S = v.Func.S
+	}
+	if v.S != "" {
+		for _, format := range []string{jdateFormat, "2006-01-02"} {
+			t, err := time.Parse(format, v.S)
+			if err == nil {
+				return t, nil
+			}
 		}
-		err = jdec(data, &vn)
-		if err != nil {
-			return nil, fmt.Errorf("cannot parse date: %q", data)
-		}
-		return time.Unix(vn.Date.N/1000, vn.Date.N%1000*1e6).UTC(), nil
+		return nil, fmt.Errorf("cannot parse date: %q", v.S)
 	}
-	if v.Func.N != nil {
-		n := *v.Func.N
-		return time.Unix(n/1000, n%1000*1e6).UTC(), nil
+
+	var vn struct {
+		Date struct {
+			N int64 `json:"$numberLong,string"`
+		} `json:"$date"`
+		Func struct {
+			S int64
+		} `json:"$dateFunc"`
 	}
-	s := v.S
-	if s == "" {
-		s = v.Func.S
-	}
-	t, err := time.Parse(jdateFormat, s)
+	err := jdec(data, &vn)
 	if err != nil {
-		return nil, fmt.Errorf("cannot parse date: %q", s)
+		return nil, fmt.Errorf("cannot parse date: %q", data)
 	}
-	return t, nil
+	n := vn.Date.N
+	if n == 0 {
+		n = vn.Func.S
+	}
+	return time.Unix(n/1000, n%1000*1e6).UTC(), nil
 }
 
 func jencDate(v interface{}) ([]byte, error) {
