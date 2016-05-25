@@ -624,24 +624,40 @@ func (d *decodeState) object(v reflect.Value) {
 
 	var mapElem reflect.Value
 
+	empty := true
 	for {
 		// Read opening " of string key or closing }.
 		op := d.scanWhile(scanSkipSpace)
 		if op == scanEndObject {
-			// closing } - can only happen on first iteration.
+			if !empty && !d.ext.trailingCommas {
+				d.syntaxError("beginning of object key string")
+			}
 			break
 		}
-		if op != scanBeginLiteral {
+		empty = false
+		if op == scanBeginName {
+			if !d.ext.unquotedKeys {
+				d.syntaxError("beginning of object key string")
+			}
+		} else if op != scanBeginLiteral {
 			d.error(errPhase)
 		}
+		unquotedKey := op == scanBeginName
 
 		// Read key.
 		start := d.off - 1
 		op = d.scanWhile(scanContinue)
 		item := d.data[start : d.off-1]
-		key, ok := unquoteBytes(item)
-		if !ok {
-			d.error(errPhase)
+		var key []byte
+		if unquotedKey {
+			key = item
+			// TODO Fix code below to quote item when necessary.
+		} else {
+			var ok bool
+			key, ok = unquoteBytes(item)
+			if !ok {
+				d.error(errPhase)
+			}
 		}
 
 		// Figure out field corresponding to key.
@@ -1002,16 +1018,17 @@ func (d *decodeState) keyed() (interface{}, bool) {
 		return nil, false
 	}
 
-	inObject := d.data[d.off-1] == '{'
+	unquote := false
 
 	// Look-ahead first key to check for a keyed document extension.
 	d.nextscan.reset()
 	var start, end int
-	for i, c := range d.data[d.off:] {
+	for i, c := range d.data[d.off-1:] {
 		switch op := d.nextscan.step(&d.nextscan, c); op {
-		case scanSkipSpace, scanContinue:
+		case scanSkipSpace, scanContinue, scanBeginObject:
 			continue
 		case scanBeginLiteral, scanBeginName:
+			unquote = op == scanBeginLiteral
 			start = i
 			continue
 		}
@@ -1019,15 +1036,17 @@ func (d *decodeState) keyed() (interface{}, bool) {
 		break
 	}
 
+	name := d.data[d.off-1+start : d.off-1+end]
+
 	var key []byte
 	var ok bool
-	if inObject {
-		key, ok = unquoteBytes(d.data[d.off+start : d.off+end])
+	if unquote {
+		key, ok = unquoteBytes(name)
 		if !ok {
 			d.error(errPhase)
 		}
 	} else {
-		funcData, ok := d.ext.funcs[string(d.data[d.off+start-1 : d.off+end])]
+		funcData, ok := d.ext.funcs[string(name)]
 		if !ok {
 			return nil, false
 		}
@@ -1336,6 +1355,11 @@ func (d *decodeState) valueInterface() interface{} {
 	}
 }
 
+func (d *decodeState) syntaxError(expected string) {
+	msg := fmt.Sprintf("invalid character '%c' looking for %s", d.data[d.off-1], expected)
+	d.error(&SyntaxError{msg, int64(d.off)})
+}
+
 // arrayInterface is like array but returns []interface{}.
 func (d *decodeState) arrayInterface() []interface{} {
 	var v = make([]interface{}, 0)
@@ -1343,6 +1367,9 @@ func (d *decodeState) arrayInterface() []interface{} {
 		// Look ahead for ] - can only happen on first iteration.
 		op := d.scanWhile(scanSkipSpace)
 		if op == scanEndArray {
+			if len(v) > 0 && !d.ext.trailingCommas {
+				d.syntaxError("beginning of value")
+			}
 			break
 		}
 
@@ -1376,20 +1403,33 @@ func (d *decodeState) objectInterface() interface{} {
 		// Read opening " of string key or closing }.
 		op := d.scanWhile(scanSkipSpace)
 		if op == scanEndObject {
-			// closing } - can only happen on first iteration.
+			if len(m) > 0 && !d.ext.trailingCommas {
+				d.syntaxError("beginning of object key string")
+			}
 			break
 		}
-		if op != scanBeginLiteral {
+		if op == scanBeginName {
+			if !d.ext.unquotedKeys {
+				d.syntaxError("beginning of object key string")
+			}
+		} else if op != scanBeginLiteral {
 			d.error(errPhase)
 		}
+		unquotedKey := op == scanBeginName
 
 		// Read string key.
 		start := d.off - 1
 		op = d.scanWhile(scanContinue)
 		item := d.data[start : d.off-1]
-		key, ok := unquote(item)
-		if !ok {
-			d.error(errPhase)
+		var key string
+		if unquotedKey {
+			key = string(item)
+		} else {
+			var ok bool
+			key, ok = unquote(item)
+			if !ok {
+				d.error(errPhase)
+			}
 		}
 
 		// Read : before value.

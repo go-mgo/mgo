@@ -239,11 +239,15 @@ func stateBeginValue(s *scanner, c byte) int {
 		s.step = state1
 		return scanBeginLiteral
 	}
-	if c == '$' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' {
+	if isName(c) {
 		s.step = stateName
 		return scanBeginName
 	}
 	return s.error(c, "looking for beginning of value")
+}
+
+func isName(c byte) bool {
+	return c == '$' || c == '_' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9'
 }
 
 // stateBeginStringOrEmpty is the state after reading `{`.
@@ -267,6 +271,10 @@ func stateBeginString(s *scanner, c byte) int {
 	if c == '"' {
 		s.step = stateInString
 		return scanBeginLiteral
+	}
+	if isName(c) {
+		s.step = stateName
+		return scanBeginName
 	}
 	return s.error(c, "looking for beginning of object key string")
 }
@@ -297,7 +305,7 @@ func stateEndValue(s *scanner, c byte) int {
 	case parseObjectValue:
 		if c == ',' {
 			s.parseState[n-1] = parseObjectKey
-			s.step = stateBeginString
+			s.step = stateBeginStringOrEmpty
 			return scanObjectValue
 		}
 		if c == '}' {
@@ -307,7 +315,7 @@ func stateEndValue(s *scanner, c byte) int {
 		return s.error(c, "after object key:value pair")
 	case parseArrayValue:
 		if c == ',' {
-			s.step = stateBeginValue
+			s.step = stateBeginValueOrEmpty
 			return scanArrayValue
 		}
 		if c == ']' {
@@ -529,7 +537,7 @@ func stateNew2(s *scanner, c byte) int {
 
 // stateName is the state while reading an unquoted function name.
 func stateName(s *scanner, c byte) int {
-	if c == '$' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' {
+	if isName(c) {
 		return scanContinue
 	}
 	if c == '(' {

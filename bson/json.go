@@ -42,6 +42,9 @@ var funcExt json.Extension
 // - Shell regular expressions ("/regexp/opts")
 
 func init() {
+	jsonExt.DecodeUnquotedKeys(true)
+	jsonExt.DecodeTrailingCommas(true)
+
 	funcExt.DecodeFunc("BinData", "$binaryFunc", "$type", "$binary")
 	jsonExt.DecodeKeyed("$binary", jdecBinary)
 	jsonExt.DecodeKeyed("$binaryFunc", jdecBinary)

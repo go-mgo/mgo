@@ -37,6 +37,10 @@ type nestedText struct {
 	B bool
 }
 
+type unquotedKey struct {
+	S string `json:"$k_1"`
+}
+
 var ext Extension
 
 type keyed string
@@ -71,6 +75,9 @@ func init() {
 		s := `{"$docint": ` + strconv.Itoa(int(v.(docint))) + `}`
 		return []byte(s), nil
 	})
+
+	ext.DecodeUnquotedKeys(true)
+	ext.DecodeTrailingCommas(true)
 }
 
 type extDecodeTest struct {
@@ -78,6 +85,8 @@ type extDecodeTest struct {
 	ptr interface{}
 	out interface{}
 	err error
+
+	noext bool
 }
 
 var extDecodeTests = []extDecodeTest{
@@ -120,7 +129,7 @@ var extDecodeTests = []extDecodeTest{
 
 	// Constants
 	{in: `Const1`, ptr: new(interface{}), out: const1},
-	{in: `{"c": Const1}`, ptr: new(struct{ C *const1Type}), out: struct{ C *const1Type}{const1}},
+	{in: `{"c": Const1}`, ptr: new(struct{ C *const1Type }), out: struct{ C *const1Type }{const1}},
 
 	// Keyed documents
 	{in: `{"v": {"$key1": 1}}`, ptr: new(interface{}), out: map[string]interface{}{"v": keyed(`{"$key1": 1}`)}},
@@ -131,6 +140,27 @@ var extDecodeTests = []extDecodeTest{
 	{in: `{"v": Func3()}`, ptr: new(interface{}), out: map[string]interface{}{"v": keyed(`Func3()`)}},
 	{in: `{"k": Func3()}`, ptr: new(keyedType), out: keyedType{K: keyed(`Func3()`)}},
 	{in: `{"i": Func3()}`, ptr: new(keyedType), err: &UnmarshalTypeError{"object", reflect.TypeOf(0), 13}},
+
+	// Unquoted keys
+	{in: `{$k_1: "bar"}`, ptr: new(interface{}), out: map[string]interface{}{"$k_1": "bar"}},
+	{in: `{$k_1: "bar"}`, ptr: new(unquotedKey), out: unquotedKey{"bar"}},
+
+	{in: `{$k_1: "bar"}`, noext: true, ptr: new(interface{}),
+		err: &SyntaxError{"invalid character '$' looking for beginning of object key string", 2}},
+	{in: `{$k_1: "bar"}`, noext: true, ptr: new(unquotedKey),
+		err: &SyntaxError{"invalid character '$' looking for beginning of object key string", 2}},
+
+	// Trailing commas
+	{in: `{"k": "v",}`, ptr: new(interface{}), out: map[string]interface{}{"k": "v"}},
+	{in: `{"k": "v",}`, ptr: new(struct{}), out: struct{}{}},
+	{in: `["v",]`, ptr: new(interface{}), out: []interface{}{"v"}},
+
+	{in: `{"k": "v",}`, noext: true, ptr: new(interface{}),
+		err: &SyntaxError{"invalid character '}' looking for beginning of object key string", 11}},
+	{in: `{"k": "v",}`, noext: true, ptr: new(struct{}),
+		err: &SyntaxError{"invalid character '}' looking for beginning of object key string", 11}},
+	{in: `["a",]`, noext: true, ptr: new(interface{}),
+		err: &SyntaxError{"invalid character ']' looking for beginning of value", 6}},
 }
 
 type extEncodeTest struct {
@@ -145,22 +175,14 @@ var extEncodeTests = []extEncodeTest{
 
 func TestExtensionDecode(t *testing.T) {
 	for i, tt := range extDecodeTests {
-		var scan scanner
 		in := []byte(tt.in)
-		if err := checkValid(in, &scan); err != nil {
-			if !reflect.DeepEqual(err, tt.err) {
-				t.Errorf("#%d: checkValid: %#v", i, err)
-				continue
-			}
-		}
-		if tt.ptr == nil {
-			continue
-		}
 
 		// v = new(right-type)
 		v := reflect.New(reflect.TypeOf(tt.ptr).Elem())
 		dec := NewDecoder(bytes.NewReader(in))
-		dec.Extend(&ext)
+		if !tt.noext {
+			dec.Extend(&ext)
+		}
 		if err := dec.Decode(v.Interface()); !reflect.DeepEqual(err, tt.err) {
 			t.Errorf("#%d: %v, want %v", i, err, tt.err)
 			continue

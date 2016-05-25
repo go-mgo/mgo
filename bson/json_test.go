@@ -127,6 +127,12 @@ var jsonTests = []jsonTest{
 		b: `{"v": undefined}`,
 		c: struct{ V interface{} }{bson.Undefined},
 	},
+
+	// Unquoted keys and trailing commas
+	{
+		b: `{$foo: ["bar",],}`,
+		c: map[string]interface{}{"$foo": []interface{}{"bar"}},
+	},
 }
 
 func (s *S) TestJSON(c *C) {

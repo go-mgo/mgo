@@ -11,6 +11,9 @@ type Extension struct {
 	consts map[string]interface{}
 	keyed  map[string]func([]byte) (interface{}, error)
 	encode map[reflect.Type]func(v interface{}) ([]byte, error)
+
+	unquotedKeys   bool
+	trailingCommas bool
 }
 
 type funcExt struct {
@@ -70,6 +73,16 @@ func (e *Extension) DecodeKeyed(key string, decode func(data []byte) (interface{
 		e.keyed = make(map[string]func([]byte) (interface{}, error))
 	}
 	e.keyed[key] = decode
+}
+
+// DecodeUnquotedKeys defines whether to accept map keys that are unquoted strings.
+func (e *Extension) DecodeUnquotedKeys(accept bool) {
+	e.unquotedKeys = accept
+}
+
+// DecodeTrailingCommas defines whether to accept trailing commas in maps and arrays.
+func (e *Extension) DecodeTrailingCommas(accept bool) {
+	e.trailingCommas = accept
 }
 
 // EncodeType registers a function to encode values with the same type of the
