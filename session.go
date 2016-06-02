@@ -4254,12 +4254,12 @@ type BuildInfo struct {
 // equal to the provided version number. If more than one number is
 // provided, numbers will be considered as major, minor, and so on.
 func (bi *BuildInfo) VersionAtLeast(version ...int) bool {
-	for i := range version {
+	for i, vi := range version {
 		if i == len(bi.VersionArray) {
 			return false
 		}
-		if bi.VersionArray[i] < version[i] {
-			return false
+		if bivi := bi.VersionArray[i]; bivi != vi {
+			return bivi >= vi
 		}
 	}
 	return true

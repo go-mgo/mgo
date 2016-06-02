@@ -4099,6 +4099,29 @@ func (s *S) TestBypassValidation(c *C) {
 	c.Assert(ns, DeepEquals, []int{4})
 }
 
+func (s *S) TestVersionAtLeast(c *C) {
+	tests := [][][]int{
+		{{3,2,1}, {3,2,0}},
+		{{3,2,1}, {3,2}},
+		{{3,2,1}, {2,5,5,5}},
+		{{3,2,1}, {2,5,5}},
+		{{3,2,1}, {2,5}},
+	}
+	for _, pair := range tests {
+		bi := mgo.BuildInfo{VersionArray: pair[0]}
+		c.Assert(bi.VersionAtLeast(pair[1]...), Equals, true)
+
+		bi = mgo.BuildInfo{VersionArray: pair[0]}
+		c.Assert(bi.VersionAtLeast(pair[0]...), Equals, true)
+
+		bi = mgo.BuildInfo{VersionArray: pair[1]}
+		c.Assert(bi.VersionAtLeast(pair[1]...), Equals, true)
+
+		bi = mgo.BuildInfo{VersionArray: pair[1]}
+		c.Assert(bi.VersionAtLeast(pair[0]...), Equals, false)
+	}
+}
+
 // --------------------------------------------------------------------------
 // Some benchmarks that require a running database.
 
