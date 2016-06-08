@@ -359,7 +359,8 @@ func (file *GridFile) assertMode(mode gfsFileMode) {
 
 // SetChunkSize sets size of saved chunks.  Once the file is written to, it
 // will be split in blocks of that size and each block saved into an
-// independent chunk document.  The default chunk size is 256kb.
+// independent chunk document. The default chunk size is 255kb, 
+// 256kb for MongoDB versions less 2.4.10. 
 //
 // It is a runtime error to call this function once the file has started
 // being written to.
