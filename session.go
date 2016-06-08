@@ -1580,7 +1580,8 @@ func (s *Session) Refresh() {
 	s.m.Unlock()
 }
 
-// SetMode changes the consistency mode for the session.
+// SetMode changes the consistency mode for the session. The default mode
+// on Sessions where it has not been yet been explicitly set is Strong.
 //
 // In the Strong consistency mode reads and writes will always be made to
 // the primary server using a unique connection so that reads and writes are
@@ -1654,7 +1655,8 @@ func (s *Session) SetSyncTimeout(d time.Duration) {
 }
 
 // SetSocketTimeout sets the amount of time to wait for a non-responding
-// socket to the database before it is forcefully closed.
+// socket to the database before it is forcefully closed. The default
+// timeout is 1 minute.
 func (s *Session) SetSocketTimeout(d time.Duration) {
 	s.m.Lock()
 	s.sockTimeout = d
@@ -1775,7 +1777,8 @@ func (s *Session) Safe() (safe *Safe) {
 	return
 }
 
-// SetSafe changes the session safety mode.
+// SetSafe changes the session safety mode. The default value for sessions
+// whose safety mode has not been explicitly set is &Safe{}.
 //
 // If the safe parameter is nil, the session is put in unsafe mode, and writes
 // become fire-and-forget, without error checking.  The unsafe mode is faster
