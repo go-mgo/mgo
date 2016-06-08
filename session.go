@@ -3558,15 +3558,15 @@ func (iter *Iter) Close() error {
 	return err
 }
 
-// Done returns true if there will never be more results from this
-// cursor, and false if it's possible that there will be more
-// results. For a standard (non-tailing) query, this returns false if
-// calling Next would return true. For tailable cursors, it's somewhat
-// more complicated - this may return false even if there are no
-// immediate results, so long as there might be results later.
+// Done returns true only if a follow up Next call is guaranteed
+// to return false.
 //
-// If the Iter is waiting for results from the server, Done may
-// block.
+// For an iterator created with Tail, Done may return false for
+// an iterator that has no more data. Otherwise it's guaranteed
+// to return false only if there is data or an error happened.
+//
+// Done may block waiting for a pending query to verify whether
+// more data is actually available or not.
 func (iter *Iter) Done() bool {
 	iter.m.Lock()
 	defer iter.m.Unlock()
@@ -3575,19 +3575,13 @@ func (iter *Iter) Done() bool {
 		if iter.docData.Len() > 0 {
 			return false
 		}
-
-		if iter.err != nil {
+		if iter.docsToReceive > 1 {
 			return true
 		}
-
-		// If we're waiting for a reply from an in-flight
-		// query, wait until we know whether or not there's
-		// still a cursor ID.
 		if iter.docsToReceive > 0 {
 			iter.gotReply.Wait()
 			continue
 		}
-
 		return iter.op.cursorId == 0
 	}
 }
