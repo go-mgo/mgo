@@ -55,6 +55,7 @@ type mongoServer struct {
 	pingCount     uint32
 	pingWindow    [6]time.Duration
 	info          *mongoServerInfo
+	maxSocketUses int
 }
 
 type dialer struct {
@@ -76,15 +77,17 @@ type mongoServerInfo struct {
 
 var defaultServerInfo mongoServerInfo
 
-func newServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer) *mongoServer {
+func newServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer,
+	maxSocketUses int) *mongoServer {
 	server := &mongoServer{
-		Addr:         addr,
-		ResolvedAddr: tcpaddr.String(),
-		tcpaddr:      tcpaddr,
-		sync:         sync,
-		dial:         dial,
-		info:         &defaultServerInfo,
-		pingValue:    time.Hour, // Push it back before an actual ping.
+		Addr:          addr,
+		ResolvedAddr:  tcpaddr.String(),
+		tcpaddr:       tcpaddr,
+		sync:          sync,
+		dial:          dial,
+		info:          &defaultServerInfo,
+		pingValue:     time.Hour, // Push it back before an actual ping.
+		maxSocketUses: maxSocketUses,
 	}
 	go server.pinger(true)
 	return server
@@ -181,7 +184,7 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 	logf("Connection to %s established.", server.Addr)
 
 	stats.conn(+1, master)
-	return newSocket(server, conn, timeout), nil
+	return newSocket(server, conn, timeout, server.maxSocketUses), nil
 }
 
 // Close forces closing all sockets that are alive, whether

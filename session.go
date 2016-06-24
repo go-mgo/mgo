@@ -315,6 +315,7 @@ func ParseURL(url string) (*DialInfo, error) {
 		Source:         source,
 		PoolLimit:      poolLimit,
 		ReplicaSetName: setName,
+		MaxSocketUses:  -1,
 	}
 	return &info, nil
 }
@@ -381,6 +382,11 @@ type DialInfo struct {
 	// See Session.SetPoolLimit for details.
 	PoolLimit int
 
+	// Maximum number of times a socket may be used before it is closed.
+	// Set to -1 to disable
+	// Default: -1
+	MaxSocketUses int
+
 	// DialServer optionally specifies the dial function for establishing
 	// connections with the MongoDB servers.
 	DialServer func(addr *ServerAddr) (net.Conn, error)
@@ -419,7 +425,8 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 		}
 		addrs[i] = addr
 	}
-	cluster := newCluster(addrs, info.Direct, info.FailFast, dialer{info.Dial, info.DialServer}, info.ReplicaSetName)
+	cluster := newCluster(addrs, info.Direct, info.FailFast, dialer{info.Dial, info.DialServer}, info.ReplicaSetName,
+		info.MaxSocketUses)
 	session := newSession(Eventual, cluster, info.Timeout)
 	session.defaultdb = info.Database
 	if session.defaultdb == "" {
