@@ -53,6 +53,7 @@ type mongoSocket struct {
 	gotNonce      sync.Cond
 	dead          error
 	serverInfo    *mongoServerInfo
+	maxUses       int // maximum number of times this socket can be used before it is closed
 }
 
 type queryOpFlags uint32
@@ -177,12 +178,13 @@ type requestInfo struct {
 	replyFunc replyFunc
 }
 
-func newSocket(server *mongoServer, conn net.Conn, timeout time.Duration) *mongoSocket {
+func newSocket(server *mongoServer, conn net.Conn, timeout time.Duration, maxUses int) *mongoSocket {
 	socket := &mongoSocket{
 		conn:       conn,
 		addr:       server.Addr,
 		server:     server,
 		replyFuncs: make(map[uint32]replyFunc),
+		maxUses:    maxUses,
 	}
 	socket.gotNonce.L = &socket.Mutex
 	if err := socket.InitialAcquire(server.Info(), timeout); err != nil {
@@ -264,11 +266,20 @@ func (socket *mongoSocket) Release() {
 	if socket.references == 0 {
 		stats.socketsInUse(-1)
 		server := socket.server
+		recycle := true
+		if socket.maxUses > 0 {
+			socket.maxUses -= 1
+			if socket.maxUses == 0 {
+				recycle = false
+			}
+		}
 		socket.Unlock()
 		socket.LogoutAll()
 		// If the socket is dead server is nil.
-		if server != nil {
+		if server != nil && recycle {
 			server.RecycleSocket(socket)
+		} else {
+			socket.Close()
 		}
 	} else {
 		socket.Unlock()

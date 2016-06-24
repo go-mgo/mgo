@@ -37,9 +37,9 @@ import (
 	"testing"
 	"time"
 
-	. "gopkg.in/check.v1"
 	"github.com/lyft/mgo"
 	"github.com/lyft/mgo/bson"
+	. "gopkg.in/check.v1"
 )
 
 var fast = flag.Bool("fast", false, "Skip slow tests")
@@ -150,11 +150,11 @@ func (s *S) Stop(host string) {
 }
 
 func (s *S) pid(host string) int {
-	output, err := exec.Command("lsof", "-iTCP:"+hostPort(host), "-sTCP:LISTEN", "-Fp").CombinedOutput()
+	output, err := exec.Command("lsof", "-iTCP:"+hostPort(host), "-sTCP:LISTEN", "-t").CombinedOutput()
 	if err != nil {
 		panic(err)
 	}
-	pidstr := string(output[1 : len(output)-1])
+	pidstr := string(output[:len(output)-1])
 	pid, err := strconv.Atoi(pidstr)
 	if err != nil {
 		panic("cannot convert pid to int: " + pidstr)

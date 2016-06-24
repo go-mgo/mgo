@@ -90,6 +90,7 @@ type Session struct {
 	dialCred         *Credential
 	creds            []Credential
 	poolLimit        int
+	minPoolSize      int
 	bypassValidation bool
 }
 
@@ -232,6 +233,18 @@ const defaultPrefetch = 0.25
 //        Defines the per-server socket pool limit. Defaults to 4096.
 //        See Session.SetPoolLimit for details.
 //
+//     minPoolSize=<limit>
+//
+//        Defines the per-server socket pool minimum. Defaults to 0.
+//        See Session.SetMinPoolSize for details.
+//
+//     maxSocketUses=<limit>
+//
+//        Defines the maximum amount of times a socket created for this cluster can be
+//        used (returned to the pool) before being closed.
+//        If set to -1, there is no limit. Defaults to -1.
+//        See Session.SetMaxSocketUses for details.
+//
 //
 // Relevant documentation:
 //
@@ -276,6 +289,7 @@ func ParseURL(url string) (*DialInfo, error) {
 	source := ""
 	setName := ""
 	poolLimit := 0
+	maxSocketUses := 0
 	for k, v := range uinfo.options {
 		switch k {
 		case "authSource":
@@ -290,6 +304,11 @@ func ParseURL(url string) (*DialInfo, error) {
 			poolLimit, err = strconv.Atoi(v)
 			if err != nil {
 				return nil, errors.New("bad value for maxPoolSize: " + v)
+			}
+		case "maxSocketUses":
+			maxSocketUses, err = strconv.Atoi(v)
+			if err != nil {
+				return nil, errors.New("bad value for maxSocketUses: " + v)
 			}
 		case "connect":
 			if v == "direct" {
@@ -314,6 +333,7 @@ func ParseURL(url string) (*DialInfo, error) {
 		Service:        service,
 		Source:         source,
 		PoolLimit:      poolLimit,
+		MaxSocketUses:  maxSocketUses,
 		ReplicaSetName: setName,
 	}
 	return &info, nil
@@ -381,6 +401,14 @@ type DialInfo struct {
 	// See Session.SetPoolLimit for details.
 	PoolLimit int
 
+	// The minimum size that the socket pool can shrink to
+	MinPoolSize int
+
+	// Maximum number of times a socket may be used before it is closed.
+	// Set to -1 to disable
+	// Default: -1
+	MaxSocketUses int
+
 	// DialServer optionally specifies the dial function for establishing
 	// connections with the MongoDB servers.
 	DialServer func(addr *ServerAddr) (net.Conn, error)
@@ -419,7 +447,8 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 		}
 		addrs[i] = addr
 	}
-	cluster := newCluster(addrs, info.Direct, info.FailFast, dialer{info.Dial, info.DialServer}, info.ReplicaSetName)
+	cluster := newCluster(addrs, info.Direct, info.FailFast, dialer{info.Dial, info.DialServer}, info.ReplicaSetName,
+		info.MaxSocketUses)
 	session := newSession(Eventual, cluster, info.Timeout)
 	session.defaultdb = info.Database
 	if session.defaultdb == "" {
@@ -1692,6 +1721,12 @@ func (s *Session) SetCursorTimeout(d time.Duration) {
 func (s *Session) SetPoolLimit(limit int) {
 	s.m.Lock()
 	s.poolLimit = limit
+	s.m.Unlock()
+}
+
+func (s *Session) SetMinPoolSize(limit int) {
+	s.m.Lock()
+	s.minPoolSize = limit
 	s.m.Unlock()
 }
 
@@ -3778,7 +3813,7 @@ func (iter *Iter) acquireSocket() (*mongoSocket, error) {
 		sockTimeout := iter.session.sockTimeout
 		iter.session.m.Unlock()
 		socket.Release()
-		socket, _, err = iter.server.AcquireSocket(0, sockTimeout)
+		socket, _, err = iter.server.AcquireSocket(0, 0, sockTimeout)
 		if err != nil {
 			return nil, err
 		}
@@ -4334,7 +4369,7 @@ func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 	}
 
 	// Still not good.  We need a new socket.
-	sock, err := s.cluster().AcquireSocket(s.consistency, slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags, s.poolLimit)
+	sock, err := s.cluster().AcquireSocket(s.consistency, slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags, s.poolLimit, s.minPoolSize)
 	if err != nil {
 		return nil, err
 	}

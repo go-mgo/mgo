@@ -4,8 +4,8 @@ import (
 	"crypto/sha1"
 	"testing"
 
-	. "gopkg.in/check.v1"
 	"github.com/lyft/mgo/internal/scram"
+	. "gopkg.in/check.v1"
 	"strings"
 )
 
