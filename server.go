@@ -115,9 +115,9 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			return nil, false, errPoolLimit
 		}
 		if n > 0 {
-			socket = server.unusedSockets[n-1]
-			server.unusedSockets[n-1] = nil // Help GC.
-			server.unusedSockets = server.unusedSockets[:n-1]
+			socket = server.unusedSockets[0]
+			server.unusedSockets[0] = nil // Help GC.
+			server.unusedSockets = server.unusedSockets[1:]
 			info := server.info
 			server.Unlock()
 			err = socket.InitialAcquire(info, timeout)
