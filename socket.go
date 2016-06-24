@@ -266,10 +266,17 @@ func (socket *mongoSocket) Release() {
 	if socket.references == 0 {
 		stats.socketsInUse(-1)
 		server := socket.server
+		recycle := true
+		if socket.maxUses > 0 {
+			socket.maxUses -= 1
+			if socket.maxUses == 0 {
+				recycle = false
+			}
+		}
 		socket.Unlock()
 		socket.LogoutAll()
 		// If the socket is dead server is nil.
-		if server != nil {
+		if server != nil && recycle {
 			server.RecycleSocket(socket)
 		}
 	} else {
