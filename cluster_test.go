@@ -34,9 +34,9 @@ import (
 	"sync"
 	"time"
 
-	. "gopkg.in/check.v1"
 	"github.com/lyft/mgo"
 	"github.com/lyft/mgo/bson"
+	. "gopkg.in/check.v1"
 )
 
 func (s *S) TestNewSession(c *C) {

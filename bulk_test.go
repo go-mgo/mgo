@@ -27,8 +27,8 @@
 package mgo_test
 
 import (
-	. "gopkg.in/check.v1"
 	"github.com/lyft/mgo"
+	. "gopkg.in/check.v1"
 )
 
 func (s *S) TestBulkInsert(c *C) {

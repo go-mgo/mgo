@@ -37,9 +37,9 @@ import (
 	"testing"
 	"time"
 
-	. "gopkg.in/check.v1"
 	"github.com/lyft/mgo"
 	"github.com/lyft/mgo/bson"
+	. "gopkg.in/check.v1"
 )
 
 var fast = flag.Bool("fast", false, "Skip slow tests")
@@ -154,7 +154,7 @@ func (s *S) pid(host string) int {
 	if err != nil {
 		panic(err)
 	}
-	pidstr := string(output[: len(output)-1])
+	pidstr := string(output[:len(output)-1])
 	pid, err := strconv.Atoi(pidstr)
 	if err != nil {
 		panic("cannot convert pid to int: " + pidstr)

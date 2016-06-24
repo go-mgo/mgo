@@ -38,8 +38,8 @@ import (
 	"sync"
 	"time"
 
-	. "gopkg.in/check.v1"
 	"github.com/lyft/mgo"
+	. "gopkg.in/check.v1"
 )
 
 func (s *S) TestAuthLoginDatabase(c *C) {
