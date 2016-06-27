@@ -287,8 +287,7 @@ NextDoc:
 		// Document missing. Use stash collection.
 		change.Upsert = true
 		chaos("")
-		err := f.applyUpsertToStash(dkey, change, &info)
-		if err != nil {
+		if err := f.applyUpsertToStash(dkey, change, &info); err != nil {
 			return nil, err
 		}
 		if info.Insert != "" {
@@ -796,8 +795,7 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 					Upsert:    true,
 					ReturnNew: true,
 				}
-				err = f.applyUpsertToStash(dkey, change, &stash)
-				if err != nil {
+				if err = f.applyUpsertToStash(dkey, change, &stash); err != nil {
 					return err
 				}
 				change = mgo.Change{
