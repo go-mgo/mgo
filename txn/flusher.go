@@ -186,6 +186,29 @@ func (f *flusher) advance(t *transaction, pull map[bson.ObjectId]*transaction, f
 	panic("unreachable")
 }
 
+func isDuplicateKeyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	qerr, ok := err.(*mgo.QueryError)
+	return ok && qerr.Code == 11000
+}
+
+func (f *flusher) applyUpsertToStash(dkey docKey, change mgo.Change, info *txnInfo) error {
+	if !change.Upsert {
+		panic("change is not an upsert")
+	}
+	// Retry any upsert that fails with a duplicate key error - this
+	// is expected and should be retried according to
+	// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
+	for {
+		_, err := f.sc.FindId(dkey).Apply(change, info)
+		if !isDuplicateKeyError(err) {
+			return err
+		}
+	}
+}
+
 type stash string
 
 const (
@@ -264,7 +287,7 @@ NextDoc:
 		// Document missing. Use stash collection.
 		change.Upsert = true
 		chaos("")
-		_, err := f.sc.FindId(dkey).Apply(change, &info)
+		err := f.applyUpsertToStash(dkey, change, &info)
 		if err != nil {
 			return nil, err
 		}
@@ -773,7 +796,8 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 					Upsert:    true,
 					ReturnNew: true,
 				}
-				if _, err = f.sc.FindId(dkey).Apply(change, &stash); err != nil {
+				err = f.applyUpsertToStash(dkey, change, &stash)
+				if err != nil {
 					return err
 				}
 				change = mgo.Change{
