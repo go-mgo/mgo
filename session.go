@@ -4240,12 +4240,23 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 	session.SetMode(Strong, false)
 
 	var doc valueResult
-	err = session.DB(dbname).Run(&cmd, &doc)
-	if err != nil {
-		if qerr, ok := err.(*QueryError); ok && qerr.Message == "No matching object found" {
-			return nil, ErrNotFound
+	for {
+		err = session.DB(dbname).Run(&cmd, &doc)
+
+		if err == nil {
+			break
 		}
-		return nil, err
+
+		qerr, ok := err.(*QueryError)
+		if ok && qerr.Code == 11000 && change.Upsert {
+			// Retry duplicate key errors on upserts.
+			// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
+			continue
+		} else if ok && qerr.Message == "No matching object found" {
+			return nil, ErrNotFound
+		} else {
+			return nil, err
+		}
 	}
 	if doc.LastError.N == 0 {
 		return nil, ErrNotFound
