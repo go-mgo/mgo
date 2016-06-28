@@ -186,21 +186,6 @@ func (f *flusher) advance(t *transaction, pull map[bson.ObjectId]*transaction, f
 	panic("unreachable")
 }
 
-func (f *flusher) applyUpsertToStash(dkey docKey, change mgo.Change, info *txnInfo) error {
-	if !change.Upsert {
-		panic("change is not an upsert")
-	}
-	// Retry any upsert that fails with a duplicate key error - this
-	// is expected and should be retried according to
-	// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
-	for {
-		_, err := f.sc.FindId(dkey).Apply(change, info)
-		if !isDuplicateKeyError(err) {
-			return err
-		}
-	}
-}
-
 type stash string
 
 const (
