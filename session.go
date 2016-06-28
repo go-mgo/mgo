@@ -2484,7 +2484,15 @@ func (c *Collection) Upsert(selector interface{}, update interface{}) (info *Cha
 		Flags:      1,
 		Upsert:     true,
 	}
-	lerr, err := c.writeOp(&op, true)
+	var lerr *LastError
+	for {
+		lerr, err = c.writeOp(&op, true)
+		// Retry duplicate key errors on upserts.
+		// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
+		if !IsDup(err) {
+			break
+		}
+	}
 	if err == nil && lerr != nil {
 		info = &ChangeInfo{}
 		if lerr.UpdatedExisting {
@@ -4245,14 +4253,11 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 
 		if err == nil {
 			break
-		}
-
-		qerr, ok := err.(*QueryError)
-		if ok && qerr.Code == 11000 && change.Upsert {
+		} else if change.Upsert && IsDup(err) {
 			// Retry duplicate key errors on upserts.
 			// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
 			continue
-		} else if ok && qerr.Message == "No matching object found" {
+		} else if qerr, ok := err.(*QueryError); ok && qerr.Message == "No matching object found" {
 			return nil, ErrNotFound
 		} else {
 			return nil, err
