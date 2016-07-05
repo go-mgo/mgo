@@ -39,6 +39,6 @@ before_script:
 script:
     - (cd bson && go test -check.v)
     - go test -check.v -fast
-
+    - (cd txn && go test -check.v)
 
 # vim:sw=4:ts=4:et
