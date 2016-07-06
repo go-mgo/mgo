@@ -2,9 +2,13 @@ package txn_test
 
 import (
 	"bytes"
-	"gopkg.in/mgo.v2-unstable"
+	"fmt"
 	. "gopkg.in/check.v1"
+	"gopkg.in/mgo.v2-unstable"
+	"net"
+	"os"
 	"os/exec"
+	"strconv"
 	"time"
 )
 
@@ -17,16 +21,39 @@ type MgoSuite struct {
 	session *mgo.Session
 }
 
-var mgoaddr = "127.0.0.1:50017"
+const mgoip = "127.0.0.1"
 
-func (s *MgoSuite) SetUpSuite(c *C) {
+var mgoport int
+var mgoaddr string
+
+func init() {
+	mgoport = FindTCPPort()
+	mgoaddr = fmt.Sprintf("%v:%d", mgoip, mgoport)
+}
+
+// FindTCPPort finds an unused TCP port and returns it.
+// Use of this function has an inherent race condition - another
+// process may claim the port before we try to use it.
+// We hope that the probability is small enough during
+// testing to be negligible.
+func FindTCPPort() int {
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		panic(err)
+	}
+	l.Close()
+	return l.Addr().(*net.TCPAddr).Port
+}
+
+func (s *MgoSuite) StartServer(c *C) error {
 	//mgo.SetDebug(true)
+	c.Logf("Starting server on %v", mgoaddr)
 	mgo.SetStats(true)
 	dbdir := c.MkDir()
 	args := []string{
 		"--dbpath", dbdir,
-		"--bind_ip", "127.0.0.1",
-		"--port", "50017",
+		"--bind_ip", mgoip,
+		"--port", strconv.Itoa(mgoport),
 		"--nssize", "1",
 		"--noprealloc",
 		"--smallfiles",
@@ -38,6 +65,33 @@ func (s *MgoSuite) SetUpSuite(c *C) {
 	s.server.Stderr = &s.output
 	err := s.server.Start()
 	if err != nil {
+		return err
+	}
+
+	// Wait until the server's ready for connections.
+	var session *mgo.Session
+	for attempt := 1; attempt < 11; attempt++ {
+		session, err = mgo.Dial(mgoaddr)
+		if err != nil {
+			c.Logf("Retrying Dial - attempt %v failed with %v", attempt, err)
+			time.Sleep(time.Second)
+		} else {
+			break
+		}
+	}
+	if err != nil {
+		sigErr := s.server.Process.Signal(os.Interrupt)
+		waitErr := s.server.Wait()
+		c.Logf("server output: %v %v\n%v", sigErr, waitErr, string(s.output.Bytes()))
+		return err
+	}
+	session.Close()
+	return nil
+}
+
+func (s *MgoSuite) SetUpSuite(c *C) {
+	err := s.StartServer(c)
+	if err != nil {
 		panic(err)
 	}
 }
@@ -48,16 +102,7 @@ func (s *MgoSuite) TearDownSuite(c *C) {
 }
 
 func (s *MgoSuite) SetUpTest(c *C) {
-	var err error
-	for attempt := 1; attempt < 11; attempt++ {
-		err = DropAll(mgoaddr)
-		if err != nil {
-			c.Logf("Retrying DropAll - attempt %v failed with %v", attempt, err)
-			time.Sleep(time.Second)
-		} else {
-			break
-		}
-	}
+	err := DropAll(mgoaddr)
 	if err != nil {
 		panic(err)
 	}
