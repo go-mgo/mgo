@@ -48,7 +48,16 @@ func (s *MgoSuite) TearDownSuite(c *C) {
 }
 
 func (s *MgoSuite) SetUpTest(c *C) {
-	err := DropAll(mgoaddr)
+	var err error
+	for attempt := 1; attempt < 4; attempt++ {
+		err = DropAll(mgoaddr)
+		if err != nil {
+			c.Logf("Retrying DropAll - attempt %v failed with %v", attempt, err)
+			time.Sleep(200 * time.Millisecond)
+		} else {
+			break
+		}
+	}
 	if err != nil {
 		panic(err)
 	}
