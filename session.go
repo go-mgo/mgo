@@ -146,7 +146,10 @@ var (
 	ErrCursor   = errors.New("invalid cursor")
 )
 
-const defaultPrefetch = 0.25
+const (
+	defaultPrefetch  = 0.25
+	maxUpsertRetries = 5
+)
 
 // Dial establishes a new session to the cluster identified by the given seed
 // server(s). The session will enable communication with all of the servers in
@@ -2485,7 +2488,7 @@ func (c *Collection) Upsert(selector interface{}, update interface{}) (info *Cha
 		Upsert:     true,
 	}
 	var lerr *LastError
-	for {
+	for i := 0; i < maxUpsertRetries; i++ {
 		lerr, err = c.writeOp(&op, true)
 		// Retry duplicate key errors on upserts.
 		// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
@@ -4248,7 +4251,7 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 	session.SetMode(Strong, false)
 
 	var doc valueResult
-	for {
+	for i := 0; i < maxUpsertRetries; i++ {
 		err = session.DB(dbname).Run(&cmd, &doc)
 
 		if err == nil {
@@ -4259,9 +4262,8 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 			continue
 		} else if qerr, ok := err.(*QueryError); ok && qerr.Message == "No matching object found" {
 			return nil, ErrNotFound
-		} else {
-			return nil, err
 		}
+		return nil, err
 	}
 	if doc.LastError.N == 0 {
 		return nil, ErrNotFound

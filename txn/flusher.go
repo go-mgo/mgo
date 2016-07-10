@@ -264,7 +264,8 @@ NextDoc:
 		// Document missing. Use stash collection.
 		change.Upsert = true
 		chaos("")
-		if _, err := f.sc.FindId(dkey).Apply(change, &info); err != nil {
+		_, err := f.sc.FindId(dkey).Apply(change, &info)
+		if err != nil {
 			return nil, err
 		}
 		if info.Insert != "" {
