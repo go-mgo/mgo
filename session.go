@@ -4256,11 +4256,13 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 
 		if err == nil {
 			break
-		} else if change.Upsert && IsDup(err) {
+		}
+		if change.Upsert && IsDup(err) {
 			// Retry duplicate key errors on upserts.
 			// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
 			continue
-		} else if qerr, ok := err.(*QueryError); ok && qerr.Message == "No matching object found" {
+		}
+		if qerr, ok := err.(*QueryError); ok && qerr.Message == "No matching object found" {
 			return nil, ErrNotFound
 		}
 		return nil, err
