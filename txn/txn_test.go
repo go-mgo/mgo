@@ -705,6 +705,13 @@ func (s *S) TestPurgeMissingPipelineSizeLimit(c *C) {
 var flaky = flag.Bool("flaky", false, "Include flaky tests")
 
 func (s *S) TestTxnQueueStressTest(c *C) {
+	// This fails about 20% of the time on Mongo 3.2 (I haven't tried
+	// other versions) with account balance being 3999 instead of
+	// 4000. That implies that some updates are being lost. This is
+	// bad and we'll need to chase it down in the near future - the
+	// only reason it's being skipped now is that it's already failing
+	// and it's better to have the txn tests running without this one
+	// than to have them not running at all.
 	if !*flaky {
 		c.Skip("Fails intermittently - disabling until fixed")
 	}
