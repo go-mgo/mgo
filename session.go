@@ -2493,6 +2493,9 @@ func (c *Collection) Upsert(selector interface{}, update interface{}) (info *Cha
 		// Retry duplicate key errors on upserts.
 		// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
 		if !IsDup(err) {
+			if i > 0 {
+				debugf("upsert retry succeeded after %d failure(s)", i)
+			}
 			break
 		}
 	}
@@ -4255,6 +4258,9 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 		err = session.DB(dbname).Run(&cmd, &doc)
 
 		if err == nil {
+			if i > 0 {
+				debugf("upsert retry succeeded after %d failure(s)", i)
+			}
 			break
 		}
 		if change.Upsert && IsDup(err) {
