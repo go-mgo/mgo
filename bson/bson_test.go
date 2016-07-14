@@ -1824,3 +1824,9 @@ func (s *S) BenchmarkUnmarshalRaw(c *C) {
 		panic(err)
 	}
 }
+
+func (s *S) BenchmarkNewObjectId(c *C) {
+	for i := 0; i < c.N; i++ {
+		bson.NewObjectId()
+	}
+}

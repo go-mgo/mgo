@@ -205,6 +205,7 @@ func readRandomUint32() uint32 {
 // machineId stores machine id generated once and used in subsequent calls
 // to NewObjectId function.
 var machineId = readMachineId()
+var processId = os.Getpid()
 
 // readMachineId generates and returns a machine id.
 // If this function fails to get the hostname it will cause a runtime error.
@@ -235,9 +236,8 @@ func NewObjectId() ObjectId {
 	b[5] = machineId[1]
 	b[6] = machineId[2]
 	// Pid, 2 bytes, specs don't specify endianness, but we use big endian.
-	pid := os.Getpid()
-	b[7] = byte(pid >> 8)
-	b[8] = byte(pid)
+	b[7] = byte(processId >> 8)
+	b[8] = byte(processId)
 	// Increment, 3 bytes, big endian
 	i := atomic.AddUint32(&objectIdCounter, 1)
 	b[9] = byte(i >> 16)
