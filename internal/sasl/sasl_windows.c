@@ -10,8 +10,12 @@ SECURITY_STATUS SEC_ENTRY sspi_acquire_credentials_handle(CredHandle *cred_handl
 	auth_identity.Flags = SEC_WINNT_AUTH_IDENTITY_ANSI;
 	auth_identity.User = (LPSTR) username;
 	auth_identity.UserLength = strlen(username);
-	auth_identity.Password = (LPSTR) password;
-	auth_identity.PasswordLength = strlen(password);
+	auth_identity.Password = NULL;
+	auth_identity.PasswordLength = 0;
+	if(password){
+		auth_identity.Password = (LPSTR) password;
+		auth_identity.PasswordLength = strlen(password);
+	}
 	auth_identity.Domain = (LPSTR) domain;
 	auth_identity.DomainLength = strlen(domain);
 	return call_sspi_acquire_credentials_handle(NULL, SSPI_PACKAGE_NAME, SECPKG_CRED_OUTBOUND, NULL, &auth_identity, NULL, NULL, cred_handle, &ignored);
