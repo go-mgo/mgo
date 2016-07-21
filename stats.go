@@ -37,8 +37,8 @@ func SetStats(enabled bool) {
 }
 
 func GetStats() Stats {
-	stats.mu.Lock()
-	defer stats.mu.Unlock()
+	stats.mu.RLock()
+	defer stats.mu.RUnlock()
 	return stats
 }
 
@@ -50,7 +50,7 @@ func ResetStats() {
 }
 
 type Stats struct {
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	enabled bool
 
 	Clusters     int
