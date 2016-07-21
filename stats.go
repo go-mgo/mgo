@@ -45,6 +45,7 @@ func GetStats() Stats {
 func ResetStats() {
 	// If we call ResetStats we assume you want to use stats, so we enable
 	// them.
+	debug("Resetting stats")
 	stats.reset(true)
 }
 
@@ -66,8 +67,6 @@ type Stats struct {
 func (stats *Stats) reset(enabled bool) {
 	stats.mu.Lock()
 	defer stats.mu.Unlock()
-
-	debug("Resetting stats")
 
 	stats.MasterConns = 0
 	stats.SlaveConns = 0
