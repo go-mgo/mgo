@@ -147,7 +147,10 @@ var (
 )
 
 const (
-	defaultPrefetch  = 0.25
+	defaultPrefetch = 0.25
+
+	// How many times we will retry an upsert if it produces duplicate
+	// key errors.
 	maxUpsertRetries = 5
 )
 
@@ -2488,7 +2491,8 @@ func (c *Collection) Upsert(selector interface{}, update interface{}) (info *Cha
 		Upsert:     true,
 	}
 	var lerr *LastError
-	for i := 0; i < maxUpsertRetries; i++ {
+	// <= to allow for the first attempt (not a retry).
+	for i := 0; i <= maxUpsertRetries; i++ {
 		lerr, err = c.writeOp(&op, true)
 		// Retry duplicate key errors on upserts.
 		// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
@@ -4251,13 +4255,13 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 	session.SetMode(Strong, false)
 
 	var doc valueResult
-	for attempt := 0; ; attempt++ {
+	for retries := 0; ; retries++ {
 		err = session.DB(dbname).Run(&cmd, &doc)
 		if err != nil {
 			if qerr, ok := err.(*QueryError); ok && qerr.Message == "No matching object found" {
 				return nil, ErrNotFound
 			}
-			if change.Upsert && IsDup(err) && attempt < maxUpsertRetries {
+			if change.Upsert && IsDup(err) && retries < maxUpsertRetries {
 				// Retry duplicate key errors on upserts.
 				// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
 				continue
