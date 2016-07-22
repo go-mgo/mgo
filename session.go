@@ -279,6 +279,7 @@ func ParseURL(url string) (*DialInfo, error) {
 	source := ""
 	setName := ""
 	poolLimit := 0
+	ssl := false
 	for k, v := range uinfo.options {
 		switch k {
 		case "authSource":
@@ -302,6 +303,15 @@ func ParseURL(url string) (*DialInfo, error) {
 			if v == "replicaSet" {
 				break
 			}
+			return nil, errors.New("unsupported connection URL option: " + k + "=" + v)
+		case "ssl":
+			if v == "true" {
+				ssl = true
+				break
+			}
+			if v == "false" {
+				break
+			}
 			fallthrough
 		default:
 			return nil, errors.New("unsupported connection URL option: " + k + "=" + v)
@@ -318,6 +328,7 @@ func ParseURL(url string) (*DialInfo, error) {
 		Source:         source,
 		PoolLimit:      poolLimit,
 		ReplicaSetName: setName,
+		SSL:            ssl,
 	}
 	return &info, nil
 }
@@ -390,6 +401,9 @@ type DialInfo struct {
 
 	// WARNING: This field is obsolete. See DialServer above.
 	Dial func(addr net.Addr) (net.Conn, error)
+
+	// If the connection url indicated an ssl connection should be used
+	SSL bool
 }
 
 // mgo.v3: Drop DialInfo.Dial.
@@ -1584,7 +1598,7 @@ func (s *Session) Refresh() {
 }
 
 // SetMode changes the consistency mode for the session.
-// 
+//
 // The default mode is Strong.
 //
 // In the Strong consistency mode reads and writes will always be made to
