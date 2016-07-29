@@ -21,7 +21,7 @@ SECURITY_STATUS SEC_ENTRY sspi_acquire_credentials_handle(CredHandle *cred_handl
 	return call_sspi_acquire_credentials_handle(NULL, SSPI_PACKAGE_NAME, SECPKG_CRED_OUTBOUND, NULL, &auth_identity, NULL, NULL, cred_handle, &ignored);
 }
 
-int sspi_step(CredHandle *cred_handle, int has_context, CtxtHandle *context, PVOID *buffer, ULONG *buffer_length, char *target)
+int sspi_step(CredHandle *cred_handle, int has_context, CtxtHandle *context, PVOID buffer, ULONG buffer_length, PVOID *out_buffer, ULONG *out_buffer_length,  char *target)
 {
 	SecBufferDesc inbuf;
 	SecBuffer in_bufs[1];
@@ -34,8 +34,8 @@ int sspi_step(CredHandle *cred_handle, int has_context, CtxtHandle *context, PVO
 		inbuf.ulVersion = SECBUFFER_VERSION;
 		inbuf.cBuffers = 1;
 		inbuf.pBuffers = in_bufs;
-		in_bufs[0].pvBuffer = *buffer;
-		in_bufs[0].cbBuffer = *buffer_length;
+		in_bufs[0].pvBuffer = buffer;
+		in_bufs[0].cbBuffer = buffer_length;
 		in_bufs[0].BufferType = SECBUFFER_TOKEN;
 	}
 
@@ -61,9 +61,9 @@ int sspi_step(CredHandle *cred_handle, int has_context, CtxtHandle *context, PVO
 	          &context_attr,
 	          NULL);
 
-	*buffer = malloc(out_bufs[0].cbBuffer);
-	*buffer_length = out_bufs[0].cbBuffer;
-	memcpy(*buffer, out_bufs[0].pvBuffer, *buffer_length);
+	*out_buffer = malloc(out_bufs[0].cbBuffer);
+	*out_buffer_length = out_bufs[0].cbBuffer;
+	memcpy(*out_buffer, out_bufs[0].pvBuffer, *out_buffer_length);
 
 	return ret;
 }
