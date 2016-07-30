@@ -81,26 +81,25 @@ Loop:
 	for d9 := 0; d9 < 5; d9++ {
 		h, l, rem = divmod(h, l, 1e9)
 		for d1 := 0; d1 < 9; d1++ {
+			// Handle "-0.0", "0.00123400", "-1.00E-6", "1.050E+3", etc.
+			if i < len(repr) && (dot == i || l == 0 && h == 0 && rem > 0 && rem < 10 && (dot < i-6 || e > 0)) {
+				e += len(repr) - i
+				i--
+				repr[i] = '.'
+				last = i - 1
+				dot = len(repr) // Unmark.
+			}
 			c := '0' + byte(rem%10)
 			rem /= 10
 			i--
 			repr[i] = c
 			// Handle "0E+3", "1E+3", etc.
-			if l == 0 && h == 0 && rem == 0 && i == len(repr)-1 && (dot < i-6 || e > 0) {
+			if l == 0 && h == 0 && rem == 0 && i == len(repr)-1 && (dot < i-5 || e > 0) {
 				last = i
 				break Loop
 			}
 			if c != '0' {
 				last = i
-			}
-			// Handle "-0.0", "0.00123400", "-1.00E-6", "1.050E+3", etc.
-			if dot == i || l == 0 && h == 0 && rem > 0 && rem < 10 && (dot < i-6 || e > 0) {
-				e += len(repr) - i
-				i--
-				repr[i] = '.'
-				repr[i-1] = '0'
-				last = i - 1
-				dot = len(repr) // Unmark.
 			}
 			// Break early. Works without it, but why.
 			if dot > i && l == 0 && h == 0 && rem == 0 {
@@ -142,7 +141,7 @@ var dPosInf = Decimal128{0x1E << 58, 0}
 var dNegInf = Decimal128{0x3E << 58, 0}
 
 func dErr(s string) (Decimal128, error) {
-	return dNaN, fmt.Errorf("cannot parse %q as a Decimal128", s)
+	return dNaN, fmt.Errorf("cannot parse %q as a decimal128", s)
 }
 
 func ParseDecimal128(s string) (Decimal128, error) {
@@ -174,12 +173,10 @@ func ParseDecimal128(s string) (Decimal128, error) {
 	var add, ovr uint32
 	var mul uint32 = 1
 	var dot = -1
+	var digits = 0
 	var i = 0
 	for i < len(s) {
 		c := s[i]
-		if i == 34 && dot < 0 {
-			return dErr(orig)
-		}
 		if mul == 1e9 {
 			h, l, ovr = muladd(h, l, mul, add)
 			mul, add = 1, 0
@@ -189,6 +186,17 @@ func ParseDecimal128(s string) (Decimal128, error) {
 		}
 		if c >= '0' && c <= '9' {
 			i++
+			if c > '0' || digits > 0 {
+				digits++
+			}
+			if digits > 34 {
+				if c == '0' {
+					// Exact rounding.
+					e++
+					continue
+				}
+				return dErr(orig)
+			}
 			mul *= 10
 			add *= 10
 			add += uint32(c - '0')
@@ -196,7 +204,13 @@ func ParseDecimal128(s string) (Decimal128, error) {
 		}
 		if c == '.' {
 			i++
-			if dot >= 0 || i == len(s) || s[i] < '0' || s[i] > '9' {
+			if dot >= 0 || i == 1 && len(s) == 1 {
+				return dErr(orig)
+			}
+			if i == len(s) {
+				break
+			}
+			if s[i] < '0' || s[i] > '9' || e > 0 {
 				return dErr(orig)
 			}
 			dot = i
@@ -214,20 +228,23 @@ func ParseDecimal128(s string) (Decimal128, error) {
 		}
 	}
 	if dot >= 0 {
-		e = dot - i
+		e += dot - i
 	}
 	if i+1 < len(s) && (s[i] == 'E' || s[i] == 'e') {
 		i++
 		eneg := s[i] == '-'
 		if eneg || s[i] == '+' {
 			i++
+			if i == len(s) {
+				return dErr(orig)
+			}
 		}
 		n := 0
 		for i < len(s) && n < 1e4 {
 			c := s[i]
 			i++
 			if c < '0' || c > '9' {
-				break
+				return dErr(orig)
 			}
 			n *= 10
 			n += int(c - '0')
@@ -236,6 +253,31 @@ func ParseDecimal128(s string) (Decimal128, error) {
 			n = -n
 		}
 		e += n
+		for e < -6176 {
+			// Subnormal.
+			var div uint32 = 1
+			for div < 1e9 && e < -6176 {
+				div *= 10
+				e++
+			}
+			var rem uint32
+			h, l, rem = divmod(h, l, div)
+			if rem > 0 {
+				return dErr(orig)
+			}
+		}
+		for e > 6111 {
+			// Clamped.
+			var mul uint32 = 1
+			for mul < 1e9 && e > 6111 {
+				mul *= 10
+				e--
+			}
+			h, l, ovr = muladd(h, l, mul, 0)
+			if ovr > 0 || h&((1<<15-1)<<49) > 0 {
+				return dErr(orig)
+			}
+		}
 		if e < -6176 || e > 6111 {
 			return dErr(orig)
 		}
