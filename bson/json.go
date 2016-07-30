@@ -9,12 +9,16 @@ import (
 	"time"
 )
 
+// UnmarshalJSON unmarshals a JSON value that may hold non-standard
+// syntax as defined in BSON's extended JSON specification.
 func UnmarshalJSON(data []byte, value interface{}) error {
 	d := json.NewDecoder(bytes.NewBuffer(data))
 	d.Extend(&jsonExt)
 	return d.Decode(value)
 }
 
+// MarshalJSON marshals a JSON value that may hold non-standard
+// syntax as defined in BSON's extended JSON specification.
 func MarshalJSON(value interface{}) ([]byte, error) {
 	var buf bytes.Buffer
 	e := json.NewEncoder(&buf)
