@@ -147,7 +147,10 @@ var (
 )
 
 const (
-	defaultPrefetch  = 0.25
+	defaultPrefetch = 0.25
+
+	// How many times we will retry an upsert if it produces duplicate
+	// key errors.
 	maxUpsertRetries = 5
 )
 
@@ -1584,7 +1587,7 @@ func (s *Session) Refresh() {
 }
 
 // SetMode changes the consistency mode for the session.
-// 
+//
 // The default mode is Strong.
 //
 // In the Strong consistency mode reads and writes will always be made to
@@ -2488,14 +2491,12 @@ func (c *Collection) Upsert(selector interface{}, update interface{}) (info *Cha
 		Upsert:     true,
 	}
 	var lerr *LastError
-	for i := 0; i < maxUpsertRetries; i++ {
+	// <= to allow for the first attempt (not a retry).
+	for i := 0; i <= maxUpsertRetries; i++ {
 		lerr, err = c.writeOp(&op, true)
 		// Retry duplicate key errors on upserts.
 		// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
 		if !IsDup(err) {
-			if i > 0 {
-				debugf("upsert retry succeeded after %d failure(s)", i)
-			}
 			break
 		}
 	}
@@ -4254,25 +4255,22 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 	session.SetMode(Strong, false)
 
 	var doc valueResult
-	for i := 0; i < maxUpsertRetries; i++ {
+	for retries := 0; ; retries++ {
 		err = session.DB(dbname).Run(&cmd, &doc)
-
-		if err == nil {
-			if i > 0 {
-				debugf("upsert retry succeeded after %d failure(s)", i)
+		if err != nil {
+			if qerr, ok := err.(*QueryError); ok && qerr.Message == "No matching object found" {
+				return nil, ErrNotFound
 			}
-			break
+			if change.Upsert && IsDup(err) && retries < maxUpsertRetries {
+				// Retry duplicate key errors on upserts.
+				// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
+				continue
+			}
+			return nil, err
 		}
-		if change.Upsert && IsDup(err) {
-			// Retry duplicate key errors on upserts.
-			// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
-			continue
-		}
-		if qerr, ok := err.(*QueryError); ok && qerr.Message == "No matching object found" {
-			return nil, ErrNotFound
-		}
-		return nil, err
+		break // No error, so don't retry.
 	}
+
 	if doc.LastError.N == 0 {
 		return nil, ErrNotFound
 	}
