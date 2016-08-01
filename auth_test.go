@@ -904,7 +904,7 @@ func (s *S) TestAuthX509Cred(c *C) {
 		c.Skip("server does not support SSL")
 	}
 
-	clientCertPEM, err := ioutil.ReadFile("testdb/client.pem")
+	clientCertPEM, err := ioutil.ReadFile("harness/certs/client.pem")
 	c.Assert(err, IsNil)
 
 	clientCert, err := tls.X509KeyPair(clientCertPEM, clientCertPEM)

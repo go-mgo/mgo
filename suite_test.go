@@ -27,6 +27,7 @@
 package mgo_test
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -93,7 +94,7 @@ func (s *S) SetUpSuite(c *C) {
 }
 
 func (s *S) SetUpTest(c *C) {
-	err := run("mongo --nodb testdb/dropall.js")
+	err := run("mongo --nodb harness/mongojs/dropall.js")
 	if err != nil {
 		panic(err.Error())
 	}
@@ -142,7 +143,7 @@ func (s *S) Stop(host string) {
 	// Give a moment for slaves to sync and avoid getting rollback issues.
 	panicOnWindows()
 	time.Sleep(2 * time.Second)
-	err := run("cd _testdb && supervisorctl stop " + supvName(host))
+	err := run("svc -d _harness/daemons/" + supvName(host))
 	if err != nil {
 		panic(err)
 	}
@@ -150,14 +151,16 @@ func (s *S) Stop(host string) {
 }
 
 func (s *S) pid(host string) int {
-	output, err := exec.Command("lsof", "-iTCP:"+hostPort(host), "-sTCP:LISTEN", "-Fp").CombinedOutput()
+	// Note recent releases of lsof force 'f' to be present in the output (WTF?).
+	cmd := exec.Command("lsof", "-iTCP:"+hostPort(host), "-sTCP:LISTEN", "-Fpf")
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		panic(err)
 	}
-	pidstr := string(output[1 : len(output)-1])
+	pidstr := string(bytes.Fields(output[1:])[0])
 	pid, err := strconv.Atoi(pidstr)
 	if err != nil {
-		panic("cannot convert pid to int: " + pidstr)
+		panic(fmt.Errorf("cannot convert pid to int: %q, command line: %q", pidstr, cmd.Args))
 	}
 	return pid
 }
@@ -185,8 +188,8 @@ func (s *S) Thaw(host string) {
 func (s *S) StartAll() {
 	if s.stopped {
 		// Restart any stopped nodes.
-		run("cd _testdb && supervisorctl start all")
-		err := run("cd testdb && mongo --nodb wait.js")
+		run("svc -u _harness/daemons/*")
+		err := run("mongo --nodb harness/mongojs/wait.js")
 		if err != nil {
 			panic(err)
 		}
@@ -231,7 +234,7 @@ var supvNames = map[string]string{
 	"40203": "s3",
 }
 
-// supvName returns the supervisord name for the given host address.
+// supvName returns the daemon name for the given host address.
 func supvName(host string) string {
 	host, port, err := net.SplitHostPort(host)
 	if err != nil {

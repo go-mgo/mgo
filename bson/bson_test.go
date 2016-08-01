@@ -71,10 +71,10 @@ func makeZeroDoc(value interface{}) (zero interface{}) {
 	case reflect.Ptr:
 		pv := reflect.New(v.Type().Elem())
 		zero = pv.Interface()
-	case reflect.Slice, reflect.Int:
+	case reflect.Slice, reflect.Int, reflect.Int64, reflect.Struct:
 		zero = reflect.New(t).Interface()
 	default:
-		panic("unsupported doc type")
+		panic("unsupported doc type: " + t.Name())
 	}
 	return zero
 }
@@ -1055,7 +1055,7 @@ type inlineBadKeyMap struct {
 }
 type inlineUnexported struct {
 	M          map[string]interface{} ",inline"
-	unexported         ",inline"
+	unexported ",inline"
 }
 type unexported struct {
 	A int
@@ -1580,6 +1580,9 @@ func (s *S) TestObjectIdJSONMarshaling(c *C) {
 	}
 }
 
+// --------------------------------------------------------------------------
+// Spec tests
+
 type specTest struct {
 	Description string
 	Documents   []struct {
@@ -1819,5 +1822,11 @@ func (s *S) BenchmarkUnmarshalRaw(c *C) {
 	}
 	if err != nil {
 		panic(err)
+	}
+}
+
+func (s *S) BenchmarkNewObjectId(c *C) {
+	for i := 0; i < c.N; i++ {
+		bson.NewObjectId()
 	}
 }

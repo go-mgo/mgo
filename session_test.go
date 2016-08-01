@@ -30,6 +30,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"os"
 	"runtime"
 	"sort"
 	"strconv"
@@ -88,9 +89,11 @@ func (s *S) TestDialIPAddress(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	session, err = mgo.Dial("[::1%]:40001")
-	c.Assert(err, IsNil)
-	defer session.Close()
+	if os.Getenv("NOIPV6") != "1" {
+		session, err = mgo.Dial("[::1%]:40001")
+		c.Assert(err, IsNil)
+		defer session.Close()
+	}
 }
 
 func (s *S) TestURLSingle(c *C) {
@@ -1094,6 +1097,20 @@ func (s *S) TestFindAndModifyBug997828(c *C) {
 	}
 }
 
+func (s *S) TestFindAndModifyErrmsgDoc(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(M{"errmsg": "an error"})
+
+	var result M
+	_, err = coll.Find(M{}).Apply(mgo.Change{Update: M{"$set": M{"n": 1}}}, &result)
+	c.Assert(err, IsNil)
+}
+
 func (s *S) TestCountCollection(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
@@ -1957,13 +1974,11 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 		}
 	}
 
-	mgo.ResetStats()
-
 	// The following call to Next will block.
 	go func() {
 		// The internal AwaitData timing of MongoDB is around 2 seconds,
 		// so this item should arrive within the AwaitData threshold.
-		time.Sleep(5e8)
+		time.Sleep(500 * time.Millisecond)
 		session := session.New()
 		defer session.Close()
 		coll := session.DB("mydb").C("mycoll")
@@ -1977,20 +1992,6 @@ func (s *S) TestFindTailTimeoutNoSleep(c *C) {
 	c.Assert(iter.Timeout(), Equals, false)
 	c.Assert(result.N, Equals, 47)
 	c.Log("Got Next with N=47!")
-
-	// The following may break because it depends a bit on the internal
-	// timing used by MongoDB's AwaitData logic.  If it does, the problem
-	// will be observed as more GET_MORE_OPs than predicted:
-	// 1*QUERY_OP for nonce + 1*GET_MORE_OP on Next +
-	// 1*INSERT_OP + 1*QUERY_OP for getLastError on insert of 47
-	stats := mgo.GetStats()
-	if s.versionAtLeast(2, 6) {
-		c.Assert(stats.SentOps, Equals, 3)
-	} else {
-		c.Assert(stats.SentOps, Equals, 4)
-	}
-	c.Assert(stats.ReceivedOps, Equals, 3)  // REPLY_OPs for 1*QUERY_OP for nonce + 1*GET_MORE_OPs and 1*QUERY_OP
-	c.Assert(stats.ReceivedDocs, Equals, 3) // nonce + N=47 result + getLastError response
 
 	c.Log("Will wait for a result which will never come...")
 
@@ -2477,6 +2478,10 @@ func (s *S) TestSortScoreText(c *C) {
 	c.Assert(err, IsNil)
 	defer session.Close()
 
+	if !s.versionAtLeast(2, 4) {
+		c.Skip("Text search depends on 2.4+")
+	}
+
 	coll := session.DB("mydb").C("mycoll")
 
 	err = coll.EnsureIndex(mgo.Index{
@@ -2961,6 +2966,10 @@ func (s *S) TestEnsureIndex(c *C) {
 	idxs := session.DB("mydb").C("system.indexes")
 
 	for _, test := range indexTests {
+		if !s.versionAtLeast(2, 4) && test.expected["textIndexVersion"] != nil {
+			continue
+		}
+
 		err = coll.EnsureIndex(test.index)
 		msg := "text search not enabled"
 		if err != nil && strings.Contains(err.Error(), msg) {
@@ -3718,7 +3727,7 @@ func (s *S) TestFsyncLock(c *C) {
 
 	done := make(chan time.Time)
 	go func() {
-		time.Sleep(3e9)
+		time.Sleep(3 * time.Second)
 		now := time.Now()
 		err := session.FsyncUnlock()
 		c.Check(err, IsNil)
@@ -3731,7 +3740,6 @@ func (s *S) TestFsyncLock(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(unlocked.After(unlocking), Equals, true)
-	c.Assert(unlocked.Sub(unlocking) < 1e9, Equals, true)
 }
 
 func (s *S) TestFsync(c *C) {
@@ -3962,6 +3970,64 @@ func (s *S) TestFindIterCloseKillsCursor(c *C) {
 	c.Assert(serverCursorsOpen(session), Equals, cursors)
 }
 
+func (s *S) TestFindIterDoneWithBatches(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := []int{40, 41, 42, 43, 44, 45, 46}
+	for _, n := range ns {
+		coll.Insert(M{"n": n})
+	}
+
+	iter := coll.Find(M{"n": M{"$gte": 42}}).Sort("$natural").Prefetch(0).Batch(2).Iter()
+	result := struct{ N int }{}
+	for i := 2; i < 7; i++ {
+		// first check will be with pending local record;
+		// second will be with open cursor ID but no local
+		// records
+		c.Assert(iter.Done(), Equals, false)
+		ok := iter.Next(&result)
+		c.Assert(ok, Equals, true, Commentf("err=%v", err))
+	}
+
+	c.Assert(iter.Done(), Equals, true)
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Close(), IsNil)
+}
+
+func (s *S) TestFindIterDoneErr(c *C) {
+	session, err := mgo.Dial("localhost:40002")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	iter := coll.Find(nil).Iter()
+
+	result := struct{}{}
+	ok := iter.Next(&result)
+	c.Assert(iter.Done(), Equals, true)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Err(), ErrorMatches, "unauthorized.*|not authorized.*")
+}
+
+func (s *S) TestFindIterDoneNotFound(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	result := struct{ A, B int }{}
+	iter := coll.Find(M{"a": 1}).Iter()
+	ok := iter.Next(&result)
+	c.Assert(ok, Equals, false)
+	c.Assert(iter.Done(), Equals, true)
+}
+
 func (s *S) TestLogReplay(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
@@ -4089,6 +4155,29 @@ func (s *S) TestBypassValidation(c *C) {
 	c.Assert(iter.Err(), IsNil)
 	sort.Ints(ns)
 	c.Assert(ns, DeepEquals, []int{4})
+}
+
+func (s *S) TestVersionAtLeast(c *C) {
+	tests := [][][]int{
+		{{3,2,1}, {3,2,0}},
+		{{3,2,1}, {3,2}},
+		{{3,2,1}, {2,5,5,5}},
+		{{3,2,1}, {2,5,5}},
+		{{3,2,1}, {2,5}},
+	}
+	for _, pair := range tests {
+		bi := mgo.BuildInfo{VersionArray: pair[0]}
+		c.Assert(bi.VersionAtLeast(pair[1]...), Equals, true)
+
+		bi = mgo.BuildInfo{VersionArray: pair[0]}
+		c.Assert(bi.VersionAtLeast(pair[0]...), Equals, true)
+
+		bi = mgo.BuildInfo{VersionArray: pair[1]}
+		c.Assert(bi.VersionAtLeast(pair[1]...), Equals, true)
+
+		bi = mgo.BuildInfo{VersionArray: pair[1]}
+		c.Assert(bi.VersionAtLeast(pair[0]...), Equals, false)
+	}
 }
 
 // --------------------------------------------------------------------------
