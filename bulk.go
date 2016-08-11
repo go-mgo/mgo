@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"sort"
 
-	"gopkg.in/mgo.v2-unstable/bson"
+	"gopkg.in/mgo.v2/bson"
 )
 
 // Bulk represents an operation that can be prepared with several
