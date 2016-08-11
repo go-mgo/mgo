@@ -1001,6 +1001,26 @@ func (s *S) TestIsDupFindAndModify(c *C) {
 	c.Assert(mgo.IsDup(err), Equals, true)
 }
 
+func (s *S) TestIsDupRetryUpsert(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(bson.M{"_id": 1, "x": 1})
+	c.Assert(err, IsNil)
+
+	_, err = coll.Upsert(bson.M{"_id": 1, "x": 2}, bson.M{"$set": bson.M{"x": 3}})
+	c.Assert(mgo.IsDup(err), Equals, true)
+
+	_, err = coll.Find(bson.M{"_id": 1, "x": 2}).Apply(mgo.Change{
+		Update: bson.M{"$set": bson.M{"x": 3}},
+		Upsert: true,
+	}, nil)
+	c.Assert(mgo.IsDup(err), Equals, true)
+}
+
 func (s *S) TestFindAndModify(c *C) {
 	session, err := mgo.Dial("localhost:40011")
 	c.Assert(err, IsNil)
@@ -4159,11 +4179,11 @@ func (s *S) TestBypassValidation(c *C) {
 
 func (s *S) TestVersionAtLeast(c *C) {
 	tests := [][][]int{
-		{{3,2,1}, {3,2,0}},
-		{{3,2,1}, {3,2}},
-		{{3,2,1}, {2,5,5,5}},
-		{{3,2,1}, {2,5,5}},
-		{{3,2,1}, {2,5}},
+		{{3, 2, 1}, {3, 2, 0}},
+		{{3, 2, 1}, {3, 2}},
+		{{3, 2, 1}, {2, 5, 5, 5}},
+		{{3, 2, 1}, {2, 5, 5}},
+		{{3, 2, 1}, {2, 5}},
 	}
 	for _, pair := range tests {
 		bi := mgo.BuildInfo{VersionArray: pair[0]}
