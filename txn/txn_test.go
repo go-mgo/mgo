@@ -577,6 +577,78 @@ func (s *S) TestPurgeMissing(c *C) {
 	}
 }
 
+func (s *S) TestPurgeMissingWithInvalidTxnTokens(c *C) {
+	getQueue := func(coll *mgo.Collection, id interface{}) []interface{} {
+		var doc M
+		err := coll.FindId(id).One(&doc)
+		c.Assert(err, IsNil)
+		return doc["txn-queue"].([]interface{})
+	}
+
+	// Create some documents to mess up.
+	err := s.runner.Run([]txn.Op{
+		{
+			C:      "accounts",
+			Id:     0,
+			Assert: txn.DocMissing,
+			Insert: M{"name": "zero"},
+		}, {
+			C:      "accounts",
+			Id:     1,
+			Assert: txn.DocMissing,
+			Insert: M{"name": "one"},
+		}, {
+			C:      "accounts",
+			Id:     2,
+			Assert: txn.DocMissing,
+			Insert: M{"name": "two"},
+		},
+	}, "", nil)
+	c.Assert(err, IsNil)
+
+	// Remove document 2 so that there's something in the stash.
+	err = s.runner.Run([]txn.Op{{
+		C:      "accounts",
+		Id:     2,
+		Assert: txn.DocExists,
+		Remove: true,
+	}}, "", nil)
+	c.Assert(err, IsNil)
+	doc2StashId := bson.D{{"c", "accounts"}, {"id", 2}}
+
+	// Record the starting txn-queue values.
+	txnQueue0 := getQueue(s.accounts, 0)
+	txnQueue1 := getQueue(s.accounts, 1)
+	txnQueue2 := getQueue(s.sc, doc2StashId)
+
+	// Append some invalid tokens to document 0's txn-queue.
+	err = s.accounts.UpdateId(0, M{"$set": M{
+		"txn-queue": append(txnQueue0, nil, "foo", nil),
+	}})
+	c.Assert(err, IsNil)
+
+	// Prepend some invalid tokens to document 1's txn-queue.
+	err = s.accounts.UpdateId(1, M{"$set": M{
+		"txn-queue": append([]interface{}{"bar", nil}, txnQueue1...),
+	}})
+	c.Assert(err, IsNil)
+
+	// Append bad tokens to the stashed document 2's txn-queue.
+	err = s.sc.UpdateId(doc2StashId, M{"$set": M{
+		"txn-queue": append(txnQueue2, nil, "foo", nil),
+	}})
+	c.Assert(err, IsNil)
+
+	err = s.runner.PurgeMissing("accounts")
+	c.Assert(err, IsNil)
+
+	// Confirm that PurgeMissing removed the bad tokens, restoring the
+	// txn-queue fields back to their starting values.
+	c.Check(txnQueue0, DeepEquals, getQueue(s.accounts, 0))
+	c.Check(txnQueue1, DeepEquals, getQueue(s.accounts, 1))
+	c.Check(txnQueue2, DeepEquals, getQueue(s.sc, doc2StashId))
+}
+
 func (s *S) TestTxnQueueStashStressTest(c *C) {
 	txn.SetChaos(txn.Chaos{
 		SlowdownChance: 0.3,
