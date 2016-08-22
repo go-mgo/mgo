@@ -1096,6 +1096,14 @@ type Collation struct {
 	// distinguished at strength > 3). Defaults to "non-ignorable".
 	Alternate string `bson:"alternate,omitempty"`
 
+	// MaxVariable defines which characters are affected when the value for Alternate is
+	// "shifted". It may be set to "punct" to affect punctuation or spaces, or "space" to
+	// affect only spaces.
+	MaxVariable string `bson:"maxVariable,omitempty"`
+
+	// Normalization defines whether text is normalized into Unicode NFD.
+	Normalization bool `bson:"normalization,omitempty"`
+
 	// Backwards defines whether to have secondary differences considered in reverse order,
 	// as done in the French language.
 	Backwards bool `bson:"backwards,omitempty"`
