@@ -3971,7 +3971,7 @@ func (s *S) TestFindIterCloseKillsCursor(c *C) {
 	c.Assert(serverCursorsOpen(session), Equals, cursors)
 }
 
-func (s *S) TestFindIterDoneWithBatches(c *C) {
+func (s *S) TestFindIterWithBatches(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -3992,15 +3992,19 @@ func (s *S) TestFindIterDoneWithBatches(c *C) {
 		c.Assert(iter.Done(), Equals, false)
 		ok := iter.Next(&result)
 		c.Assert(ok, Equals, true, Commentf("err=%v", err))
+
+		// Because we batch by 2, every other Next needs the network
+		c.Assert(iter.NeedsNetwork(), Equals, i%2 == 1)
 	}
 
 	c.Assert(iter.Done(), Equals, true)
+	c.Assert(iter.NeedsNetwork(), Equals, false)
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, false)
 	c.Assert(iter.Close(), IsNil)
 }
 
-func (s *S) TestFindIterDoneErr(c *C) {
+func (s *S) TestFindIterErr(c *C) {
 	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -4011,6 +4015,7 @@ func (s *S) TestFindIterDoneErr(c *C) {
 	result := struct{}{}
 	ok := iter.Next(&result)
 	c.Assert(iter.Done(), Equals, true)
+	c.Assert(iter.NeedsNetwork(), Equals, false)
 	c.Assert(ok, Equals, false)
 	c.Assert(iter.Err(), ErrorMatches, "unauthorized.*|not authorized.*")
 }
