@@ -1351,6 +1351,7 @@ func (s *S) TestFindIterNotFound(c *C) {
 	ok := iter.Next(&result)
 	c.Assert(ok, Equals, false)
 	c.Assert(iter.Err(), IsNil)
+	c.Assert(iter.Done(), Equals, true)
 }
 
 func (s *S) TestFindNil(c *C) {
@@ -4014,20 +4015,6 @@ func (s *S) TestFindIterDoneErr(c *C) {
 	c.Assert(iter.Err(), ErrorMatches, "unauthorized.*|not authorized.*")
 }
 
-func (s *S) TestFindIterDoneNotFound(c *C) {
-	session, err := mgo.Dial("localhost:40001")
-	c.Assert(err, IsNil)
-	defer session.Close()
-
-	coll := session.DB("mydb").C("mycoll")
-
-	result := struct{ A, B int }{}
-	iter := coll.Find(M{"a": 1}).Iter()
-	ok := iter.Next(&result)
-	c.Assert(ok, Equals, false)
-	c.Assert(iter.Done(), Equals, true)
-}
-
 func (s *S) TestLogReplay(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
@@ -4159,11 +4146,11 @@ func (s *S) TestBypassValidation(c *C) {
 
 func (s *S) TestVersionAtLeast(c *C) {
 	tests := [][][]int{
-		{{3,2,1}, {3,2,0}},
-		{{3,2,1}, {3,2}},
-		{{3,2,1}, {2,5,5,5}},
-		{{3,2,1}, {2,5,5}},
-		{{3,2,1}, {2,5}},
+		{{3, 2, 1}, {3, 2, 0}},
+		{{3, 2, 1}, {3, 2}},
+		{{3, 2, 1}, {2, 5, 5, 5}},
+		{{3, 2, 1}, {2, 5, 5}},
+		{{3, 2, 1}, {2, 5}},
 	}
 	for _, pair := range tests {
 		bi := mgo.BuildInfo{VersionArray: pair[0]}
