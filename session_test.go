@@ -132,6 +132,73 @@ func (s *S) TestURLParsing(c *C) {
 	}
 }
 
+func (s *S) TestURLReadPreference(c *C) {
+	type test struct {
+		url  string
+		mode mgo.Mode
+	}
+
+	tests := []test{
+		{"localhost:40001?readPreference=primary", mgo.Primary},
+		{"localhost:40001?readPreference=primaryPreferred", mgo.PrimaryPreferred},
+		{"localhost:40001?readPreference=secondary", mgo.Secondary},
+		{"localhost:40001?readPreference=secondaryPreferred", mgo.SecondaryPreferred},
+		{"localhost:40001?readPreference=nearest", mgo.Nearest},
+	}
+
+	for _, test := range tests {
+		info, err := mgo.ParseURL(test.url)
+		c.Assert(err, IsNil)
+		c.Assert(info.ReadPreference, NotNil)
+		c.Assert(info.ReadPreference.Mode, Equals, test.mode)
+	}
+}
+
+func (s *S) TestURLInvalidReadPreference(c *C) {
+	urls := []string{
+		"localhost:40001?readPreference=foo",
+		"localhost:40001?readPreference=primarypreferred",
+	}
+	for _, url := range urls {
+		_, err := mgo.ParseURL(url)
+		c.Assert(err, NotNil)
+	}
+}
+
+func (s *S) TestURLReadPreferenceTags(c *C) {
+	type test struct {
+		url     string
+		tagSets []bson.D
+	}
+
+	tests := []test{
+		{"localhost:40001?readPreference=secondary&readPreferenceTags=dc:ny,rack:1", []bson.D{{{"dc", "ny"}, {"rack", "1"}}}},
+		{"localhost:40001?readPreference=secondary&readPreferenceTags= dc : ny ,  rack :   1 ", []bson.D{{{"dc", "ny"}, {"rack", "1"}}}},
+		{"localhost:40001?readPreference=secondary&readPreferenceTags=dc:ny", []bson.D{{{"dc", "ny"}}}},
+		{"localhost:40001?readPreference=secondary&readPreferenceTags=rack:1&readPreferenceTags=dc:ny", []bson.D{{{"rack", "1"}}, {{"dc", "ny"}}}},
+	}
+
+	for _, test := range tests {
+		info, err := mgo.ParseURL(test.url)
+		c.Assert(err, IsNil)
+		c.Assert(info.ReadPreference, NotNil)
+		c.Assert(info.ReadPreference.TagSets, DeepEquals, test.tagSets)
+	}
+}
+
+func (s *S) TestURLInvalidReadPreferenceTags(c *C) {
+	urls := []string{
+		"localhost:40001?readPreference=secondary&readPreferenceTags=dc",
+		"localhost:40001?readPreference=secondary&readPreferenceTags=dc:ny,rack",
+		"localhost:40001?readPreference=secondary&readPreferenceTags=dc,rack",
+		"localhost:40001?readPreference=primary&readPreferenceTags=dc:ny",
+	}
+	for _, url := range urls {
+		_, err := mgo.ParseURL(url)
+		c.Assert(err, NotNil)
+	}
+}
+
 func (s *S) TestInsertFindOne(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
