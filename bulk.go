@@ -271,11 +271,15 @@ func (b *Bulk) Upsert(pairs ...interface{}) {
 // be an aggregation of all issues observed. As an exception to that, Insert
 // operations running on MongoDB versions prior to 2.6 will report the last
 // error only due to a limitation in the wire protocol.
+//
+// If an error is reported on an ordered bulk operation, remaining operations will
+// be run at next exec Run.
 func (b *Bulk) Run() (*BulkResult, error) {
 	var result BulkResult
 	var berr BulkError
 	var failed bool
-	for i := range b.actions {
+	var i int
+	for i = range b.actions {
 		action := &b.actions[i]
 		var ok bool
 		switch action.op {
@@ -295,6 +299,12 @@ func (b *Bulk) Run() (*BulkResult, error) {
 			}
 		}
 	}
+
+	//len(b.actions) == i, means b.actions don`t have element.
+	if i < len(b.actions) {
+		b.actions = append(b.actions[i+1:])
+	}
+
 	if failed {
 		sort.Sort(bulkErrorCases(berr.ecases))
 		return nil, &berr

@@ -502,3 +502,37 @@ func (s *S) TestBulkRemoveAll(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(res, DeepEquals, []doc{{3}})
 }
+
+func (s *S) TestBulkRepeatedUse(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	bulk := coll.Bulk()
+
+	bulk.Insert(M{"n": 1})
+	bulk.Insert(M{"n": 2})
+	r, err := bulk.Run() //first use Run
+	c.Assert(err, IsNil)
+	c.Assert(r, FitsTypeOf, &mgo.BulkResult{})
+
+	bulk.Upsert(M{"n": 1}, M{"$set": M{"n": 10}})
+	bulk.Upsert(M{"n": 2}, M{"$set": M{"n": 20}})
+	r, err = bulk.Run() //second use Run
+	c.Assert(err, IsNil)
+	c.Assert(r.Matched, Equals, 2)
+
+	bulk.Upsert(M{"n": 1}, M{"$set": M{"n": 100}})
+	bulk.Upsert(M{"n": 2}, M{"$set": M{"n": 200}})
+	r, err = bulk.Run() //third use Run
+	c.Assert(err, IsNil)
+	c.Assert(r.Matched, Equals, 2)
+
+	type doc struct{ N int }
+	var res []doc
+	err = coll.Find(nil).Sort("n").All(&res)
+	c.Assert(err, IsNil)
+	c.Assert(res, DeepEquals, []doc{{100}, {200}})
+}
