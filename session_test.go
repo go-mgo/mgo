@@ -2955,6 +2955,21 @@ var indexTests = []struct {
 		"key":  M{"cn": 1},
 		"ns":   "mydb.mycoll",
 	},
+}, {
+	mgo.Index{
+		Key:        []string{"p"},
+		Unique: true,
+		PartialFilterExpression: bson.M{
+			"p": bson.M{"$exists": true},
+		},
+	},
+	M{
+		"name":       "p_1",
+		"key":        M{"p": 1},
+		"ns":         "mydb.mycoll",
+		"unique":   true,
+		"partialFilterExpression": M{"p" : M{"$exists" : true}},
+	},
 }}
 
 func (s *S) TestEnsureIndex(c *C) {
