@@ -390,6 +390,10 @@ type DialInfo struct {
 
 	// WARNING: This field is obsolete. See DialServer above.
 	Dial func(addr net.Addr) (net.Conn, error)
+
+	// LazyConnect will allow a session to be returned before the connection
+	// is established to mongodb. The connection will be made when needed.
+	LazyConnect bool
 }
 
 // mgo.v3: Drop DialInfo.Dial.
@@ -456,15 +460,17 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 	}
 	cluster.Release()
 
-	// People get confused when we return a session that is not actually
-	// established to any servers yet (e.g. what if url was wrong). So,
-	// ping the server to ensure there's someone there, and abort if it
-	// fails.
-	if err := session.Ping(); err != nil {
-		session.Close()
-		return nil, err
+	if !info.LazyConnect {
+		// People get confused when we return a session that is not actually
+		// established to any servers yet (e.g. what if url was wrong). So,
+		// ping the server to ensure there's someone there, and abort if it
+		// fails.
+		if err := session.Ping(); err != nil {
+			session.Close()
+			return nil, err
+		}
+		session.SetMode(Strong, true)
 	}
-	session.SetMode(Strong, true)
 	return session, nil
 }
 
