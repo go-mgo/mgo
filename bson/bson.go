@@ -279,7 +279,7 @@ var nullBytes = []byte("null")
 func (id *ObjectId) UnmarshalJSON(data []byte) error {
 	if len(data) > 0 && (data[0] == '{' || data[0] == 'O') {
 		var v struct {
-			Id json.RawMessage `json:"$oid"`
+			Id   json.RawMessage `json:"$oid"`
 			Func struct {
 				Id json.RawMessage
 			} `json:"$oidFunc"`
@@ -694,8 +694,7 @@ func getStructInfo(st reflect.Type) (*structInfo, error) {
 				}
 				for _, finfo := range sinfo.FieldsList {
 					if _, found := fieldsMap[finfo.Key]; found {
-						msg := "Duplicated key '" + finfo.Key + "' in struct " + st.String()
-						return nil, errors.New(msg)
+						continue
 					}
 					if finfo.Inline == nil {
 						finfo.Inline = []int{i, finfo.Num}
