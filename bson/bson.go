@@ -384,7 +384,13 @@ type Symbol string
 // why this function exists. Using the time.Now function also works fine
 // otherwise.
 func Now() time.Time {
-	return time.Unix(0, time.Now().UnixNano()/1e6*1e6)
+	return Time(time.Now())
+}
+
+// Time is like Now but returns an arbitrary time rounded to MongoDB's
+// precision.
+func Time(t time.Time) time.Time {
+	return t.Truncate(time.Millisecond)
 }
 
 // MongoTimestamp is a special internal type used by MongoDB that for some
