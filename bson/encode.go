@@ -263,7 +263,22 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 	switch v.Kind() {
 
 	case reflect.Interface:
-		e.addElem(name, v.Elem(), minSize)
+		child := v.Elem()
+		if child.Kind() == reflect.Struct {
+			ut, _ := getStructInfo(child.Type())
+			childname, ok := concreteTypeToName[ut.base]
+			if !ok || childname == name {
+				e.addElem(name, v.Elem(), minSize)
+			} else {
+				e.addElemName(0x03, name)
+
+				m := M{childname: child.Interface()}
+
+				e.addDoc(reflect.ValueOf(m))
+			}
+		} else {
+			e.addElem(name, v.Elem(), minSize)
+		}
 
 	case reflect.Ptr:
 		e.addElem(name, v.Elem(), minSize)

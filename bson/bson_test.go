@@ -1139,6 +1139,41 @@ func parseURL(s string) *url.URL {
 	return u
 }
 
+type World struct {
+	People []Person
+}
+
+type Person struct {
+	Name string
+	Age  int
+	Beh  Behaviour
+	//More..
+}
+
+type Behaviour interface {
+	DoSomething()
+}
+
+type Walk struct {
+	X int
+	Y int
+}
+
+func (w Walk) DoSomething() {
+}
+
+func (s Speak) DoSomething() {
+}
+
+type Speak struct {
+	Text string
+}
+
+func init() {
+	bson.Register(Walk{})
+	bson.Register(Speak{})
+}
+
 // That's a pretty fun test.  It will dump the first item, generate a zero
 // value equivalent to the second one, load the dumped data onto it, and then
 // verify that the resulting value is deep-equal to the untouched second value.
@@ -1346,6 +1381,7 @@ var twoWayCrossItems = []crossTypeItem{
 
 	// Interface slice setter.
 	{&struct{ V ifaceSlice }{ifaceSlice{nil, nil, nil}}, bson.M{"v": []interface{}{3}}},
+	{&World{People: []Person{{Name: "John", Age: 30, Beh: Walk{X: 10, Y: 20}}, {Name: "Mike", Age: 25, Beh: Speak{"Hi!"}}}}, &World{People: []Person{{Name: "John", Age: 30, Beh: Walk{X: 10, Y: 20}}, {Name: "Mike", Age: 25, Beh: Speak{"Hi!"}}}}},
 }
 
 // Same thing, but only one way (obj1 => obj2).

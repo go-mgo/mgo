@@ -158,23 +158,20 @@ func (d *decoder) readDocTo(out reflect.Value) {
 
 	origout := out
 	if outk == reflect.Interface {
-		if d.docType.Kind() == reflect.Map {
-			mv := reflect.MakeMap(d.docType)
-			out.Set(mv)
-			out = mv
-		} else {
+		if d.docType.Kind() != reflect.Map {
 			dv := reflect.New(d.docType).Elem()
 			out.Set(dv)
 			out = dv
+			outt = out.Type()
+			outk = outt.Kind()
 		}
-		outt = out.Type()
-		outk = outt.Kind()
 	}
 
 	docType := d.docType
 	keyType := typeString
 	convertKey := false
 	switch outk {
+	case reflect.Interface:
 	case reflect.Map:
 		keyType = outt.Key()
 		if keyType.Kind() != reflect.String {
@@ -238,6 +235,47 @@ func (d *decoder) readDocTo(out reflect.Value) {
 		}
 
 		switch outk {
+		case reflect.Interface:
+			ct, ok := nameToConcreteType[name]
+			if ok { //Try using the concrete type
+				val := reflect.New(ct)
+				d.readElemTo(val, kind)
+				out.Set(val.Elem())
+			} else { //not registered? Make a map and use it as before
+				mv := reflect.MakeMap(d.docType)
+				out.Set(mv)
+				out = mv
+
+				outt = out.Type()
+				outk = outt.Kind()
+
+				keyType = outt.Key()
+				if keyType.Kind() != reflect.String {
+					panic("BSON map must have string keys. Got: " + outt.String())
+				}
+				if keyType != typeString {
+					convertKey = true
+				}
+				elemType = outt.Elem()
+				if elemType == typeIface {
+					d.docType = outt
+				}
+				if out.IsNil() {
+					out.Set(reflect.MakeMap(out.Type()))
+				} else if out.Len() > 0 {
+					clearMap(out)
+				}
+
+				e := reflect.New(elemType).Elem()
+				if d.readElemTo(e, kind) {
+					k := reflect.ValueOf(name)
+					if convertKey {
+						k = k.Convert(keyType)
+					}
+					out.SetMapIndex(k, e)
+				}
+			}
+
 		case reflect.Map:
 			e := reflect.New(elemType).Elem()
 			if d.readElemTo(e, kind) {

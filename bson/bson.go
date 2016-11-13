@@ -279,7 +279,7 @@ var nullBytes = []byte("null")
 func (id *ObjectId) UnmarshalJSON(data []byte) error {
 	if len(data) > 0 && (data[0] == '{' || data[0] == 'O') {
 		var v struct {
-			Id json.RawMessage `json:"$oid"`
+			Id   json.RawMessage `json:"$oid"`
 			Func struct {
 				Id json.RawMessage
 			} `json:"$oidFunc"`
@@ -612,6 +612,9 @@ type structInfo struct {
 	FieldsList []fieldInfo
 	InlineMap  int
 	Zero       reflect.Value
+	user       reflect.Type // the type the user handed us
+	base       reflect.Type // the base type after all indirections
+	indir      int          // number of indirections to reach the base type
 }
 
 type fieldInfo struct {
@@ -730,9 +733,117 @@ func getStructInfo(st reflect.Type) (*structInfo, error) {
 		fieldsList,
 		inlineMap,
 		reflect.New(st).Elem(),
+		st,
+		st,
+		0,
 	}
+
+	// A type that is just a cycle of pointers (such as type T *T) cannot
+	// be represented in gobs, which need some concrete data. We use a
+	// cycle detection algorithm from Knuth, Vol 2, Section 3.1, Ex 6,
+	// pp 539-540.  As we step through indirections, run another type at
+	// half speed. If they meet up, there's a cycle.
+	slowpoke := sinfo.base // walks half as fast as ut.base
+	for {
+		pt := sinfo.base
+		if pt.Kind() != reflect.Ptr {
+			break
+		}
+		sinfo.base = pt.Elem()
+		if sinfo.base == slowpoke { // ut.base lapped slowpoke
+			// recursive pointer type.
+			return nil, errors.New("can't represent recursive pointer type " + sinfo.base.String())
+		}
+		if sinfo.indir%2 == 0 {
+			slowpoke = slowpoke.Elem()
+		}
+		sinfo.indir++
+	}
+
 	structMapMutex.Lock()
 	structMap[st] = sinfo
 	structMapMutex.Unlock()
 	return sinfo, nil
+}
+
+var (
+	registerLock       sync.RWMutex
+	nameToConcreteType = make(map[string]reflect.Type)
+	concreteTypeToName = make(map[reflect.Type]string)
+)
+
+// RegisterName is like Register but uses the provided name rather than the
+// type's default.
+func RegisterName(name string, value interface{}) {
+	if name == "" {
+		// reserved for nil
+		panic("attempt to register empty name")
+	}
+	registerLock.Lock()
+	defer registerLock.Unlock()
+	ut, err := getStructInfo(reflect.TypeOf(value))
+	if err != nil {
+		panic(fmt.Sprintf("bson: error registering, %s", err))
+	}
+
+	// Check for incompatible duplicates. The name must refer to the
+	// same user type, and vice versa.
+	if t, ok := nameToConcreteType[name]; ok && t != ut.user {
+		panic(fmt.Sprintf("bson: registering duplicate types for %q: %s != %s", name, t, ut.user))
+	}
+	if n, ok := concreteTypeToName[ut.base]; ok && n != name {
+		panic(fmt.Sprintf("bson: registering duplicate names for %s: %q != %q", ut.user, n, name))
+	}
+
+	// Store the name and type provided by the user....
+	nameToConcreteType[name] = reflect.TypeOf(value)
+	// but the flattened type in the type table, since that's what decode needs.
+	concreteTypeToName[ut.base] = name
+}
+
+// Register records a type, identified by a value for that type, under its
+// internal type name. That name will identify the concrete type of a value
+// sent or received as an interface variable. Only types that will be
+// transferred as implementations of interface values need to be registered.
+// Expecting to be used only during initialization, it panics if the mapping
+// between types and names is not a bijection.
+func Register(value interface{}) {
+	// Default to printed representation for unnamed types
+	rt := reflect.TypeOf(value)
+	name := rt.String()
+
+	// But for named types (or pointers to them), qualify with import path (but see inner comment).
+	// Dereference one pointer looking for a named type.
+	star := ""
+	if rt.Name() == "" {
+		if pt := rt; pt.Kind() == reflect.Ptr {
+			star = "*"
+			// NOTE: The following line should be rt = pt.Elem() to implement
+			// what the comment above claims, but fixing it would break compatibility
+			// with existing gobs.
+			//
+			// Given package p imported as "full/p" with these definitions:
+			//     package p
+			//     type T1 struct { ... }
+			// this table shows the intended and actual strings used by gob to
+			// name the types:
+			//
+			// Type      Correct string     Actual string
+			//
+			// T1        full/p.T1          full/p.T1
+			// *T1       *full/p.T1         *p.T1
+			//
+			// The missing full path cannot be fixed without breaking existing gob decoders.
+			rt = pt
+		}
+	}
+	if rt.Name() != "" {
+		if rt.PkgPath() == "" {
+			name = star + rt.Name()
+		} else {
+			name = star + rt.PkgPath() + "/" + rt.Name()
+		}
+	}
+
+	RegisterName(name, value)
 }
