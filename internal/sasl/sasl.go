@@ -3,7 +3,7 @@
 // This package is not meant to be used by itself.
 //
 
-// +build !windows
+// +build !windows,!heroku
 
 package sasl
 
