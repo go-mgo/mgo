@@ -736,3 +736,10 @@ func getStructInfo(st reflect.Type) (*structInfo, error) {
 	structMapMutex.Unlock()
 	return sinfo, nil
 }
+
+
+// ToJSON Marshals BSON.M to JSON.
+func ToJSON(bsonData M) ([]byte, error) {
+
+	return json.Marshal(bsonData)
+}
