@@ -795,8 +795,17 @@ func (s *S) TestUnmarshalAllItemsWithPtrSetter(c *C) {
 				}
 			} else {
 				expected := item.obj.(bson.M)["_"]
-				c.Assert(field, NotNil, Commentf("Pointer not initialized (%#v)", expected))
-				c.Assert(field.received, DeepEquals, expected)
+				if expected == nil {
+					if i == 0 {
+						c.Assert(field, IsNil, Commentf("Nill expected. Got (%#v).", field))
+					} else {
+						// Field is not nil since it's a value.
+						c.Assert(field.received, IsNil, Commentf("Nill expected. Got (%#v).", field.received))
+					}
+				} else {
+					c.Assert(field, NotNil, Commentf("Pointer not initialized (%#v).", expected))
+					c.Assert(field.received, DeepEquals, expected)
+				}
 			}
 		}
 	}
@@ -870,6 +879,20 @@ func (s *S) TestUnmarshalSetterSetZero(c *C) {
 	value, ok := m["field"]
 	c.Assert(ok, Equals, true)
 	c.Assert(value, IsNil)
+}
+
+func (s *S) TestUnmarshalNilSetter(c *C) {
+	type container struct {
+		S *setterType
+	}
+	var in, out container
+
+	data, err := bson.Marshal(&in)
+	c.Assert(err, IsNil)
+
+	err = bson.Unmarshal(data, &out)
+	c.Assert(err, IsNil)
+	c.Assert(out.S, IsNil)
 }
 
 // --------------------------------------------------------------------------
