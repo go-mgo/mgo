@@ -149,7 +149,7 @@ var allItems = []testItemType{
 		"\x08_\x00\x00"},
 	{bson.M{"_": true},
 		"\x08_\x00\x01"},
-	{bson.M{"_": time.Unix(0, 258e6)}, // Note the NS <=> MS conversion.
+	{bson.M{"_": time.Unix(0, 258e6).UTC()}, // Note the NS <=> MS conversion.
 		"\x09_\x00\x02\x01\x00\x00\x00\x00\x00\x00"},
 	{bson.M{"_": nil},
 		"\x0A_\x00"},
@@ -1261,7 +1261,7 @@ var twoWayCrossItems = []crossTypeItem{
 	{&condPtr{&falsevar}, map[string]bool{"v": false}},
 	{&condPtr{}, map[string]string{}},
 
-	{&condTime{time.Unix(123456789, 123e6)}, map[string]time.Time{"v": time.Unix(123456789, 123e6)}},
+	{&condTime{time.Unix(123456789, 123e6).UTC()}, map[string]time.Time{"v": time.Unix(123456789, 123e6).UTC()}},
 	{&condTime{}, map[string]string{}},
 
 	{&condStruct{struct{ A []int }{[]int{1}}}, bson.M{"v": bson.M{"a": []interface{}{1}}}},
@@ -1316,8 +1316,8 @@ var twoWayCrossItems = []crossTypeItem{
 	{&struct{ V time.Time }{}, map[string]interface{}{"v": time.Time{}}},
 
 	// zero time + 1 second + 1 millisecond; overflows int64 as nanoseconds
-	{&struct{ V time.Time }{time.Unix(-62135596799, 1e6).Local()},
-		map[string]interface{}{"v": time.Unix(-62135596799, 1e6).Local()}},
+	{&struct{ V time.Time }{time.Unix(-62135596799, 1e6).UTC()},
+		map[string]interface{}{"v": time.Unix(-62135596799, 1e6).UTC()}},
 
 	// bson.D <=> []DocElem
 	{&bson.D{{"a", bson.D{{"b", 1}, {"c", 2}}}}, &bson.D{{"a", bson.D{{"b", 1}, {"c", 2}}}}},
