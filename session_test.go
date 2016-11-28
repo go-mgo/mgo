@@ -1543,6 +1543,68 @@ func (s *S) TestFindIterLimit(c *C) {
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
+func (s *S) TestResumeIter(c *C) {
+	if !s.versionAtLeast(3, 2) {
+		c.Skip("getMore depends on MongoDB 3.2+")
+	}
+	const numDocuments = 10
+
+	session, err := mgo.Dial("localhost:40001")
+	session.SetBatch(4)
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	session.SetBatch(3)
+
+	coll := session.DB("mydb").C("mycoll")
+	for i := 0; i < numDocuments; i++ {
+		coll.Insert(M{"n": i})
+	}
+
+	got := struct {
+		N int
+	}{}
+
+	// Test random cursor should return error
+	iter := coll.NewIter(nil, nil, 42, nil)
+	c.Assert(iter.Next(&got), Equals, false)
+	c.Assert(iter.Err(), Not(IsNil))
+
+	// Get an iterator to resume from later, ensure it works
+	iter = coll.Find(bson.M{}).Batch(2).Iter()
+	c.Assert(iter.Next(&got), Equals, true)
+	c.Assert(iter.Err(), IsNil)
+	c.Assert(got.N, Equals, 0)
+
+	// Test state returns the cursor ID, and firstBatch
+	id, batch := iter.State()
+	c.Assert(id, Not(Equals), 0)
+	c.Assert(len(batch), Equals, 1)
+
+	// Resume the cursor
+	newIter := coll.NewIter(nil, batch, id, nil)
+	c.Assert(newIter, Not(IsNil))
+
+	// Ensure we get the rest when calling Next, including the one from the
+	// original firstBatch
+	for i := 1; i < numDocuments; i++ {
+		c.Assert(newIter.Next(&got), Equals, true)
+		c.Assert(newIter.Err(), IsNil)
+		c.Assert(got.N, Equals, i)
+	}
+
+	// Next returns false
+	c.Assert(newIter.Next(&got), Equals, false)
+
+	// Done returns true
+	c.Assert(newIter.Done(), Equals, true)
+
+	// Ensure state reports no data, no cursor ID
+	id, batch = newIter.State()
+	c.Assert(id, Equals, int64(0))
+	c.Assert(len(batch), Equals, 0)
+}
+
 var cursorTimeout = flag.Bool("cursor-timeout", false, "Enable cursor timeout test")
 
 func (s *S) TestFindIterCursorTimeout(c *C) {
@@ -3047,7 +3109,7 @@ func (s *S) TestEnsureIndex(c *C) {
 		if wantIndex.LanguageOverride == "" {
 			wantIndex.LanguageOverride = gotIndex.LanguageOverride
 		}
-		for name, _ := range gotIndex.Weights {
+		for name := range gotIndex.Weights {
 			if _, ok := wantIndex.Weights[name]; !ok {
 				if wantIndex.Weights == nil {
 					wantIndex.Weights = make(map[string]int)

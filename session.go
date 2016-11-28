@@ -2247,26 +2247,30 @@ func (p *Pipe) Iter() *Iter {
 	return c.NewIter(p.session, firstBatch, result.Cursor.Id, err)
 }
 
-// NewIter returns a newly created iterator with the provided parameters.
-// Using this method is not recommended unless the desired functionality
-// is not yet exposed via a more convenient interface (Find, Pipe, etc).
+// NewIter returns a newly created iterator with the provided parameters. Using
+// this method is not recommended unless the desired functionality is not yet
+// exposed via a more convenient interface (Find, Pipe, etc).
 //
 // The optional session parameter associates the lifetime of the returned
-// iterator to an arbitrary session. If nil, the iterator will be bound to
-// c's session.
+// iterator to an arbitrary session. If nil, the iterator will be bound to c's
+// session.
 //
 // Documents in firstBatch will be individually provided by the returned
-// iterator before documents from cursorId are made available. If cursorId
-// is zero, only the documents in firstBatch are provided.
+// iterator before documents from cursorId are made available. If cursorId is
+// zero, only the documents in firstBatch are provided.
 //
-// If err is not nil, the iterator's Err method will report it after
-// exhausting documents in firstBatch.
+// If err is not nil, the iterator's Err method will report it after exhausting
+// documents in firstBatch.
 //
-// NewIter must be called right after the cursor id is obtained, and must not
-// be called on a collection in Eventual mode, because the cursor id is
-// associated with the specific server that returned it. The provided session
-// parameter may be in any mode or state, though.
+// NewIter must not be called on a collection in Eventual mode, because the
+// cursor id is associated with the specific server that returned it. The
+// provided session parameter may be in any mode or state, though.
 //
+// The new Iter fetches documents in batches of the server defined default,
+// however this can be changed by setting the session Batch method.
+//
+// When using MongoDB 3.2+ NewIter supports re-using an existing cursor on the
+// server.
 func (c *Collection) NewIter(session *Session, firstBatch []bson.Raw, cursorId int64, err error) *Iter {
 	var server *mongoServer
 	csession := c.Database.Session
@@ -2299,16 +2303,45 @@ func (c *Collection) NewIter(session *Session, firstBatch []bson.Raw, cursorId i
 		timeout: -1,
 		err:     err,
 	}
+
 	iter.gotReply.L = &iter.m
 	for _, doc := range firstBatch {
 		iter.docData.Push(doc.Data)
 	}
 	if cursorId != 0 {
+		if socket != nil && socket.ServerInfo().MaxWireVersion >= 4 {
+			iter.findCmd = true
+			iter.docsBeforeMore = len(firstBatch)
+		}
 		iter.op.cursorId = cursorId
 		iter.op.collection = c.FullName
 		iter.op.replyFunc = iter.replyFunc()
 	}
 	return iter
+}
+
+// State returns the current state of Iter. When combined with NewIter an
+// existing cursor can be reused on Mongo 3.2+. Like NewIter, this method should
+// be avoided if the desired functionality is exposed via a more convenient
+// interface.
+//
+// Care must be taken to resume using Iter only when connected directly to the
+// same server that the cursor was created on (with a Monotonic connection or
+// with the connect=direct connection option).
+func (iter *Iter) State() (int64, []bson.Raw) {
+	// Make a copy of the docData to avoid changing iter state
+	iter.m.Lock()
+	data := iter.docData
+	iter.m.Unlock()
+
+	batch := make([]bson.Raw, 0, data.Len())
+	for data.Len() > 0 {
+		batch = append(batch, bson.Raw{
+			Kind: 0x00,
+			Data: data.Pop().([]byte),
+		})
+	}
+	return iter.op.cursorId, batch
 }
 
 // All works like Iter.All.
