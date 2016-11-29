@@ -691,7 +691,7 @@ func (f *flusher) checkpoint(t *transaction, revnos []int64) error {
 		f.debugf("Ready to apply %s. Saving revnos %v: LOST RACE", t, debugRevnos)
 		return f.reload(t)
 	}
-	return nil
+	return err
 }
 
 func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) error {
