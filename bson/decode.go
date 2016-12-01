@@ -463,6 +463,7 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 			default:
 				d.readDocTo(blackHole)
 			}
+			d.readDocTo(blackHole)
 			return true
 		}
 		d.readDocTo(blackHole)
