@@ -40,7 +40,7 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2-unstable/bson"
+	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/yaml.v2"
 )
 
@@ -1311,6 +1311,9 @@ var twoWayCrossItems = []crossTypeItem{
 	// arrays
 	{&struct{ V [2]int }{[...]int{1, 2}}, map[string][2]int{"v": [2]int{1, 2}}},
 	{&struct{ V [2]byte }{[...]byte{1, 2}}, map[string][2]byte{"v": [2]byte{1, 2}}},
+	{&struct{ V *[2]byte }{&[...]byte{1, 2}}, map[string]*[2]byte{"v": &[2]byte{1, 2}}},
+	{&struct{ V [2]float64 }{[...]float64{1, 2}}, map[string][2]float64{"v": [2]float64{1, 2}}},
+	{&struct{ V *[2]float64 }{&[...]float64{1, 2}}, map[string]*[2]float64{"v": &[2]float64{1, 2}}},
 
 	// zero time
 	{&struct{ V time.Time }{}, map[string]interface{}{"v": time.Time{}}},
