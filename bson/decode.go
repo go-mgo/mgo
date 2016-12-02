@@ -294,7 +294,18 @@ func (d *decoder) readArrayDocTo(out reflect.Value) {
 		corrupted()
 	}
 	i := 0
-	l := out.Len()
+
+	array := out
+
+	if out.Kind() == reflect.Ptr {
+		p := reflect.New(out.Type())
+		tmp := reflect.New(p.Elem().Type().Elem())
+		out.Set(tmp)
+		array = tmp.Elem()
+	}
+
+	l := array.Len()
+
 	for d.in[d.i] != '\x00' {
 		if i >= l {
 			panic("Length mismatch on array field")
@@ -307,7 +318,7 @@ func (d *decoder) readArrayDocTo(out reflect.Value) {
 			corrupted()
 		}
 		d.i++
-		d.readElemTo(out.Index(i), kind)
+		d.readElemTo(array.Index(i), kind)
 		if d.i >= end {
 			corrupted()
 		}
