@@ -751,10 +751,10 @@ func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) err
 				if d, err = objToDoc(op.Update); err != nil {
 					return err
 				}
-				if d, err = addToDoc(d, "$pullAll", bson.D{{"txn-queue", pullAll}}); err != nil {
+				if d, err = addToDoc(d, "pullAll", bson.D{{"txn-queue", pullAll}}); err != nil {
 					return err
 				}
-				if d, err = addToDoc(d, "$set", bson.D{{"txn-revno", newRevno}}); err != nil {
+				if d, err = addToDoc(d, "set", bson.D{{"txn-revno", newRevno}}); err != nil {
 					return err
 				}
 				chaos("")
