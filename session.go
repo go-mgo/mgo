@@ -1515,6 +1515,7 @@ func indexFromSpec(spec indexSpec) Index {
 		LanguageOverride: spec.LanguageOverride,
 		ExpireAfter:      time.Duration(spec.ExpireAfter) * time.Second,
 		Collation:        spec.Collation,
+		PartialFilter:    spec.PartialFilterExpression,
 	}
 	if float64(int(spec.Min)) == spec.Min && float64(int(spec.Max)) == spec.Max {
 		index.Min = int(spec.Min)

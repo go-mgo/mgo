@@ -2977,16 +2977,18 @@ var indexTests = []struct {
 	},
 }, {
 	mgo.Index{
-		Key: []string{"a"},
+		Key: []string{"partial"},
 		PartialFilter: bson.M{
 			"b": bson.M{"$gt": 42},
 		},
 	},
 	M{
-		"name":       "a_1",
-		"key":        M{"a": 1},
-		"ns":         "mydb.mycoll",
-		"background": true,
+		"name": "partial_1",
+		"ns":   "mydb.mycoll",
+		"partialFilterExpression": M{
+			"b": M{"$gt": 42},
+		},
+		"key": M{"partial": 1},
 	},
 }}
 
@@ -3000,6 +3002,11 @@ func (s *S) TestEnsureIndex(c *C) {
 
 	for _, test := range indexTests {
 		if !s.versionAtLeast(2, 4) && test.expected["textIndexVersion"] != nil {
+			continue
+		}
+
+		// Only test partial indexes on
+		if !s.versionAtLeast(3, 2) && test.expected["name"] == "partial_1" {
 			continue
 		}
 
