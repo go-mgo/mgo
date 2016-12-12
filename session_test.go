@@ -38,8 +38,8 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2-unstable"
-	"gopkg.in/mgo.v2-unstable/bson"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 func (s *S) TestRunString(c *C) {
@@ -998,6 +998,26 @@ func (s *S) TestIsDupFindAndModify(c *C) {
 	c.Assert(err, IsNil)
 	_, err = coll.Find(M{"n": 1}).Apply(mgo.Change{Update: M{"$inc": M{"n": 1}}}, bson.M{})
 	c.Assert(err, ErrorMatches, ".*duplicate key error.*")
+	c.Assert(mgo.IsDup(err), Equals, true)
+}
+
+func (s *S) TestIsDupRetryUpsert(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	err = coll.Insert(bson.M{"_id": 1, "x": 1})
+	c.Assert(err, IsNil)
+
+	_, err = coll.Upsert(bson.M{"_id": 1, "x": 2}, bson.M{"$set": bson.M{"x": 3}})
+	c.Assert(mgo.IsDup(err), Equals, true)
+
+	_, err = coll.Find(bson.M{"_id": 1, "x": 2}).Apply(mgo.Change{
+		Update: bson.M{"$set": bson.M{"x": 3}},
+		Upsert: true,
+	}, nil)
 	c.Assert(mgo.IsDup(err), Equals, true)
 }
 
@@ -2955,6 +2975,21 @@ var indexTests = []struct {
 		"key":  M{"cn": 1},
 		"ns":   "mydb.mycoll",
 	},
+}, {
+	mgo.Index{
+		Key: []string{"partial"},
+		PartialFilter: bson.M{
+			"b": bson.M{"$gt": 42},
+		},
+	},
+	M{
+		"name": "partial_1",
+		"ns":   "mydb.mycoll",
+		"partialFilterExpression": M{
+			"b": M{"$gt": 42},
+		},
+		"key": M{"partial": 1},
+	},
 }}
 
 func (s *S) TestEnsureIndex(c *C) {
@@ -2967,6 +3002,11 @@ func (s *S) TestEnsureIndex(c *C) {
 
 	for _, test := range indexTests {
 		if !s.versionAtLeast(2, 4) && test.expected["textIndexVersion"] != nil {
+			continue
+		}
+
+		// Only test partial indexes on
+		if !s.versionAtLeast(3, 2) && test.expected["name"] == "partial_1" {
 			continue
 		}
 
@@ -4159,11 +4199,11 @@ func (s *S) TestBypassValidation(c *C) {
 
 func (s *S) TestVersionAtLeast(c *C) {
 	tests := [][][]int{
-		{{3,2,1}, {3,2,0}},
-		{{3,2,1}, {3,2}},
-		{{3,2,1}, {2,5,5,5}},
-		{{3,2,1}, {2,5,5}},
-		{{3,2,1}, {2,5}},
+		{{3, 2, 1}, {3, 2, 0}},
+		{{3, 2, 1}, {3, 2}},
+		{{3, 2, 1}, {2, 5, 5, 5}},
+		{{3, 2, 1}, {2, 5, 5}},
+		{{3, 2, 1}, {2, 5}},
 	}
 	for _, pair := range tests {
 		bi := mgo.BuildInfo{VersionArray: pair[0]}
