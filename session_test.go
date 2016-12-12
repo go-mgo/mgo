@@ -2975,6 +2975,19 @@ var indexTests = []struct {
 		"key":  M{"cn": 1},
 		"ns":   "mydb.mycoll",
 	},
+}, {
+	mgo.Index{
+		Key: []string{"a"},
+		PartialFilter: bson.M{
+			"b": bson.M{"$gt": 42},
+		},
+	},
+	M{
+		"name":       "a_1",
+		"key":        M{"a": 1},
+		"ns":         "mydb.mycoll",
+		"background": true,
+	},
 }}
 
 func (s *S) TestEnsureIndex(c *C) {
