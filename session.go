@@ -4643,41 +4643,43 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 			}
 			return &lerr, nil
 		}
+		if updateOps, ok := op.(bulkUpdateOp); ok {
+			var lerr LastError
+			for i, updateOp := range updateOps {
+				oplerr, err := c.writeOpQuery(socket, safeOp, updateOp, ordered)
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
+				if err != nil {
+					lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
+					if ordered {
+						break
+					}
+				}
+			}
+			if len(lerr.ecases) != 0 {
+				return &lerr, lerr.ecases[0].Err
+			}
+			return &lerr, nil
+		}
+		if deleteOps, ok := op.(bulkDeleteOp); ok {
+			var lerr LastError
+			for i, deleteOp := range deleteOps {
+				oplerr, err := c.writeOpQuery(socket, safeOp, deleteOp, ordered)
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
+				if err != nil {
+					lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
+					if ordered {
+						break
+					}
+				}
+			}
+			if len(lerr.ecases) != 0 {
+				return &lerr, lerr.ecases[0].Err
+			}
+			return &lerr, nil
+		}
 		return c.writeOpCommand(socket, safeOp, op, ordered, bypassValidation)
-	} else if updateOps, ok := op.(bulkUpdateOp); ok {
-		var lerr LastError
-		for i, updateOp := range updateOps {
-			oplerr, err := c.writeOpQuery(socket, safeOp, updateOp, ordered)
-			lerr.N += oplerr.N
-			lerr.modified += oplerr.modified
-			if err != nil {
-				lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
-				if ordered {
-					break
-				}
-			}
-		}
-		if len(lerr.ecases) != 0 {
-			return &lerr, lerr.ecases[0].Err
-		}
-		return &lerr, nil
-	} else if deleteOps, ok := op.(bulkDeleteOp); ok {
-		var lerr LastError
-		for i, deleteOp := range deleteOps {
-			oplerr, err := c.writeOpQuery(socket, safeOp, deleteOp, ordered)
-			lerr.N += oplerr.N
-			lerr.modified += oplerr.modified
-			if err != nil {
-				lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
-				if ordered {
-					break
-				}
-			}
-		}
-		if len(lerr.ecases) != 0 {
-			return &lerr, lerr.ecases[0].Err
-		}
-		return &lerr, nil
 	}
 	return c.writeOpQuery(socket, safeOp, op, ordered)
 }

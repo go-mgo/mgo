@@ -317,6 +317,28 @@ func (s *S) TestBulkUpdate(c *C) {
 	c.Assert(res, DeepEquals, []doc{{10}, {20}, {30}})
 }
 
+func (s *S) TestBulkUpdateOver1000(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	bulk := coll.Bulk()
+	for i := 0; i < 1010; i++ {
+		bulk.Insert(M{"n": i})
+	}
+	_, err = bulk.Run()
+	c.Assert(err, IsNil)
+	bulk = coll.Bulk()
+	for i := 0; i < 1010; i++ {
+		bulk.Update(M{"n": i}, M{"$set": M{"m": i}})
+	}
+	// if not handle well, mongo will return error here
+	_, err = bulk.Run()
+	c.Assert(err, IsNil)
+}
+
 func (s *S) TestBulkUpdateError(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
