@@ -548,7 +548,7 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 // AcquireSocket returns a socket to a server in the cluster.  If slaveOk is
 // true, it will attempt to return a socket to a slave server.  If it is
 // false, the socket will necessarily be to a master server.
-func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Duration, socketTimeout time.Duration, serverTags []bson.D, poolLimit int) (s *mongoSocket, err error) {
+func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Duration, socketTimeout time.Duration, serverTags []bson.D, poolLimit int, pingNearThreshold time.Duration) (s *mongoSocket, err error) {
 	var started time.Time
 	var syncCount uint
 	warnedLimit := false
@@ -578,9 +578,9 @@ func (cluster *mongoCluster) AcquireSocket(slaveOk bool, syncTimeout time.Durati
 
 		var server *mongoServer
 		if slaveOk {
-			server = cluster.servers.BestFit(serverTags)
+			server = cluster.servers.BestFit(serverTags, pingNearThreshold)
 		} else {
-			server = cluster.masters.BestFit(nil)
+			server = cluster.masters.BestFit(nil, pingNearThreshold)
 		}
 		cluster.RUnlock()
 

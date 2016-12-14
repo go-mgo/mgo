@@ -400,7 +400,7 @@ func (servers *mongoServers) Empty() bool {
 
 // BestFit returns the best guess of what would be the most interesting
 // server to perform operations on at this point in time.
-func (servers *mongoServers) BestFit(serverTags []bson.D) *mongoServer {
+func (servers *mongoServers) BestFit(serverTags []bson.D, pingNearThreshold time.Duration) *mongoServer {
 	var best *mongoServer
 	for _, next := range servers.slice {
 		if best == nil {
@@ -420,7 +420,7 @@ func (servers *mongoServers) BestFit(serverTags []bson.D) *mongoServer {
 		case next.info.Master != best.info.Master:
 			// Prefer slaves.
 			swap = best.info.Master
-		case absDuration(next.pingValue-best.pingValue) > 15*time.Millisecond:
+		case absDuration(next.pingValue-best.pingValue) > pingNearThreshold:
 			// Prefer nearest server.
 			swap = next.pingValue < best.pingValue
 		case len(next.liveSockets)-len(next.unusedSockets) < len(best.liveSockets)-len(best.unusedSockets):

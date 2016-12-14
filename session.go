@@ -56,21 +56,22 @@ const (
 // need to be updated too.
 
 type Session struct {
-	m            sync.RWMutex
-	cluster_     *mongoCluster
-	slaveSocket  *mongoSocket
-	masterSocket *mongoSocket
-	slaveOk      bool
-	consistency  mode
-	queryConfig  query
-	safeOp       *queryOp
-	syncTimeout  time.Duration
-	sockTimeout  time.Duration
-	defaultdb    string
-	sourcedb     string
-	dialCred     *Credential
-	creds        []Credential
-	poolLimit    int
+	m                 sync.RWMutex
+	cluster_          *mongoCluster
+	slaveSocket       *mongoSocket
+	masterSocket      *mongoSocket
+	slaveOk           bool
+	consistency       mode
+	queryConfig       query
+	safeOp            *queryOp
+	syncTimeout       time.Duration
+	sockTimeout       time.Duration
+	defaultdb         string
+	sourcedb          string
+	dialCred          *Credential
+	creds             []Credential
+	poolLimit         int
+	pingNearThreshold time.Duration
 }
 
 type Database struct {
@@ -484,10 +485,11 @@ func extractURL(s string) (*urlInfo, error) {
 func newSession(consistency mode, cluster *mongoCluster, timeout time.Duration) (session *Session) {
 	cluster.Acquire()
 	session = &Session{
-		cluster_:    cluster,
-		syncTimeout: timeout,
-		sockTimeout: timeout,
-		poolLimit:   4096,
+		cluster_:          cluster,
+		syncTimeout:       timeout,
+		sockTimeout:       timeout,
+		poolLimit:         4096,
+		pingNearThreshold: 15 * time.Millisecond,
 	}
 	debugf("New session %p on cluster %p", session, cluster)
 	session.SetMode(consistency, true)
@@ -1816,6 +1818,15 @@ func (s *Session) Run(cmd interface{}, result interface{}) error {
 func (s *Session) SelectServers(tags ...bson.D) {
 	s.m.Lock()
 	s.queryConfig.op.serverTags = tags
+	s.m.Unlock()
+}
+
+// SetPingNearThreshold helps the driver to select the nearest server.
+// If the servers ping is higher than the given threshold, the query will be
+// send to another server.
+func (s *Session) SetPingNearThreshold(near time.Duration) {
+	s.m.Lock()
+	s.pingNearThreshold = near
 	s.m.Unlock()
 }
 
@@ -3938,7 +3949,7 @@ func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 	}
 
 	// Still not good.  We need a new socket.
-	sock, err := s.cluster().AcquireSocket(slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags, s.poolLimit)
+	sock, err := s.cluster().AcquireSocket(slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags, s.poolLimit, s.pingNearThreshold)
 	if err != nil {
 		return nil, err
 	}
@@ -4188,7 +4199,7 @@ func (c *Collection) writeCommand(socket *mongoSocket, safeOp *queryOp, op inter
 	debugf("Write command result: %#v (err=%v)", result, err)
 	lerr = &LastError{
 		UpdatedExisting: result.N > 0 && len(result.Upserted) == 0,
-		N: result.N,
+		N:               result.N,
 	}
 	if len(result.Upserted) > 0 {
 		lerr.UpsertedId = result.Upserted[0].Id
