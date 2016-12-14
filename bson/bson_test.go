@@ -39,8 +39,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ReturnPath/mgo/bson"
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/yaml.v2"
 )
 
@@ -606,6 +606,8 @@ var marshalErrorItems = []testItemType{
 		"Option ,inline needs a map with string keys in struct bson_test.inlineBadKeyMap"},
 	{&inlineMap{A: 1, M: map[string]interface{}{"a": 1}},
 		`Can't have key "a" in inlined map; conflicts with struct field`},
+	{bson.M{"": string("hello\xF4\x90\x80\x80")},
+		`string value is not valid utf8`},
 }
 
 func (s *S) TestMarshalErrorItems(c *C) {

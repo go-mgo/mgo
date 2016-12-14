@@ -35,6 +35,7 @@ import (
 	"reflect"
 	"strconv"
 	"time"
+	"unicode/utf8"
 )
 
 // --------------------------------------------------------------------------
@@ -294,6 +295,9 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 			}
 		default:
 			e.addElemName(0x02, name)
+			if !utf8.ValidString(s) {
+				panic("string value is not valid utf8")
+			}
 			e.addStr(s)
 		}
 
