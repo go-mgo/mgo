@@ -75,22 +75,23 @@ const (
 // multiple goroutines will cause them to share the same underlying socket.
 // See the documentation on Session.SetMode for more details.
 type Session struct {
-	m                sync.RWMutex
-	cluster_         *mongoCluster
-	slaveSocket      *mongoSocket
-	masterSocket     *mongoSocket
-	slaveOk          bool
-	consistency      Mode
-	queryConfig      query
-	safeOp           *queryOp
-	syncTimeout      time.Duration
-	sockTimeout      time.Duration
-	defaultdb        string
-	sourcedb         string
-	dialCred         *Credential
-	creds            []Credential
-	poolLimit        int
-	bypassValidation bool
+	m                 sync.RWMutex
+	cluster_          *mongoCluster
+	slaveSocket       *mongoSocket
+	masterSocket      *mongoSocket
+	slaveOk           bool
+	consistency       Mode
+	queryConfig       query
+	safeOp            *queryOp
+	syncTimeout       time.Duration
+	sockTimeout       time.Duration
+	defaultdb         string
+	sourcedb          string
+	dialCred          *Credential
+	creds             []Credential
+	poolLimit         int
+	bypassValidation  bool
+	pingNearThreshold time.Duration
 }
 
 type Database struct {
@@ -524,10 +525,11 @@ func extractURL(s string) (*urlInfo, error) {
 func newSession(consistency Mode, cluster *mongoCluster, timeout time.Duration) (session *Session) {
 	cluster.Acquire()
 	session = &Session{
-		cluster_:    cluster,
-		syncTimeout: timeout,
-		sockTimeout: timeout,
-		poolLimit:   4096,
+		cluster_:          cluster,
+		syncTimeout:       timeout,
+		sockTimeout:       timeout,
+		poolLimit:         4096,
+		pingNearThreshold: 15 * time.Millisecond,
 	}
 	debugf("New session %p on cluster %p", session, cluster)
 	session.SetMode(consistency, true)
@@ -1769,6 +1771,16 @@ func (s *Session) SetPoolLimit(limit int) {
 func (s *Session) SetBypassValidation(bypass bool) {
 	s.m.Lock()
 	s.bypassValidation = bypass
+	s.m.Unlock()
+}
+
+// SetPingNearThreshold sets the threshold which helps the driver to select the nearest server.
+// When it comes to find the best server for the query the driver prefers near servers.
+// "Near" is defined as ping < 15ms by default.
+// SetPingNearThreshold overwrites that duration of 15ms with the given.
+func (s *Session) SetPingNearThreshold(near time.Duration) {
+	s.m.Lock()
+	s.pingNearThreshold = near
 	s.m.Unlock()
 }
 
@@ -4437,7 +4449,7 @@ func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 	}
 
 	// Still not good.  We need a new socket.
-	sock, err := s.cluster().AcquireSocket(s.consistency, slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags, s.poolLimit)
+	sock, err := s.cluster().AcquireSocket(s.consistency, slaveOk && s.slaveOk, s.syncTimeout, s.sockTimeout, s.queryConfig.op.serverTags, s.poolLimit, s.pingNearThreshold)
 	if err != nil {
 		return nil, err
 	}
