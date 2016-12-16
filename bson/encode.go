@@ -54,6 +54,7 @@ var (
 	typeTime           = reflect.TypeOf(time.Time{})
 	typeString         = reflect.TypeOf("")
 	typeJSONNumber     = reflect.TypeOf(json.Number(""))
+	typeTimeDuration   = reflect.TypeOf(time.Duration(0))
 )
 
 const itoaCacheSize = 32
@@ -325,7 +326,11 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 			} else {
 				e.addElemName(0xFF, name)
 			}
+		case typeTimeDuration:
+			// Stored as int64
+			e.addElemName(0x12, name)
 
+			e.addInt64(int64(v.Int()/1e6))
 		default:
 			i := v.Int()
 			if (minSize || v.Type().Kind() != reflect.Int64) && i >= math.MinInt32 && i <= math.MaxInt32 {
