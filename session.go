@@ -4647,8 +4647,10 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 			var lerr LastError
 			for i, updateOp := range updateOps {
 				oplerr, err := c.writeOpQuery(socket, safeOp, updateOp, ordered)
-				lerr.N += oplerr.N
-				lerr.modified += oplerr.modified
+				if oplerr != nil {
+					lerr.N += oplerr.N
+					lerr.modified += oplerr.modified
+				}
 				if err != nil {
 					lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
 					if ordered {
@@ -4665,8 +4667,10 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 			var lerr LastError
 			for i, deleteOp := range deleteOps {
 				oplerr, err := c.writeOpQuery(socket, safeOp, deleteOp, ordered)
-				lerr.N += oplerr.N
-				lerr.modified += oplerr.modified
+				if oplerr != nil {
+					lerr.N += oplerr.N
+					lerr.modified += oplerr.modified
+				}
 				if err != nil {
 					lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
 					if ordered {
