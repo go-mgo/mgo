@@ -80,6 +80,10 @@ func (t *transaction) String() string {
 	return string(t.token())
 }
 
+func (t *transaction) valid() bool {
+	return t.Id.Valid()
+}
+
 func (t *transaction) done() bool {
 	return t.State == tapplied || t.State == taborted
 }
@@ -87,6 +91,9 @@ func (t *transaction) done() bool {
 func (t *transaction) token() token {
 	if t.Nonce == "" {
 		panic("transaction has no nonce")
+	}
+	if !t.valid() {
+		panic("transaction is not valid")
 	}
 	return tokenFor(t)
 }
@@ -115,6 +122,8 @@ NextOp:
 // is composed by t's id and a nonce. If t already has
 // a nonce assigned to it, it will be used, otherwise
 // a new nonce will be generated.
+//
+// This function assumes that the transaction is valid.
 func tokenFor(t *transaction) token {
 	nonce := t.Nonce
 	if nonce == "" {

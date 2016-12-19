@@ -219,6 +219,10 @@ var errPreReqs = fmt.Errorf("transaction has pre-requisites and force is false")
 // is false, errPreReqs will be returned. Otherwise, the current
 // tip revision numbers for all the documents are returned.
 func (f *flusher) prepare(t *transaction, force bool) (revnos []int64, err error) {
+	if !t.valid() {
+		return nil, fmt.Errorf("invalid transaction %s", t.Id)
+	}
+
 	if t.State != tpreparing {
 		return f.rescan(t, force)
 	}
@@ -373,6 +377,10 @@ func (f *flusher) unstashToken(tt token, dkey docKey) error {
 }
 
 func (f *flusher) rescan(t *transaction, force bool) (revnos []int64, err error) {
+	if !t.valid() {
+		return fmt.Errorf("invalid transaction %s", t.Id)
+	}
+
 	f.debugf("Rescanning %s", t)
 	if t.State != tprepared {
 		panic(fmt.Errorf("rescanning transaction in invalid state: %q", t.State))
@@ -695,6 +703,10 @@ func (f *flusher) checkpoint(t *transaction, revnos []int64) error {
 }
 
 func (f *flusher) apply(t *transaction, pull map[bson.ObjectId]*transaction) error {
+	if !t.valid() {
+		return fmt.Errorf("invalid transaction %s", t.Id)
+	}
+
 	f.debugf("Applying transaction %s", t)
 	if t.State != tapplying {
 		panic(fmt.Errorf("applying transaction in invalid state: %q", t.State))
