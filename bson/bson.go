@@ -170,8 +170,8 @@ type ObjectId string
 // ObjectIdHex returns an ObjectId from the provided hex representation.
 // Calling this function with an invalid hex representation will
 // cause a runtime panic. See the IsObjectIdHex function.
-func ObjectIdHex(s string) ObjectId {
-	d, err := hex.DecodeString(s)
+func ObjectIdHex(s fmt.Stringer) ObjectId {
+	d, err := hex.DecodeString(s.String())
 	if err != nil || len(d) != 12 {
 		panic(fmt.Sprintf("invalid input to ObjectIdHex: %q", s))
 	}
@@ -180,11 +180,11 @@ func ObjectIdHex(s string) ObjectId {
 
 // IsObjectIdHex returns whether s is a valid hex representation of
 // an ObjectId. See the ObjectIdHex function.
-func IsObjectIdHex(s string) bool {
-	if len(s) != 24 {
+func IsObjectIdHex(s fmt.Stringer) bool {
+	if len(s.String()) != 24 {
 		return false
 	}
-	_, err := hex.DecodeString(s)
+	_, err := hex.DecodeString(s.String())
 	return err == nil
 }
 
