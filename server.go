@@ -258,6 +258,12 @@ func (server *mongoServer) Info() *mongoServerInfo {
 	return info
 }
 
+func (server *mongoServer) confirmMaster() {
+	server.Lock()
+	server.abended = false
+	server.Unlock()
+}
+
 func (server *mongoServer) hasTags(serverTags []bson.D) bool {
 NextTagSet:
 	for _, tags := range serverTags {
