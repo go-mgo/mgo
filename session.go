@@ -2310,7 +2310,6 @@ func (c *Collection) NewIter(session *Session, firstBatch []bson.Raw, cursorId i
 	}
 	if cursorId != 0 {
 		if socket != nil && socket.ServerInfo().MaxWireVersion >= 4 {
-			iter.findCmd = true
 			iter.docsBeforeMore = len(firstBatch)
 		}
 		iter.op.cursorId = cursorId
