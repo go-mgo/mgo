@@ -2270,7 +2270,8 @@ func (p *Pipe) Iter() *Iter {
 // however this can be changed by setting the session Batch method.
 //
 // When using MongoDB 3.2+ NewIter supports re-using an existing cursor on the
-// server.
+// server. Ensure the connection has been established (i.e. by calling
+// session.Ping()) before calling NewIter.
 func (c *Collection) NewIter(session *Session, firstBatch []bson.Raw, cursorId int64, err error) *Iter {
 	var server *mongoServer
 	csession := c.Database.Session
