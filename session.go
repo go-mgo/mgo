@@ -4614,17 +4614,18 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 
 	if socket.ServerInfo().MaxWireVersion >= 2 {
 		// Servers with a more recent write protocol benefit from write commands.
-		if op, ok := op.(*insertOp); ok && len(op.documents) > 1000 {
+		switch ops := op.(type) {
+		case *insertOp:
 			var lerr LastError
 
 			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
-			all := op.documents
+			all := ops.documents
 			for i := 0; i < len(all); i += 1000 {
 				l := i + 1000
 				if l > len(all) {
 					l = len(all)
 				}
-				op.documents = all[i:l]
+				ops.documents = all[i:l]
 				oplerr, err := c.writeOpCommand(socket, safeOp, op, ordered, bypassValidation)
 				lerr.N += oplerr.N
 				lerr.modified += oplerr.modified
@@ -4633,8 +4634,34 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 						oplerr.ecases[ei].Index += i
 					}
 					lerr.ecases = append(lerr.ecases, oplerr.ecases...)
-					if op.flags&1 == 0 {
+					if ops.flags&1 == 0 {
 						return &lerr, err
+					}
+				}
+			}
+			if len(lerr.ecases) != 0 {
+				return &lerr, lerr.ecases[0].Err
+			}
+			return &lerr, nil
+		case bulkUpdateOp:
+			var lerr LastError
+			all := ops
+			for i := 0; i < len(all); i += 1000 {
+				l := i + 1000
+				if l > len(all) {
+					l = len(all)
+				}
+				ops = all[i:l]
+				oplerr, err := c.writeOpCommand(socket, safeOp, ops, ordered, bypassValidation)
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
+				if err != nil {
+					for ei := range oplerr.ecases {
+						oplerr.ecases[ei].Index += i
+					}
+					lerr.ecases = append(lerr.ecases, oplerr.ecases...)
+					if ordered {
+						break
 					}
 				}
 			}
