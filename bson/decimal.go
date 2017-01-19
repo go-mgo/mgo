@@ -308,3 +308,13 @@ func muladd(h, l uint64, mul uint32, add uint32) (resh, resl uint64, overflow ui
 
 	return (d<<32 | c&(1<<32-1)), (b<<32 | a&(1<<32-1)), uint32(d >> 32)
 }
+
+func (d Decimal128) MarshalJSON() ([]byte, error) {
+	return []byte(d.String()), nil
+}
+
+func (d *Decimal128) UnmarshalJSON(data []byte) error {
+	var err error
+	*d, err = ParseDecimal128(string(data))
+	return err
+}
