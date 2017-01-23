@@ -47,32 +47,30 @@ import (
 
 type mongoCluster struct {
 	sync.RWMutex
-	serverSynced  sync.Cond
-	userSeeds     []string
-	dynaSeeds     []string
-	servers       mongoServers
-	masters       mongoServers
-	references    int
-	syncing       bool
-	direct        bool
-	failFast      bool
-	syncCount     uint
-	setName       string
-	cachedIndex   map[string]bool
-	sync          chan bool
-	dial          dialer
-	maxSocketUses int
+	serverSynced sync.Cond
+	userSeeds    []string
+	dynaSeeds    []string
+	servers      mongoServers
+	masters      mongoServers
+	references   int
+	syncing      bool
+	direct       bool
+	failFast     bool
+	syncCount    uint
+	setName      string
+	cachedIndex  map[string]bool
+	sync         chan bool
+	dial         dialer
 }
 
-func newCluster(userSeeds []string, direct, failFast bool, dial dialer, setName string, maxSocketUses int) *mongoCluster {
+func newCluster(userSeeds []string, direct, failFast bool, dial dialer, setName string) *mongoCluster {
 	cluster := &mongoCluster{
-		userSeeds:     userSeeds,
-		references:    1,
-		direct:        direct,
-		failFast:      failFast,
-		dial:          dial,
-		setName:       setName,
-		maxSocketUses: maxSocketUses,
+		userSeeds:  userSeeds,
+		references: 1,
+		direct:     direct,
+		failFast:   failFast,
+		dial:       dial,
+		setName:    setName,
 	}
 	cluster.serverSynced.L = cluster.RWMutex.RLocker()
 	cluster.sync = make(chan bool, 1)
@@ -189,7 +187,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerI
 
 		// It's not clear what would be a good timeout here. Is it
 		// better to wait longer or to retry?
-		socket, _, err := server.AcquireSocket(0, 0, syncTimeout)
+		socket, _, err := server.AcquireSocket(0, syncTimeout)
 		if err != nil {
 			tryerr = err
 			logf("SYNC Failed to get socket to %s: %v", addr, err)
@@ -408,7 +406,7 @@ func (cluster *mongoCluster) server(addr string, tcpaddr *net.TCPAddr) *mongoSer
 	if server != nil {
 		return server
 	}
-	return newServer(addr, tcpaddr, cluster.sync, cluster.dial, cluster.maxSocketUses)
+	return newServer(addr, tcpaddr, cluster.sync, cluster.dial)
 }
 
 func resolveAddr(addr string) (*net.TCPAddr, error) {
@@ -580,7 +578,7 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 // AcquireSocket returns a socket to a server in the cluster.  If slaveOk is
 // true, it will attempt to return a socket to a slave server.  If it is
 // false, the socket will necessarily be to a master server.
-func (cluster *mongoCluster) AcquireSocket(mode Mode, slaveOk bool, syncTimeout time.Duration, socketTimeout time.Duration, serverTags []bson.D, poolLimit, minPoolSize int) (s *mongoSocket, err error) {
+func (cluster *mongoCluster) AcquireSocket(mode Mode, slaveOk bool, syncTimeout time.Duration, socketTimeout time.Duration, serverTags []bson.D, poolLimit int) (s *mongoSocket, err error) {
 	var started time.Time
 	var syncCount uint
 	warnedLimit := false
@@ -625,7 +623,7 @@ func (cluster *mongoCluster) AcquireSocket(mode Mode, slaveOk bool, syncTimeout 
 			continue
 		}
 
-		s, abended, err := server.AcquireSocket(poolLimit, minPoolSize, socketTimeout)
+		s, abended, err := server.AcquireSocket(poolLimit, socketTimeout)
 		if err == errPoolLimit {
 			if !warnedLimit {
 				warnedLimit = true

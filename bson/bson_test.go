@@ -39,8 +39,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lyft/mgo/bson"
 	. "gopkg.in/check.v1"
+	"github.com/lyft/mgo/bson"
 	"gopkg.in/yaml.v2"
 )
 
@@ -1055,7 +1055,7 @@ type inlineBadKeyMap struct {
 }
 type inlineUnexported struct {
 	M          map[string]interface{} ",inline"
-	unexported ",inline"
+	unexported         ",inline"
 }
 type unexported struct {
 	A int

@@ -27,7 +27,6 @@
 package mgo
 
 import (
-	"container/list"
 	"errors"
 	"net"
 	"sort"
@@ -45,7 +44,7 @@ type mongoServer struct {
 	Addr          string
 	ResolvedAddr  string
 	tcpaddr       *net.TCPAddr
-	unusedSockets *list.List
+	unusedSockets []*mongoSocket
 	liveSockets   []*mongoSocket
 	closed        bool
 	abended       bool
@@ -56,7 +55,6 @@ type mongoServer struct {
 	pingCount     uint32
 	pingWindow    [6]time.Duration
 	info          *mongoServerInfo
-	maxSocketUses int
 }
 
 type dialer struct {
@@ -78,17 +76,15 @@ type mongoServerInfo struct {
 
 var defaultServerInfo mongoServerInfo
 
-func newServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer, maxSocketUses int) *mongoServer {
+func newServer(addr string, tcpaddr *net.TCPAddr, sync chan bool, dial dialer) *mongoServer {
 	server := &mongoServer{
-		Addr:          addr,
-		ResolvedAddr:  tcpaddr.String(),
-		tcpaddr:       tcpaddr,
-		unusedSockets: list.New(),
-		sync:          sync,
-		dial:          dial,
-		info:          &defaultServerInfo,
-		pingValue:     time.Hour, // Push it back before an actual ping.
-		maxSocketUses: maxSocketUses,
+		Addr:         addr,
+		ResolvedAddr: tcpaddr.String(),
+		tcpaddr:      tcpaddr,
+		sync:         sync,
+		dial:         dial,
+		info:         &defaultServerInfo,
+		pingValue:    time.Hour, // Push it back before an actual ping.
 	}
 	go server.pinger(true)
 	return server
@@ -105,7 +101,7 @@ var errServerClosed = errors.New("server was closed")
 // If the poolLimit argument is greater than zero and the number of sockets in
 // use in this server is greater than the provided limit, errPoolLimit is
 // returned.
-func (server *mongoServer) AcquireSocket(poolLimit, minPoolLimit int, timeout time.Duration) (socket *mongoSocket, abended bool, err error) {
+func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (socket *mongoSocket, abended bool, err error) {
 	for {
 		server.Lock()
 		abended = server.abended
@@ -113,13 +109,15 @@ func (server *mongoServer) AcquireSocket(poolLimit, minPoolLimit int, timeout ti
 			server.Unlock()
 			return nil, abended, errServerClosed
 		}
-		n := server.unusedSockets.Len()
+		n := len(server.unusedSockets)
 		if poolLimit > 0 && len(server.liveSockets)-n >= poolLimit {
 			server.Unlock()
 			return nil, false, errPoolLimit
 		}
-		if n > 0 && len(server.liveSockets) >= minPoolLimit {
-			socket = server.unusedSockets.Remove(server.unusedSockets.Front()).(*mongoSocket)
+		if n > 0 {
+			socket = server.unusedSockets[n-1]
+			server.unusedSockets[n-1] = nil // Help GC.
+			server.unusedSockets = server.unusedSockets[:n-1]
 			info := server.info
 			server.Unlock()
 			err = socket.InitialAcquire(info, timeout)
@@ -183,7 +181,7 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 	logf("Connection to %s established.", server.Addr)
 
 	stats.conn(+1, master)
-	return newSocket(server, conn, timeout, server.maxSocketUses), nil
+	return newSocket(server, conn, timeout), nil
 }
 
 // Close forces closing all sockets that are alive, whether
@@ -192,6 +190,7 @@ func (server *mongoServer) Close() {
 	server.Lock()
 	server.closed = true
 	liveSockets := server.liveSockets
+	unusedSockets := server.unusedSockets
 	server.liveSockets = nil
 	server.unusedSockets = nil
 	server.Unlock()
@@ -200,13 +199,16 @@ func (server *mongoServer) Close() {
 		s.Close()
 		liveSockets[i] = nil
 	}
+	for i := range unusedSockets {
+		unusedSockets[i] = nil
+	}
 }
 
 // RecycleSocket puts socket back into the unused cache.
 func (server *mongoServer) RecycleSocket(socket *mongoSocket) {
 	server.Lock()
 	if !server.closed {
-		server.unusedSockets.PushBack(socket)
+		server.unusedSockets = append(server.unusedSockets, socket)
 	}
 	server.Unlock()
 }
@@ -224,15 +226,6 @@ func removeSocket(sockets []*mongoSocket, socket *mongoSocket) []*mongoSocket {
 	return sockets
 }
 
-func removeSocketFromList(l *list.List, socket *mongoSocket) {
-	for e := l.Front(); e != nil; e = e.Next() {
-		if e.Value == socket {
-			l.Remove(e)
-			break
-		}
-	}
-}
-
 // AbendSocket notifies the server that the given socket has terminated
 // abnormally, and thus should be discarded rather than cached.
 func (server *mongoServer) AbendSocket(socket *mongoSocket) {
@@ -243,7 +236,7 @@ func (server *mongoServer) AbendSocket(socket *mongoSocket) {
 		return
 	}
 	server.liveSockets = removeSocket(server.liveSockets, socket)
-	removeSocketFromList(server.unusedSockets, socket)
+	server.unusedSockets = removeSocket(server.unusedSockets, socket)
 	server.Unlock()
 	// Maybe just a timeout, but suggest a cluster sync up just in case.
 	select {
@@ -308,7 +301,7 @@ func (server *mongoServer) pinger(loop bool) {
 			time.Sleep(delay)
 		}
 		op := op
-		socket, _, err := server.AcquireSocket(0, 0, delay)
+		socket, _, err := server.AcquireSocket(0, delay)
 		if err == nil {
 			start := time.Now()
 			_, _ = socket.SimpleQuery(&op)
@@ -445,7 +438,7 @@ func (servers *mongoServers) BestFit(mode Mode, serverTags []bson.D) *mongoServe
 		case absDuration(next.pingValue-best.pingValue) > 15*time.Millisecond:
 			// Prefer nearest server.
 			swap = next.pingValue < best.pingValue
-		case len(next.liveSockets)-next.unusedSockets.Len() < len(best.liveSockets)-best.unusedSockets.Len():
+		case len(next.liveSockets)-len(next.unusedSockets) < len(best.liveSockets)-len(best.unusedSockets):
 			// Prefer servers with less connections.
 			swap = true
 		}
