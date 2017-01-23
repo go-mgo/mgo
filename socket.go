@@ -53,6 +53,7 @@ type mongoSocket struct {
 	gotNonce      sync.Cond
 	dead          error
 	serverInfo    *mongoServerInfo
+	expiryTime    *time.Time // time in future when this socket should be expired
 }
 
 type queryOpFlags uint32
@@ -177,12 +178,13 @@ type requestInfo struct {
 	replyFunc replyFunc
 }
 
-func newSocket(server *mongoServer, conn net.Conn, timeout time.Duration) *mongoSocket {
+func newSocket(server *mongoServer, conn net.Conn, timeout time.Duration, expiryTime *time.Time) *mongoSocket {
 	socket := &mongoSocket{
 		conn:       conn,
 		addr:       server.Addr,
 		server:     server,
 		replyFuncs: make(map[uint32]replyFunc),
+		expiryTime: expiryTime,
 	}
 	socket.gotNonce.L = &socket.Mutex
 	if err := socket.InitialAcquire(server.Info(), timeout); err != nil {
@@ -225,6 +227,13 @@ func (socket *mongoSocket) InitialAcquire(serverInfo *mongoServerInfo, timeout t
 		dead := socket.dead
 		socket.Unlock()
 		return dead
+	}
+	if socket.expiryTime != nil && time.Now().After(*socket.expiryTime) {
+		stats.socketsExpired(+1)
+		debugf("socket: %p cannot use socket - max connection reuse time expired", socket)
+		socket.Unlock()
+		socket.Close()
+		return errors.New("Socket reuse time expired")
 	}
 	socket.references++
 	socket.serverInfo = serverInfo

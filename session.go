@@ -276,6 +276,7 @@ func ParseURL(url string) (*DialInfo, error) {
 	source := ""
 	setName := ""
 	poolLimit := 0
+	maxSocketReuseTimeSecs := 0
 	for k, v := range uinfo.options {
 		switch k {
 		case "authSource":
@@ -291,6 +292,11 @@ func ParseURL(url string) (*DialInfo, error) {
 			if err != nil {
 				return nil, errors.New("bad value for maxPoolSize: " + v)
 			}
+		case "maxSocketReuseTimeSecs":
+			maxSocketReuseTimeSecs, err = strconv.Atoi(v)
+			if err != nil {
+				return nil, errors.New("bad value for maxSocketReuseTime: " + v)
+			}
 		case "connect":
 			if v == "direct" {
 				direct = true
@@ -305,16 +311,17 @@ func ParseURL(url string) (*DialInfo, error) {
 		}
 	}
 	info := DialInfo{
-		Addrs:          uinfo.addrs,
-		Direct:         direct,
-		Database:       uinfo.db,
-		Username:       uinfo.user,
-		Password:       uinfo.pass,
-		Mechanism:      mechanism,
-		Service:        service,
-		Source:         source,
-		PoolLimit:      poolLimit,
-		ReplicaSetName: setName,
+		Addrs:              uinfo.addrs,
+		Direct:             direct,
+		Database:           uinfo.db,
+		Username:           uinfo.user,
+		Password:           uinfo.pass,
+		Mechanism:          mechanism,
+		Service:            service,
+		Source:             source,
+		PoolLimit:          poolLimit,
+		ReplicaSetName:     setName,
+		MaxSocketReuseTime: time.Duration(maxSocketReuseTimeSecs),
 	}
 	return &info, nil
 }
@@ -381,6 +388,10 @@ type DialInfo struct {
 	// See Session.SetPoolLimit for details.
 	PoolLimit int
 
+	// Max time for a socket before it can no longer be reused. Set 0 to disable
+	// Default: 0
+	MaxSocketReuseTime time.Duration
+
 	// DialServer optionally specifies the dial function for establishing
 	// connections with the MongoDB servers.
 	DialServer func(addr *ServerAddr) (net.Conn, error)
@@ -419,7 +430,7 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 		}
 		addrs[i] = addr
 	}
-	cluster := newCluster(addrs, info.Direct, info.FailFast, dialer{info.Dial, info.DialServer}, info.ReplicaSetName)
+	cluster := newCluster(addrs, info.Direct, info.FailFast, dialer{info.Dial, info.DialServer}, info.ReplicaSetName, info.MaxSocketReuseTime)
 	session := newSession(Eventual, cluster, info.Timeout)
 	session.defaultdb = info.Database
 	if session.defaultdb == "" {
