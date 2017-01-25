@@ -41,7 +41,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/mgo.v2-unstable/bson"
+	"github.com/DroiTaipei/mgo/bson"
 )
 
 type Mode int
@@ -2776,7 +2776,8 @@ func (q *Query) Limit(n int) *Query {
 	switch {
 	case n == 1:
 		q.limit = 1
-		q.op.limit = -1
+		// Modify by Ray
+		q.op.limit = 1
 	case n == math.MinInt32: // -MinInt32 == -MinInt32
 		q.limit = math.MaxInt32
 		q.op.limit = math.MinInt32 + 1
@@ -3069,7 +3070,7 @@ Error:
 // unmarshalled into by gobson.  This function blocks until either a result
 // is available or an error happens.  For example:
 //
-//     err := collection.Find(bson.M{"a", 1}).One(&result)
+//     err := collection.Find(bson.M{"a": 1}).One(&result)
 //
 // In case the resulting document includes a field named $err or errmsg, which
 // are standard ways for MongoDB to return query errors, the returned err will
@@ -4305,11 +4306,10 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 	var doc valueResult
 	for i := 0; i < maxUpsertRetries; i++ {
 		err = session.DB(dbname).Run(&cmd, &doc)
-
 		if err == nil {
 			break
 		}
-		if change.Upsert && IsDup(err) {
+		if change.Upsert && IsDup(err) && i+1 < maxUpsertRetries {
 			// Retry duplicate key errors on upserts.
 			// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
 			continue
@@ -4643,14 +4643,20 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 			}
 			return &lerr, nil
 		}
-		if updateOps, ok := op.(bulkUpdateOp); ok {
+		if updateOp, ok := op.(bulkUpdateOp); ok && len(updateOp) > 1000 {
 			var lerr LastError
-			for i, updateOp := range updateOps {
-				oplerr, err := c.writeOpQuery(socket, safeOp, updateOp, ordered)
-				if oplerr != nil {
-					lerr.N += oplerr.N
-					lerr.modified += oplerr.modified
+
+			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
+			for i := 0; i < len(updateOp); i += 1000 {
+				l := i + 1000
+				if l > len(updateOp) {
+					l = len(updateOp)
 				}
+
+				oplerr, err := c.writeOpCommand(socket, safeOp, updateOp[i:l], ordered, bypassValidation)
+
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
 				if err != nil {
 					lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
 					if ordered {
@@ -4663,14 +4669,20 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 			}
 			return &lerr, nil
 		}
-		if deleteOps, ok := op.(bulkDeleteOp); ok {
+		if deleteOps, ok := op.(bulkDeleteOp); ok && len(deleteOps) > 1000 {
 			var lerr LastError
-			for i, deleteOp := range deleteOps {
-				oplerr, err := c.writeOpQuery(socket, safeOp, deleteOp, ordered)
-				if oplerr != nil {
-					lerr.N += oplerr.N
-					lerr.modified += oplerr.modified
+
+			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
+			for i := 0; i < len(deleteOps); i += 1000 {
+				l := i + 1000
+				if l > len(deleteOps) {
+					l = len(deleteOps)
 				}
+
+				oplerr, err := c.writeOpCommand(socket, safeOp, deleteOps[i:l], ordered, bypassValidation)
+
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
 				if err != nil {
 					lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
 					if ordered {
@@ -4684,6 +4696,40 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 			return &lerr, nil
 		}
 		return c.writeOpCommand(socket, safeOp, op, ordered, bypassValidation)
+	} else if updateOps, ok := op.(bulkUpdateOp); ok {
+		var lerr LastError
+		for i, updateOp := range updateOps {
+			oplerr, err := c.writeOpQuery(socket, safeOp, updateOp, ordered)
+			lerr.N += oplerr.N
+			lerr.modified += oplerr.modified
+			if err != nil {
+				lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
+				if ordered {
+					break
+				}
+			}
+		}
+		if len(lerr.ecases) != 0 {
+			return &lerr, lerr.ecases[0].Err
+		}
+		return &lerr, nil
+	} else if deleteOps, ok := op.(bulkDeleteOp); ok {
+		var lerr LastError
+		for i, deleteOp := range deleteOps {
+			oplerr, err := c.writeOpQuery(socket, safeOp, deleteOp, ordered)
+			lerr.N += oplerr.N
+			lerr.modified += oplerr.modified
+			if err != nil {
+				lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
+				if ordered {
+					break
+				}
+			}
+		}
+		if len(lerr.ecases) != 0 {
+			return &lerr, lerr.ecases[0].Err
+		}
+		return &lerr, nil
 	}
 	return c.writeOpQuery(socket, safeOp, op, ordered)
 }
