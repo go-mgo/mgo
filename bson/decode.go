@@ -764,6 +764,9 @@ func (d *decoder) readBinary() Binary {
 		// Weird obsolete format with redundant length.
 		b.Data = b.Data[4:]
 	}
+	data := make([]byte, len(b.Data), len(b.Data))
+	copy(data, b.Data)
+	b.Data = data
 	return b
 }
 
