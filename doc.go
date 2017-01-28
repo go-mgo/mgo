@@ -18,7 +18,7 @@
 //     c := session.DB(database).C(collection)
 //     err := c.Find(query).One(&result)
 //
-// New sessions are typically created by calling session.Copy on the
+// New sessions are typically created by calling session. Copy on the
 // initial session obtained at dial time. These new sessions will share
 // the same cluster information and connection pool, and may be easily
 // handed into other methods and functions for organizing logic.
