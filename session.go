@@ -28,6 +28,7 @@ package mgo
 
 import (
 	"crypto/md5"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -279,6 +280,7 @@ func ParseURL(url string) (*DialInfo, error) {
 	source := ""
 	setName := ""
 	poolLimit := 0
+	var dialServer func(addr *ServerAddr) (net.Conn, error) = nil
 	for k, v := range uinfo.options {
 		switch k {
 		case "authSource":
@@ -293,6 +295,10 @@ func ParseURL(url string) (*DialInfo, error) {
 			poolLimit, err = strconv.Atoi(v)
 			if err != nil {
 				return nil, errors.New("bad value for maxPoolSize: " + v)
+			}
+		case "ssl":
+			dialServer = func(addr *ServerAddr) (net.Conn, error) {
+				return tls.Dial("tcp", addr.String(), &tls.Config{})
 			}
 		case "connect":
 			if v == "direct" {
@@ -318,6 +324,7 @@ func ParseURL(url string) (*DialInfo, error) {
 		Source:         source,
 		PoolLimit:      poolLimit,
 		ReplicaSetName: setName,
+		DialServer:     dialServer,
 	}
 	return &info, nil
 }
