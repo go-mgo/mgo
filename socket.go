@@ -232,8 +232,10 @@ func (socket *mongoSocket) InitialAcquire(serverInfo *mongoServerInfo, timeout t
 		stats.socketsExpired(+1)
 		debugf("socket: %p cannot use socket - max connection reuse time expired", socket)
 		socket.Unlock()
-		socket.Close()
-		return errors.New("Socket reuse time expired")
+		err := errors.New("Socket reuse time expired")
+		// terminate the socket and cleanup all socket use counters
+		socket.kill(err, true)
+		return err
 	}
 	socket.references++
 	socket.serverInfo = serverInfo

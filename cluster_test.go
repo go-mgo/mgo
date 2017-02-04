@@ -1638,37 +1638,45 @@ func (s *S) TestPoolLimitMany(c *C) {
 	c.Assert(delay < 6e9, Equals, true)
 }
 
-func (s *S) TestMaxSocketUseTimeExpireAfterRelease(c *C) {
-	if *fast {
-		c.Skip("-fast")
-	}
-	session, err := mgo.Dial("localhost:40011?maxSocketReuseTimeSecs=2")
+// test to ensure that expired sockets are removed from active sockets list
+func (s *S) TestSocketExpiryEnsureSocketClosed(c *C) {
+	var session *mgo.Session
+	var err error
+	session, err = mgo.Dial("localhost:40001?maxPoolSize=1&maxSocketReuseTimeSecs=1")
+
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	stats := mgo.GetStats()
-	for stats.SocketsAlive != 3 {
-		c.Logf("Waiting for all connections to be established (sockets alive currently %d)...", stats.SocketsAlive)
-		stats = mgo.GetStats()
-		time.Sleep(5e8)
-	}
+	// Put one socket in use.
+	c.Assert(session.Ping(), IsNil)
 
-	session2 := session.Copy()
-	defer session2.Close()
-	c.Check(session2.Ping(), IsNil)
-	// refresh will return connection back so they can be recycled
-	session2.Refresh()
-	stats = mgo.GetStats()
-	// connection timeout not expired, we shouldnt expire any connections
-	c.Assert(stats.SocketsExpired, Equals, 0)
-	// wait for enough time to expire the connection
-	time.Sleep(2500 * time.Millisecond)
-	// request a connection, look for recycled connections first and make sure max life time
-	// for connection has not reached
-	c.Check(session2.Ping(), IsNil)
-	// timeout for connection life expired, we should see one connection expired
-	stats = mgo.GetStats()
-	c.Assert(stats.SocketsExpired, Equals, 1)
+	done := make(chan bool)
+	// Now block trying to get another one due to the pool limit.
+	go func() {
+		copy := session.Copy()
+		defer copy.Close()
+		c.Check(copy.Ping(), IsNil)
+		done <- true
+	}()
+
+	// ensure that socket reuse expiry time expires
+	time.Sleep(time.Second)
+
+	// Put the one socket back in the pool, freeing it for the copy session.
+	session.Refresh()
+	timer := time.NewTimer(time.Millisecond*100)
+	select {
+	// waits for copy session to get non-expired new socket
+	case <-done:
+		c.Assert(mgo.GetStats().SocketsExpired, Equals, 1)
+	case <-timer.C:
+		// didnt get socket from our pool of recycled sockets even after waiting
+		// increase the pool limit to break the loop
+		session.SetPoolLimit(2)
+		// give time to copy session finish its processing
+		<-done
+		c.Fail()
+	}
 }
 
 func (s *S) TestSetModeEventualIterBug(c *C) {

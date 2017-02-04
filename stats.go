@@ -28,6 +28,8 @@ package mgo
 
 import (
 	"sync"
+	"encoding/json"
+	"bytes"
 )
 
 var stats *Stats
@@ -77,6 +79,14 @@ type Stats struct {
 	SocketsInUse   int
 	SocketRefs     int
 	SocketsExpired int
+}
+
+// for mostly debugging purpose
+func (stats Stats) String() string {
+	val, _ := json.Marshal(stats)
+	var out bytes.Buffer
+	json.Indent(&out, val, "", "  ")
+	return string(out.Bytes())
 }
 
 func (stats *Stats) cluster(delta int) {

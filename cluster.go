@@ -62,6 +62,7 @@ type mongoCluster struct {
 	sync               chan bool
 	dial               dialer
 	maxSocketReuseTime time.Duration
+	poolLimit 	   int
 }
 
 func newCluster(userSeeds []string, direct, failFast bool, dial dialer, setName string, maxSocketReuseTime time.Duration) *mongoCluster {
@@ -580,7 +581,7 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 // AcquireSocket returns a socket to a server in the cluster.  If slaveOk is
 // true, it will attempt to return a socket to a slave server.  If it is
 // false, the socket will necessarily be to a master server.
-func (cluster *mongoCluster) AcquireSocket(mode Mode, slaveOk bool, syncTimeout time.Duration, socketTimeout time.Duration, serverTags []bson.D, poolLimit int) (s *mongoSocket, err error) {
+func (cluster *mongoCluster) AcquireSocket(mode Mode, slaveOk bool, syncTimeout time.Duration, socketTimeout time.Duration, serverTags []bson.D) (s *mongoSocket, err error) {
 	var started time.Time
 	var syncCount uint
 	warnedLimit := false
@@ -625,7 +626,7 @@ func (cluster *mongoCluster) AcquireSocket(mode Mode, slaveOk bool, syncTimeout 
 			continue
 		}
 
-		s, abended, err := server.AcquireSocket(poolLimit, socketTimeout)
+		s, abended, err := server.AcquireSocket(cluster.poolLimit, socketTimeout)
 		if err == errPoolLimit {
 			if !warnedLimit {
 				warnedLimit = true
