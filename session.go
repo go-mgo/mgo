@@ -2776,8 +2776,7 @@ func (q *Query) Limit(n int) *Query {
 	switch {
 	case n == 1:
 		q.limit = 1
-		// Modify by Ray
-		q.op.limit = 1
+		q.op.limit = -1
 	case n == math.MinInt32: // -MinInt32 == -MinInt32
 		q.limit = math.MaxInt32
 		q.op.limit = math.MinInt32 + 1
