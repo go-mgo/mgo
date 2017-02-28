@@ -225,60 +225,64 @@ func (d *decoder) readDocTo(out reflect.Value) {
 		panic("Unsupported document type for unmarshalling: " + out.Type().String())
 	}
 
-	end := int(d.readInt32())
-	end += d.i - 4
-	if end <= d.i || end > len(d.in) || d.in[end-1] != '\x00' {
-		corrupted()
-	}
-	for d.in[d.i] != '\x00' {
-		kind := d.readByte()
-		name := d.readCStr()
-		if d.i >= end {
+	if outt == typeRaw {
+		d.skipDoc()
+	} else {
+		end := int(d.readInt32())
+		end += d.i - 4
+		if end <= d.i || end > len(d.in) || d.in[end-1] != '\x00' {
 			corrupted()
 		}
-
-		switch outk {
-		case reflect.Map:
-			e := reflect.New(elemType).Elem()
-			if d.readElemTo(e, kind) {
-				k := reflect.ValueOf(name)
-				if convertKey {
-					k = k.Convert(keyType)
-				}
-				out.SetMapIndex(k, e)
+		for d.in[d.i] != '\x00' {
+			kind := d.readByte()
+			name := d.readCStr()
+			if d.i >= end {
+				corrupted()
 			}
-		case reflect.Struct:
-			if outt == typeRaw {
-				d.dropElem(kind)
-			} else {
-				if info, ok := fieldsMap[name]; ok {
-					if info.Inline == nil {
-						d.readElemTo(out.Field(info.Num), kind)
-					} else {
-						d.readElemTo(out.FieldByIndex(info.Inline), kind)
+
+			switch outk {
+			case reflect.Map:
+				e := reflect.New(elemType).Elem()
+				if d.readElemTo(e, kind) {
+					k := reflect.ValueOf(name)
+					if convertKey {
+						k = k.Convert(keyType)
 					}
-				} else if inlineMap.IsValid() {
-					if inlineMap.IsNil() {
-						inlineMap.Set(reflect.MakeMap(inlineMap.Type()))
-					}
-					e := reflect.New(elemType).Elem()
-					if d.readElemTo(e, kind) {
-						inlineMap.SetMapIndex(reflect.ValueOf(name), e)
-					}
-				} else {
+					out.SetMapIndex(k, e)
+				}
+			case reflect.Struct:
+				if outt == typeRaw {
 					d.dropElem(kind)
+				} else {
+					if info, ok := fieldsMap[name]; ok {
+						if info.Inline == nil {
+							d.readElemTo(out.Field(info.Num), kind)
+						} else {
+							d.readElemTo(out.FieldByIndex(info.Inline), kind)
+						}
+					} else if inlineMap.IsValid() {
+						if inlineMap.IsNil() {
+							inlineMap.Set(reflect.MakeMap(inlineMap.Type()))
+						}
+						e := reflect.New(elemType).Elem()
+						if d.readElemTo(e, kind) {
+							inlineMap.SetMapIndex(reflect.ValueOf(name), e)
+						}
+					} else {
+						d.dropElem(kind)
+					}
 				}
+			case reflect.Slice:
 			}
-		case reflect.Slice:
-		}
 
-		if d.i >= end {
+			if d.i >= end {
+				corrupted()
+			}
+		}
+		d.i++ // '\x00'
+		if d.i != end {
 			corrupted()
 		}
-	}
-	d.i++ // '\x00'
-	if d.i != end {
-		corrupted()
 	}
 	d.docType = docType
 
@@ -431,7 +435,40 @@ func (d *decoder) readDocWith(f func(kind byte, name string)) {
 var blackHole = settableValueOf(struct{}{})
 
 func (d *decoder) dropElem(kind byte) {
-	d.readElemTo(blackHole, kind)
+	switch kind {
+	case 0x01, 0x09, 0x11, 0x12: // utc datetime, timestamp, int64
+		d.i += 8
+	case 0x02, 0x0D, 0x0E: // string, javascript, symbol
+		size := int(d.readInt32())
+		if size <= 0 || d.in[d.i+size-1] != 0x00 {
+			corrupted()
+		}
+		d.i += size
+	case 0x03, 0x04: // doc, array
+		d.skipDoc()
+	case 0x05: // binary
+		size := int(d.readInt32())
+		d.i += size + 1 // + 1 for the subtype
+	case 0x06: // undefined
+	case 0x07: // objectID
+		d.i += 12
+	case 0x08:
+		d.i++
+	case 0x0A: // null
+	case 0x0B: // regex
+		d.readCStr()
+		d.readCStr()
+	case 0x0C: // dbpointer
+		size := int(d.readInt32())
+		d.i += size + 12
+	case 0x10: // int32
+		d.i += 4
+	case 0x13: // decimal
+		d.i += 16
+	case 0xFF, 0x7F: //min key, max key
+	default:
+		d.readElemTo(blackHole, kind)
+	}
 }
 
 // Attempt to decode an element from the document and put it into out.
@@ -461,11 +498,11 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 			case typeRawDocElem:
 				out.Set(d.readRawDocElems(outt))
 			default:
-				d.readDocTo(blackHole)
+				d.skipDoc()
 			}
 			return true
 		}
-		d.readDocTo(blackHole)
+		d.skipDoc()
 		return true
 	}
 
@@ -747,6 +784,15 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 
 // --------------------------------------------------------------------------
 // Parsers of basic types.
+
+func (d *decoder) skipDoc() {
+	end := int(d.readInt32())
+	end += d.i - 4
+	if end <= d.i || end > len(d.in) || d.in[end-1] != '\x00' {
+		corrupted()
+	}
+	d.i = end
+}
 
 func (d *decoder) readRegEx() RegEx {
 	re := RegEx{}
