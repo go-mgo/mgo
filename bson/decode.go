@@ -436,31 +436,53 @@ var blackHole = settableValueOf(struct{}{})
 
 func (d *decoder) dropElem(kind byte) {
 	switch kind {
-	case 0x01, 0x09, 0x11, 0x12: // utc datetime, timestamp, int64
+	case 0x01, 0x09, 0x11, 0x12: // double, utc datetime, timestamp, int64
 		d.i += 8
 	case 0x02, 0x0D, 0x0E: // string, javascript, symbol
-		size := int(d.readInt32())
-		if size <= 0 || d.in[d.i+size-1] != 0x00 {
+		l := int(d.readInt32())
+		if l <= 0 || d.i+l >= len(d.in) || d.in[d.i+l-1] != 0x00 {
 			corrupted()
 		}
-		d.i += size
+		d.i += l
 	case 0x03, 0x04: // doc, array
 		d.skipDoc()
 	case 0x05: // binary
-		size := int(d.readInt32())
-		d.i += size + 1 // + 1 for the subtype
+		start := d.i
+		l := int(d.readInt32())
+		k := d.readByte()
+		if k == 0x02 && l > 4 {
+			rl := int(d.readInt32())
+			if rl != l-4 {
+				corrupted()
+			}
+		}
+		d.i += start + l
 	case 0x06: // undefined
 	case 0x07: // objectID
 		d.i += 12
 	case 0x08:
-		d.i++
+		k := d.readByte()
+		if k != 0x00 && k != 0x01 {
+			corrupted()
+		}
 	case 0x0A: // null
 	case 0x0B: // regex
 		d.readCStr()
 		d.readCStr()
 	case 0x0C: // dbpointer
-		size := int(d.readInt32())
-		d.i += size + 12
+		d.dropElem(0x02)
+		if d.i+12 > len(d.in) {
+			corrupted()
+		}
+		d.i += 12
+	case 0x0F:
+		start := d.i
+		l := int(d.readInt32())
+		d.dropElem(0x02) // string
+		d.skipDoc()
+		if d.i != start+l {
+			corrupted()
+		}
 	case 0x10: // int32
 		d.i += 4
 	case 0x13: // decimal
@@ -566,9 +588,13 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 	case 0x0E: // Symbol
 		in = Symbol(d.readStr())
 	case 0x0F: // JavaScript with scope
-		d.i += 4 // Skip length
+		start := d.i
+		l := int(d.readInt32())
 		js := JavaScript{d.readStr(), make(M)}
 		d.readDocTo(reflect.ValueOf(js.Scope))
+		if d.i != start+l {
+			corrupted()
+		}
 		in = js
 	case 0x10: // Int32
 		in = int(d.readInt32())
@@ -805,11 +831,15 @@ func (d *decoder) readBinary() Binary {
 	l := d.readInt32()
 	b := Binary{}
 	b.Kind = d.readByte()
-	b.Data = d.readBytes(l)
-	if b.Kind == 0x02 && len(b.Data) >= 4 {
+	if b.Kind == 0x02 && l > 4 {
 		// Weird obsolete format with redundant length.
-		b.Data = b.Data[4:]
+		rl := d.readInt32()
+		if rl != l-4 {
+			corrupted()
+		}
+		l = rl
 	}
+	b.Data = d.readBytes(l)
 	return b
 }
 
