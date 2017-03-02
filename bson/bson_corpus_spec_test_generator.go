@@ -175,6 +175,11 @@ func testValid(c *C, in []byte, expected []byte, result interface{}) {
 	c.Assert(string(expected), Equals, string(out), Commentf("roundtrip failed for %T, expected '%x' but got '%x'", result, expected, out))
 }
 
+func testDecodeSkip(c *C, in []byte) {
+	err := bson.Unmarshal(in, &struct{}{})
+	c.Assert(err, IsNil)
+}
+
 func testDecodeError(c *C, in []byte, result interface{}) {
 	err := bson.Unmarshal(in, result)
 	c.Assert(err, Not(IsNil))
@@ -198,7 +203,9 @@ func (s *S) Test{{.Name}}(c *C) {
 	{{if .StructTest}}var resultS struct {
 		Element {{.TestDef.GoType}} ` + "`bson:\"{{.TestDef.TestKey}}\"`" + `
 	}
-	testValid(c, b, cb, &resultS){{end -}}
+	testValid(c, b, cb, &resultS){{end}}
+
+	testDecodeSkip(c, b)
 }
 {{end}}
 

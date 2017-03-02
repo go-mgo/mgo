@@ -20,6 +20,11 @@ func testValid(c *C, in []byte, expected []byte, result interface{}) {
 	c.Assert(string(expected), Equals, string(out), Commentf("roundtrip failed for %T, expected '%x' but got '%x'", result, expected, out))
 }
 
+func testDecodeSkip(c *C, in []byte) {
+	err := bson.Unmarshal(in, &struct{}{})
+	c.Assert(err, IsNil)
+}
+
 func testDecodeError(c *C, in []byte, result interface{}) {
 	err := bson.Unmarshal(in, result)
 	c.Assert(err, Not(IsNil))
@@ -37,6 +42,8 @@ func (s *S) TestArray_Empty(c *C) {
 		Element []interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestArray_Single_Element_Array(c *C) {
@@ -51,6 +58,8 @@ func (s *S) TestArray_Single_Element_Array(c *C) {
 		Element []interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestArray_Single_Element_Array_with_index_set_incorrectly_1(c *C) {
@@ -66,6 +75,8 @@ func (s *S) TestArray_Single_Element_Array_with_index_set_incorrectly_1(c *C) {
 		Element []interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestArray_Single_Element_Array_with_index_set_incorrectly(c *C) {
@@ -81,6 +92,8 @@ func (s *S) TestArray_Single_Element_Array_with_index_set_incorrectly(c *C) {
 		Element []interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestArray_Array_length_too_long__eats_outer_terminator(c *C) {
@@ -119,6 +132,8 @@ func (s *S) TestBinary_type_subtype_0x00__Zero_length_(c *C) {
 		Element []byte `bson:"x"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestBinary_type_subtype_0x00(c *C) {
@@ -133,6 +148,8 @@ func (s *S) TestBinary_type_subtype_0x00(c *C) {
 		Element []byte `bson:"x"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestBinary_type_subtype_0x01(c *C) {
@@ -143,6 +160,8 @@ func (s *S) TestBinary_type_subtype_0x01(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestBinary_type_subtype_0x03(c *C) {
@@ -153,6 +172,8 @@ func (s *S) TestBinary_type_subtype_0x03(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestBinary_type_subtype_0x04(c *C) {
@@ -163,6 +184,8 @@ func (s *S) TestBinary_type_subtype_0x04(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestBinary_type_subtype_0x05(c *C) {
@@ -173,6 +196,8 @@ func (s *S) TestBinary_type_subtype_0x05(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestBinary_type_subtype_0x80(c *C) {
@@ -183,6 +208,8 @@ func (s *S) TestBinary_type_subtype_0x80(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestBinary_type_Length_longer_than_document(c *C) {
@@ -237,6 +264,8 @@ func (s *S) TestBoolean_True(c *C) {
 		Element bool `bson:"b"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestBoolean_False(c *C) {
@@ -251,6 +280,8 @@ func (s *S) TestBoolean_False(c *C) {
 		Element bool `bson:"b"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestBoolean_Invalid_boolean_value_of_2(c *C) {
@@ -281,6 +312,8 @@ func (s *S) TestJavascript_Code_Empty_string(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestJavascript_Code_Single_character(c *C) {
@@ -295,6 +328,8 @@ func (s *S) TestJavascript_Code_Single_character(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestJavascript_Code_Multi_character(c *C) {
@@ -309,6 +344,8 @@ func (s *S) TestJavascript_Code_Multi_character(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestJavascript_Code_two_byte_UTF_8____(c *C) {
@@ -323,6 +360,8 @@ func (s *S) TestJavascript_Code_two_byte_UTF_8____(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestJavascript_Code_three_byte_UTF_8____(c *C) {
@@ -337,6 +376,8 @@ func (s *S) TestJavascript_Code_three_byte_UTF_8____(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestJavascript_Code_Embedded_nulls(c *C) {
@@ -351,6 +392,8 @@ func (s *S) TestJavascript_Code_Embedded_nulls(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestJavascript_Code_bad_code_string_length__0__but_no_0x00_either_(c *C) {
@@ -413,6 +456,8 @@ func (s *S) TestJavascript_Code_with_Scope_Empty_code_string__empty_scope(c *C) 
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestJavascript_Code_with_Scope_Non_empty_code_string__empty_scope(c *C) {
@@ -427,6 +472,8 @@ func (s *S) TestJavascript_Code_with_Scope_Non_empty_code_string__empty_scope(c 
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestJavascript_Code_with_Scope_Empty_code_string__non_empty_scope(c *C) {
@@ -441,6 +488,8 @@ func (s *S) TestJavascript_Code_with_Scope_Empty_code_string__non_empty_scope(c 
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestJavascript_Code_with_Scope_Non_empty_code_string_and_non_empty_scope(c *C) {
@@ -455,6 +504,8 @@ func (s *S) TestJavascript_Code_with_Scope_Non_empty_code_string_and_non_empty_s
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestJavascript_Code_with_Scope_Unicode_and_embedded_null_in_code_string__empty_scope(c *C) {
@@ -469,6 +520,8 @@ func (s *S) TestJavascript_Code_with_Scope_Unicode_and_embedded_null_in_code_str
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestJavascript_Code_with_Scope_field_length_zero(c *C) {
@@ -571,6 +624,8 @@ func (s *S) TestDateTime_epoch(c *C) {
 		Element time.Time `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDateTime_positive_ms(c *C) {
@@ -585,6 +640,8 @@ func (s *S) TestDateTime_positive_ms(c *C) {
 		Element time.Time `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDateTime_negative(c *C) {
@@ -599,6 +656,8 @@ func (s *S) TestDateTime_negative(c *C) {
 		Element time.Time `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDateTime_datetime_field_truncated(c *C) {
@@ -617,6 +676,8 @@ func (s *S) TestDBPointer_type__deprecated__DBpointer(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDBPointer_type__deprecated__DBpointer_with_opposite_key_order(c *C) {
@@ -627,6 +688,8 @@ func (s *S) TestDBPointer_type__deprecated__DBpointer_with_opposite_key_order(c 
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDBPointer_type__deprecated__DBpointer_with_extra_keys(c *C) {
@@ -637,6 +700,8 @@ func (s *S) TestDBPointer_type__deprecated__DBpointer_with_extra_keys(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDBPointer_type__deprecated__With_two_byte_UTF_8(c *C) {
@@ -647,6 +712,8 @@ func (s *S) TestDBPointer_type__deprecated__With_two_byte_UTF_8(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDBPointer_type__deprecated__String_with_negative_length(c *C) {
@@ -697,6 +764,8 @@ func (s *S) TestDBRef_DBRef(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDBRef_DBRef_with_database(c *C) {
@@ -707,6 +776,8 @@ func (s *S) TestDBRef_DBRef_with_database(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDBRef_DBRef_with_database_and_additional_fields(c *C) {
@@ -717,6 +788,8 @@ func (s *S) TestDBRef_DBRef_with_database_and_additional_fields(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDBRef_DBRef_with_additional_fields(c *C) {
@@ -727,6 +800,8 @@ func (s *S) TestDBRef_DBRef_with_additional_fields(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDBRef_Document_with_key_names_similar_to_those_of_a_DBRef(c *C) {
@@ -737,6 +812,8 @@ func (s *S) TestDBRef_Document_with_key_names_similar_to_those_of_a_DBRef(c *C) 
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDocument_type__sub_documents__Empty_subdoc(c *C) {
@@ -751,6 +828,8 @@ func (s *S) TestDocument_type__sub_documents__Empty_subdoc(c *C) {
 		Element bson.D `bson:"x"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDocument_type__sub_documents__Empty_string_key_subdoc(c *C) {
@@ -765,6 +844,8 @@ func (s *S) TestDocument_type__sub_documents__Empty_string_key_subdoc(c *C) {
 		Element bson.D `bson:"x"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDocument_type__sub_documents__Single_character_key_subdoc(c *C) {
@@ -779,6 +860,8 @@ func (s *S) TestDocument_type__sub_documents__Single_character_key_subdoc(c *C) 
 		Element bson.D `bson:"x"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDocument_type__sub_documents__Subdocument_length_too_long__eats_outer_terminator(c *C) {
@@ -817,6 +900,8 @@ func (s *S) TestDouble_type__1_0_1(c *C) {
 		Element float64 `bson:"d"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDouble_type__1_0(c *C) {
@@ -831,6 +916,8 @@ func (s *S) TestDouble_type__1_0(c *C) {
 		Element float64 `bson:"d"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDouble_type__1_0001220703125_1(c *C) {
@@ -845,6 +932,8 @@ func (s *S) TestDouble_type__1_0001220703125_1(c *C) {
 		Element float64 `bson:"d"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDouble_type__1_0001220703125(c *C) {
@@ -859,6 +948,8 @@ func (s *S) TestDouble_type__1_0001220703125(c *C) {
 		Element float64 `bson:"d"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDouble_type__2_0001220703125e10_1(c *C) {
@@ -873,6 +964,8 @@ func (s *S) TestDouble_type__2_0001220703125e10_1(c *C) {
 		Element float64 `bson:"d"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDouble_type__2_0001220703125e10(c *C) {
@@ -887,6 +980,8 @@ func (s *S) TestDouble_type__2_0001220703125e10(c *C) {
 		Element float64 `bson:"d"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDouble_type_0_0(c *C) {
@@ -901,6 +996,8 @@ func (s *S) TestDouble_type_0_0(c *C) {
 		Element float64 `bson:"d"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDouble_type__0_0(c *C) {
@@ -915,6 +1012,8 @@ func (s *S) TestDouble_type__0_0(c *C) {
 		Element float64 `bson:"d"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDouble_type_NaN(c *C) {
@@ -929,6 +1028,8 @@ func (s *S) TestDouble_type_NaN(c *C) {
 		Element float64 `bson:"d"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDouble_type_NaN_with_payload(c *C) {
@@ -943,6 +1044,8 @@ func (s *S) TestDouble_type_NaN_with_payload(c *C) {
 		Element float64 `bson:"d"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDouble_type_Inf(c *C) {
@@ -957,6 +1060,8 @@ func (s *S) TestDouble_type_Inf(c *C) {
 		Element float64 `bson:"d"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDouble_type__Inf(c *C) {
@@ -971,6 +1076,8 @@ func (s *S) TestDouble_type__Inf(c *C) {
 		Element float64 `bson:"d"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestDouble_type_double_truncated(c *C) {
@@ -993,6 +1100,8 @@ func (s *S) TestInt32_type_MinValue(c *C) {
 		Element int32 `bson:"i"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestInt32_type_MaxValue(c *C) {
@@ -1007,6 +1116,8 @@ func (s *S) TestInt32_type_MaxValue(c *C) {
 		Element int32 `bson:"i"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestInt32_type__1(c *C) {
@@ -1021,6 +1132,8 @@ func (s *S) TestInt32_type__1(c *C) {
 		Element int32 `bson:"i"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestInt32_type_0(c *C) {
@@ -1035,6 +1148,8 @@ func (s *S) TestInt32_type_0(c *C) {
 		Element int32 `bson:"i"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestInt32_type_1(c *C) {
@@ -1049,6 +1164,8 @@ func (s *S) TestInt32_type_1(c *C) {
 		Element int32 `bson:"i"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestInt32_type_Bad_int32_field_length(c *C) {
@@ -1071,6 +1188,8 @@ func (s *S) TestInt64_type_MinValue(c *C) {
 		Element int64 `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestInt64_type_MaxValue(c *C) {
@@ -1085,6 +1204,8 @@ func (s *S) TestInt64_type_MaxValue(c *C) {
 		Element int64 `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestInt64_type__1(c *C) {
@@ -1099,6 +1220,8 @@ func (s *S) TestInt64_type__1(c *C) {
 		Element int64 `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestInt64_type_0(c *C) {
@@ -1113,6 +1236,8 @@ func (s *S) TestInt64_type_0(c *C) {
 		Element int64 `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestInt64_type_1(c *C) {
@@ -1127,6 +1252,8 @@ func (s *S) TestInt64_type_1(c *C) {
 		Element int64 `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestInt64_type_int64_field_truncated(c *C) {
@@ -1149,6 +1276,8 @@ func (s *S) TestMaxkey_type_Maxkey(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestMinkey_type_Minkey(c *C) {
@@ -1163,6 +1292,8 @@ func (s *S) TestMinkey_type_Minkey(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestMultiple_types_within_the_same_document_All_BSON_types(c *C) {
@@ -1173,6 +1304,8 @@ func (s *S) TestMultiple_types_within_the_same_document_All_BSON_types(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestNull_type_Null(c *C) {
@@ -1187,6 +1320,8 @@ func (s *S) TestNull_type_Null(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestObjectId_All_zeroes(c *C) {
@@ -1201,6 +1336,8 @@ func (s *S) TestObjectId_All_zeroes(c *C) {
 		Element bson.ObjectId `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestObjectId_All_ones(c *C) {
@@ -1215,6 +1352,8 @@ func (s *S) TestObjectId_All_ones(c *C) {
 		Element bson.ObjectId `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestObjectId_Random(c *C) {
@@ -1229,6 +1368,8 @@ func (s *S) TestObjectId_Random(c *C) {
 		Element bson.ObjectId `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestObjectId_OID_truncated(c *C) {
@@ -1251,6 +1392,8 @@ func (s *S) TestRegular_Expression_type_empty_regex_with_no_options(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestRegular_Expression_type_regex_without_options(c *C) {
@@ -1265,6 +1408,8 @@ func (s *S) TestRegular_Expression_type_regex_without_options(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestRegular_Expression_type_regex_with_options(c *C) {
@@ -1279,6 +1424,8 @@ func (s *S) TestRegular_Expression_type_regex_with_options(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestRegular_Expression_type_regex_with_slash(c *C) {
@@ -1293,6 +1440,8 @@ func (s *S) TestRegular_Expression_type_regex_with_slash(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestRegular_Expression_type_flags_not_alphabetized(c *C) {
@@ -1308,6 +1457,8 @@ func (s *S) TestRegular_Expression_type_flags_not_alphabetized(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestRegular_Expression_type_embedded_null_in_pattern(c *C) {
@@ -1338,6 +1489,8 @@ func (s *S) TestString_Empty_string(c *C) {
 		Element string `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestString_Single_character(c *C) {
@@ -1352,6 +1505,8 @@ func (s *S) TestString_Single_character(c *C) {
 		Element string `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestString_Multi_character(c *C) {
@@ -1366,6 +1521,8 @@ func (s *S) TestString_Multi_character(c *C) {
 		Element string `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestString_two_byte_UTF_8____(c *C) {
@@ -1380,6 +1537,8 @@ func (s *S) TestString_two_byte_UTF_8____(c *C) {
 		Element string `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestString_three_byte_UTF_8____(c *C) {
@@ -1394,6 +1553,8 @@ func (s *S) TestString_three_byte_UTF_8____(c *C) {
 		Element string `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestString_Embedded_nulls(c *C) {
@@ -1408,6 +1569,8 @@ func (s *S) TestString_Embedded_nulls(c *C) {
 		Element string `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestString_bad_string_length__0__but_no_0x00_either_(c *C) {
@@ -1466,6 +1629,8 @@ func (s *S) TestSymbol_Empty_string(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestSymbol_Single_character(c *C) {
@@ -1476,6 +1641,8 @@ func (s *S) TestSymbol_Single_character(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestSymbol_Multi_character(c *C) {
@@ -1486,6 +1653,8 @@ func (s *S) TestSymbol_Multi_character(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestSymbol_two_byte_UTF_8____(c *C) {
@@ -1496,6 +1665,8 @@ func (s *S) TestSymbol_two_byte_UTF_8____(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestSymbol_three_byte_UTF_8____(c *C) {
@@ -1506,6 +1677,8 @@ func (s *S) TestSymbol_three_byte_UTF_8____(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestSymbol_Embedded_nulls(c *C) {
@@ -1516,6 +1689,8 @@ func (s *S) TestSymbol_Embedded_nulls(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestSymbol_bad_symbol_length__0__but_no_0x00_either_(c *C) {
@@ -1578,6 +1753,8 @@ func (s *S) TestTimestamp_type_Timestamp___123456789__42_(c *C) {
 		Element interface{} `bson:"a"`
 	}
 	testValid(c, b, cb, &resultS)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestTimestamp_type_Truncated_timestamp_field(c *C) {
@@ -1596,6 +1773,8 @@ func (s *S) TestTop_level_document_validity_Document_with_keys_that_start_with__
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestTop_level_document_validity_Document_that_resembles_extended_JSON__but_with_extra_keys(c *C) {
@@ -1606,6 +1785,8 @@ func (s *S) TestTop_level_document_validity_Document_that_resembles_extended_JSO
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestTop_level_document_validity_Document_that_resembles_extended_JSON__but_with_missing_keys(c *C) {
@@ -1616,6 +1797,8 @@ func (s *S) TestTop_level_document_validity_Document_that_resembles_extended_JSO
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
 
 func (s *S) TestTop_level_document_validity_An_object_size_that_s_too_small_to_even_include_the_object_size__but_is_a_well_formed__empty_object(c *C) {
@@ -1738,4 +1921,6 @@ func (s *S) TestUndefined_type__deprecated__Undefined(c *C) {
 
 	var resultD bson.D
 	testValid(c, b, cb, &resultD)
+
+	testDecodeSkip(c, b)
 }
