@@ -447,7 +447,6 @@ func (d *decoder) dropElem(kind byte) {
 	case 0x03, 0x04: // doc, array
 		d.skipDoc()
 	case 0x05: // binary
-		start := d.i
 		l := int(d.readInt32())
 		k := d.readByte()
 		if k == 0x02 && l > 4 {
@@ -456,7 +455,7 @@ func (d *decoder) dropElem(kind byte) {
 				corrupted()
 			}
 		}
-		d.i += start + l
+		d.i += l
 	case 0x06: // undefined
 	case 0x07: // objectID
 		d.i += 12
@@ -471,9 +470,6 @@ func (d *decoder) dropElem(kind byte) {
 		d.readCStr()
 	case 0x0C: // dbpointer
 		d.dropElem(0x02)
-		if d.i+12 > len(d.in) {
-			corrupted()
-		}
 		d.i += 12
 	case 0x0F:
 		start := d.i
@@ -490,6 +486,10 @@ func (d *decoder) dropElem(kind byte) {
 	case 0xFF, 0x7F: //min key, max key
 	default:
 		d.readElemTo(blackHole, kind)
+	}
+
+	if d.i > len(d.in) {
+		corrupted()
 	}
 }
 
