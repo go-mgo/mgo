@@ -13,6 +13,13 @@ import (
 	"gopkg.in/tomb.v2"
 )
 
+// Constants to define how the DB test instance should be executed
+type ExecType int
+const (
+	LocalProcess  ExecType = 0 // Run MongoDB as local process
+	Docker        ExecType = 1 // Run MongoDB within a docker container
+)
+
 // DBServer controls a MongoDB server process to be used within test suites.
 //
 // The test server is started when Session is called the first time and should
@@ -28,6 +35,8 @@ type DBServer struct {
 	server  *exec.Cmd
 	dbpath  string
 	host    string
+	version string // The request MongoDB version, when running within a container
+	eType   ExecType
 	tomb    tomb.Tomb
 }
 
@@ -36,6 +45,51 @@ type DBServer struct {
 // by the test helper.
 func (dbs *DBServer) SetPath(dbpath string) {
 	dbs.dbpath = dbpath
+}
+
+// SetVersion defines the desired MongoDB version to run within a container.
+// The attribute is ignored when running MongoDB outside a container.
+func (dbs *DBServer) SetVersion(version string) {
+	dbs.version = version	
+}
+
+// SetExecType specifies if the DB instance should run locally or as a container.
+func (dbs *DBServer) SetExecType(execType ExecType) {
+	dbs.eType = execType
+}
+
+// Start Mongo DB within Docker container on host.
+// It assumes Docker is already installed
+func (dbs *DBServer) execContainer(port int) {
+	if dbs.version == "" {
+		dbs.version = "latest"
+	}
+	args := []string{
+		"run",
+		"-p",
+		fmt.Sprintf("%d:%d", port, 27017),
+		"--rm", // Automatically remove the container when it exits
+		"--hostname",
+		dbs.host,
+		"--name",
+		dbs.host,
+		fmt.Sprintf("mongo:%s", dbs.version),
+	}
+	return exec.Command("docker", args...)
+}
+
+// Start Mongo DB as process on host. It assumes Mongo is already installed
+func (dbs *DBServer) execLocal(port int) (*exec.Cmd) {
+	args := []string{
+		"--dbpath", dbs.dbpath,
+		"--bind_ip", "127.0.0.1",
+		"--port", strconv.Itoa(port),
+		"--nssize", "1",
+		"--noprealloc",
+		"--smallfiles",
+		"--nojournal",
+	}
+	return exec.Command("mongod", args...)
 }
 
 func (dbs *DBServer) start() {
@@ -53,18 +107,16 @@ func (dbs *DBServer) start() {
 	addr := l.Addr().(*net.TCPAddr)
 	l.Close()
 	dbs.host = addr.String()
-
-	args := []string{
-		"--dbpath", dbs.dbpath,
-		"--bind_ip", "127.0.0.1",
-		"--port", strconv.Itoa(addr.Port),
-		"--nssize", "1",
-		"--noprealloc",
-		"--smallfiles",
-		"--nojournal",
-	}
+	
 	dbs.tomb = tomb.Tomb{}
-	dbs.server = exec.Command("mongod", args...)
+	switch dbs.eType {
+	case LocalProcess:
+		dbs.server = execLocal(addr.Port)
+	case Docker:
+		dbs.server = execContainer(addr.Port)
+	default:
+		panic("unsupported exec type")
+	}
 	dbs.server.Stdout = &dbs.output
 	dbs.server.Stderr = &dbs.output
 	err = dbs.server.Start()
