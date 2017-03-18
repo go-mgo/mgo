@@ -16,9 +16,9 @@ import (
 // Constants to define how the DB test instance should be executed
 const (
 	// Run MongoDB as local process
-  LocalProcess = "local"
+  LocalProcess = 0
 	// Run MongoDB within a docker container
-  Docker       = "docker"
+  Docker       = 1
 )
 
 // DBServer controls a MongoDB server process to be used within test suites.
@@ -37,7 +37,7 @@ type DBServer struct {
 	dbpath  string
 	host    string
 	version string // The request MongoDB version, when running within a container
-	eType   string
+	eType   int
 	tomb    tomb.Tomb
 }
 
@@ -55,7 +55,7 @@ func (dbs *DBServer) SetVersion(version string) {
 }
 
 // SetExecType specifies if the DB instance should run locally or as a container.
-func (dbs *DBServer) SetExecType(execType string) {
+func (dbs *DBServer) SetExecType(execType int) {
 	dbs.eType = execType
 }
 
@@ -116,7 +116,7 @@ func (dbs *DBServer) start() {
 	case Docker:
 		dbs.server = dbs.execContainer(addr.Port)
 	default:
-		panic("unsupported exec type")
+		panic(fmt.Sprintf("unsupported exec type: %d", dbs.eType))
 	}
 	dbs.server.Stdout = &dbs.output
 	dbs.server.Stderr = &dbs.output
