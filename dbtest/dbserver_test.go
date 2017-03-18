@@ -32,6 +32,18 @@ func (s *S) TearDownTest(c *C) {
 	os.Setenv("CHECK_SESSIONS", s.oldCheckSessions)
 }
 
+func (s *S) TestRunAsDocker(c *C) {
+	var server dbtest.DBServer
+	server.SetPath(c.MkDir())
+	server.SetExecType(dbtest.LocalProcess)
+	defer server.Stop()
+
+	session := server.Session()
+	err := session.DB("mydb").C("mycoll").Insert(M{"a": 1})
+	session.Close()
+	c.Assert(err, IsNil)
+}
+
 func (s *S) TestWipeData(c *C) {
 	var server dbtest.DBServer
 	server.SetPath(c.MkDir())
