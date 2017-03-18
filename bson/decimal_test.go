@@ -33,7 +33,7 @@ import (
 	"regexp"
 	"strings"
 
-	"gopkg.in/mgo.v2/bson"
+	"gopkg.in/CiscoM31/mgo.v2/bson"
 
 	. "gopkg.in/check.v1"
 )

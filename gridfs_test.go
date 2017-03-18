@@ -32,8 +32,8 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	"gopkg.in/CiscoM31/mgo.v2"
+	"gopkg.in/CiscoM31/mgo.v2/bson"
 )
 
 func (s *S) TestGridFSCreate(c *C) {

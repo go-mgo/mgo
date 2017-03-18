@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
-	"gopkg.in/mgo.v2/internal/json"
+	"gopkg.in/CiscoM31/mgo.v2/internal/json"
 	"strconv"
 	"time"
 )
