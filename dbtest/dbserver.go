@@ -70,10 +70,6 @@ func (dbs *DBServer) execContainer(port int) (*exec.Cmd) {
 		"-p",
 		fmt.Sprintf("%d:%d", port, 27017),
 		"--rm", // Automatically remove the container when it exits
-		"--hostname",
-		dbs.host,
-		"--name",
-		dbs.host,
 		fmt.Sprintf("mongo:%s", dbs.version),
 	}
 	return exec.Command("docker", args...)
