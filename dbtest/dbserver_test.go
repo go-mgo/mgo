@@ -35,11 +35,16 @@ func (s *S) TearDownTest(c *C) {
 func (s *S) TestRunAsDocker(c *C) {
 	var server dbtest.DBServer
 	server.SetPath(c.MkDir())
-	server.SetExecType(dbtest.LocalProcess)
+	server.SetVersion("3.4")
+	server.SetExecType(dbtest.Docker)
 	defer server.Stop()
 
 	session := server.Session()
 	err := session.DB("mydb").C("mycoll").Insert(M{"a": 1})
+  buildInfo, err := session.BuildInfo()
+  c.Assert(err, IsNil)
+  c.Assert(buildInfo.VersionAtLeast(3, 4), Equals, true)
+
 	session.Close()
 	c.Assert(err, IsNil)
 }
