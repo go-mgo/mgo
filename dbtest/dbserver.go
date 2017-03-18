@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"gopkg.in/CiscoM31/mgo.v2"
+	"gopkg.in/mgo.v2"
 	"gopkg.in/tomb.v2"
 )
 

@@ -28,7 +28,7 @@ package mgo_test
 
 import (
 	. "gopkg.in/check.v1"
-	"gopkg.in/CiscoM31/mgo.v2"
+	"gopkg.in/mgo.v2"
 )
 
 func (s *S) TestBulkInsert(c *C) {

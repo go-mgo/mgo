@@ -1,7 +1,7 @@
 package txn
 
 import (
-	"gopkg.in/CiscoM31/mgo.v2/bson"
+	"gopkg.in/mgo.v2/bson"
 	"sort"
 )
 

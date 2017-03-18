@@ -3,8 +3,8 @@ package txn
 import (
 	"fmt"
 
-	"gopkg.in/CiscoM31/mgo.v2"
-	"gopkg.in/CiscoM31/mgo.v2/bson"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 func flush(r *Runner, t *transaction) error {
