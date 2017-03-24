@@ -37,7 +37,8 @@ type DBServer struct {
 	dbpath  string
 	host    string
 	version string // The request MongoDB version, when running within a container
-	eType   int
+	eType   int    // Specify whether mongo should run as a container or regular process
+	debug   bool   // Log debug statements
 	tomb    tomb.Tomb
 }
 
@@ -52,6 +53,10 @@ func (dbs *DBServer) SetPath(dbpath string) {
 // The attribute is ignored when running MongoDB outside a container.
 func (dbs *DBServer) SetVersion(version string) {
 	dbs.version = version	
+}
+
+func (dbs *DBServer) SetDebug(enableDebug bool) {
+	dbs.debug = enableDebug
 }
 
 // SetExecType specifies if the DB instance should run locally or as a container.
@@ -73,10 +78,12 @@ func (dbs *DBServer) execContainer(port int) (*exec.Cmd) {
 		fmt.Sprintf("mongo:%s", dbs.version),
 	}
 	cmd := exec.Command("docker", args...)
+	if dbs.debug { fmt.Printf("Pulling Mongo docker image\n") }
 	err := cmd.Run()
   if err != nil {
     panic(err)
   }
+	if dbs.debug { fmt.Printf("Pulled Mongo docker image\n") }
 	args = []string{
 		"run",
 		"-p",
@@ -128,6 +135,7 @@ func (dbs *DBServer) start() {
 	}
 	dbs.server.Stdout = &dbs.output
 	dbs.server.Stderr = &dbs.output
+	if dbs.debug { fmt.Printf("Starting Mongo instance: %v\n", dbs.server.Args) }
 	err = dbs.server.Start()
 	if err != nil {
 		panic(err)
