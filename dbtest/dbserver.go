@@ -65,7 +65,19 @@ func (dbs *DBServer) execContainer(port int) (*exec.Cmd) {
 	if dbs.version == "" {
 		dbs.version = "latest"
 	}
+	// It may take a long time to download the mongo image if the docker image is not installed.
+	// Execute 'docker pull' now to pull the image before executing it. Otherwise Dial() may fail
+	// with a timeout after 10 seconds.
 	args := []string{
+		"pull",
+		fmt.Sprintf("mongo:%s", dbs.version),
+	}
+	cmd := exec.Command("docker", args...)
+	err := cmd.Run()
+  if err != nil {
+    panic(err)
+  }
+	args = []string{
 		"run",
 		"-p",
 		fmt.Sprintf("%d:%d", port, 27017),
@@ -181,8 +193,10 @@ func (dbs *DBServer) Session() *mgo.Session {
 	if dbs.session == nil {
 		mgo.ResetStats()
 		var err error
-		dbs.session, err = mgo.Dial(dbs.host + "/test")
+		dbs.session, err = mgo.DialWithTimeout(dbs.host + "/test", 10 * time.Second)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "---- Unable to dial mongod:\n")
+			fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
 			panic(err)
 		}
 	}
