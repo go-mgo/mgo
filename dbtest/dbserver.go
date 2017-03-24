@@ -84,8 +84,11 @@ func (dbs *DBServer) execContainer(port int) (*exec.Cmd) {
     panic(err)
   }
 	if dbs.debug { fmt.Printf("Pulled Mongo docker image\n") }
+	// On some platforms, we get "chown: changing ownership of '/proc/1/fd/1': Permission denied" unless
+	// we allocate a pseudo tty (-t option)
 	args = []string{
 		"run",
+		"-t",
 		"-p",
 		fmt.Sprintf("%d:%d", port, 27017),
 		"--rm", // Automatically remove the container when it exits
