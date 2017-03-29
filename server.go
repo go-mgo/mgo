@@ -46,15 +46,15 @@ type mongoServer struct {
 	tcpaddr       *net.TCPAddr
 	unusedSockets []*mongoSocket
 	liveSockets   []*mongoSocket
-	closed        bool
-	abended       bool
 	sync          chan bool
 	dial          dialer
 	pingValue     time.Duration
 	pingIndex     int
-	pingCount     uint32
 	pingWindow    [6]time.Duration
 	info          *mongoServerInfo
+	pingCount     uint32
+	closed        bool
+	abended       bool
 }
 
 type dialer struct {
@@ -305,7 +305,7 @@ func (server *mongoServer) pinger(loop bool) {
 		if err == nil {
 			start := time.Now()
 			_, _ = socket.SimpleQuery(&op)
-			delay := time.Now().Sub(start)
+			delay := time.Since(start)
 
 			server.pingWindow[server.pingIndex] = delay
 			server.pingIndex = (server.pingIndex + 1) % len(server.pingWindow)
