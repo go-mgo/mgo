@@ -37,6 +37,20 @@ type Decimal128 struct {
 	h, l uint64
 }
 
+//marshal json
+func (d *Decimal128) MarshalJSON() ([]byte, error) {
+	//do your serializing here
+	return []byte(d.String()), nil
+}
+//unMarshal json
+func (d *Decimal128) UnmarshalJSON(b []byte) error {
+	//do your serializing here
+	d1, err := ParseDecimal128(string(b))
+	d.h = d1.h
+	d.l = d1.l
+	return err
+}
+
 func (d Decimal128) String() string {
 	var pos int     // positive sign
 	var e int       // exponent
