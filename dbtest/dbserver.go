@@ -2,9 +2,9 @@ package dbtest
 
 import (
 	"bytes"
-  "encoding/hex"
+	"encoding/hex"
 	"fmt"
-  "math/rand"
+	"math/rand"
 	"net"
 	"os"
 	"os/exec"
@@ -18,9 +18,9 @@ import (
 // Constants to define how the DB test instance should be executed
 const (
 	// Run MongoDB as local process
-  LocalProcess = 0
+	LocalProcess = 0
 	// Run MongoDB within a docker container
-  Docker       = 1
+	Docker = 1
 )
 
 // DBServer controls a MongoDB server process to be used within test suites.
@@ -33,16 +33,16 @@ const (
 // Before the DBServer is used the SetPath method must be called to define
 // the location for the database files to be stored.
 type DBServer struct {
-	session *mgo.Session
-	output  bytes.Buffer
-	server  *exec.Cmd
-	dbpath  string
-	host    string
-	version string // The request MongoDB version, when running within a container
-	eType   int    // Specify whether mongo should run as a container or regular process
-	debug   bool   // Log debug statements
-  containerName string // The container name, when running mgo within a container
-	tomb    tomb.Tomb
+	session       *mgo.Session
+	output        bytes.Buffer
+	server        *exec.Cmd
+	dbpath        string
+	host          string
+	version       string // The request MongoDB version, when running within a container
+	eType         int    // Specify whether mongo should run as a container or regular process
+	debug         bool   // Log debug statements
+	containerName string // The container name, when running mgo within a container
+	tomb          tomb.Tomb
 }
 
 // SetPath defines the path to the directory where the database files will be
@@ -55,7 +55,7 @@ func (dbs *DBServer) SetPath(dbpath string) {
 // SetVersion defines the desired MongoDB version to run within a container.
 // The attribute is ignored when running MongoDB outside a container.
 func (dbs *DBServer) SetVersion(version string) {
-	dbs.version = version	
+	dbs.version = version
 }
 
 func (dbs *DBServer) SetDebug(enableDebug bool) {
@@ -69,7 +69,7 @@ func (dbs *DBServer) SetExecType(execType int) {
 
 // Start Mongo DB within Docker container on host.
 // It assumes Docker is already installed
-func (dbs *DBServer) execContainer(port int) (*exec.Cmd) {
+func (dbs *DBServer) execContainer(port int) *exec.Cmd {
 	if dbs.version == "" {
 		dbs.version = "latest"
 	}
@@ -81,24 +81,28 @@ func (dbs *DBServer) execContainer(port int) (*exec.Cmd) {
 		fmt.Sprintf("mongo:%s", dbs.version),
 	}
 	cmd := exec.Command("docker", args...)
-	if dbs.debug { fmt.Printf("Pulling Mongo docker image\n") }
+	if dbs.debug {
+		fmt.Printf("Pulling Mongo docker image\n")
+	}
 	err := cmd.Run()
-  if err != nil {
-    panic(err)
-  }
-	if dbs.debug { fmt.Printf("Pulled Mongo docker image\n") }
+	if err != nil {
+		panic(err)
+	}
+	if dbs.debug {
+		fmt.Printf("Pulled Mongo docker image\n")
+	}
 
-  // Generate a name for the container. This will help to inspect the container
-  // and get the Mongo PID.
-  u := make([]byte, 8)
-  // The default number generator is deterministic.
-  s := rand.NewSource(time.Now().UnixNano())
-  r := rand.New(s)
-  _, err = r.Read(u)
-  if err != nil {
-    panic(err)
-  }
-  dbs.containerName = fmt.Sprintf("%s", hex.EncodeToString(u))
+	// Generate a name for the container. This will help to inspect the container
+	// and get the Mongo PID.
+	u := make([]byte, 8)
+	// The default number generator is deterministic.
+	s := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(s)
+	_, err = r.Read(u)
+	if err != nil {
+		panic(err)
+	}
+	dbs.containerName = fmt.Sprintf("%s", hex.EncodeToString(u))
 
 	// On some platforms, we get "chown: changing ownership of '/proc/1/fd/1': Permission denied" unless
 	// we allocate a pseudo tty (-t option)
@@ -108,8 +112,8 @@ func (dbs *DBServer) execContainer(port int) (*exec.Cmd) {
 		"-p",
 		fmt.Sprintf("%d:%d", port, 27017),
 		"--rm", // Automatically remove the container when it exits
-    "--name",
-    dbs.containerName,
+		"--name",
+		dbs.containerName,
 		fmt.Sprintf("mongo:%s", dbs.version),
 		"--nssize", "1",
 		"--noprealloc",
@@ -123,26 +127,26 @@ func (dbs *DBServer) execContainer(port int) (*exec.Cmd) {
 func (dbs *DBServer) stopContainer() {
 	args := []string{
 		"stop",
-    dbs.containerName,
+		dbs.containerName,
 	}
 	cmd := exec.Command("docker", args...)
 	err := cmd.Run()
-  if err != nil {
-    panic(err)
-  }
-  // Remove the container and its unamed volume.
-  // In some cases the "docker run --rm" option does not remove the container.
+	if err != nil {
+		panic(err)
+	}
+	// Remove the container and its unamed volume.
+	// In some cases the "docker run --rm" option does not remove the container.
 	args = []string{
 		"rm",
-    "-v",
-    dbs.containerName,
+		"-v",
+		dbs.containerName,
 	}
 	cmd = exec.Command("docker", args...)
 	err = cmd.Run()
 }
 
 // Start Mongo DB as process on host. It assumes Mongo is already installed
-func (dbs *DBServer) execLocal(port int) (*exec.Cmd) {
+func (dbs *DBServer) execLocal(port int) *exec.Cmd {
 	args := []string{
 		"--dbpath", dbs.dbpath,
 		"--bind_ip", "127.0.0.1",
@@ -170,7 +174,7 @@ func (dbs *DBServer) start() {
 	addr := l.Addr().(*net.TCPAddr)
 	l.Close()
 	dbs.host = addr.String()
-	
+
 	dbs.tomb = tomb.Tomb{}
 	switch dbs.eType {
 	case LocalProcess:
@@ -182,7 +186,9 @@ func (dbs *DBServer) start() {
 	}
 	dbs.server.Stdout = &dbs.output
 	dbs.server.Stderr = &dbs.output
-	if dbs.debug { fmt.Printf("Starting Mongo instance: %v\n", dbs.server.Args) }
+	if dbs.debug {
+		fmt.Printf("Starting Mongo instance: %v\n", dbs.server.Args)
+	}
 	err = dbs.server.Start()
 	if err != nil {
 		panic(err)
@@ -226,10 +232,10 @@ func (dbs *DBServer) Stop() {
 		}
 	}
 	if dbs.server != nil {
-    if dbs.eType == Docker {
-      // Invoke 'docker stop'
-      dbs.stopContainer()
-    }
+		if dbs.eType == Docker {
+			// Invoke 'docker stop'
+			dbs.stopContainer()
+		}
 		dbs.tomb.Kill(nil)
 		dbs.server.Process.Signal(os.Interrupt)
 		select {
@@ -252,7 +258,7 @@ func (dbs *DBServer) Session() *mgo.Session {
 	if dbs.session == nil {
 		mgo.ResetStats()
 		var err error
-		dbs.session, err = mgo.DialWithTimeout(dbs.host + "/test", 10 * time.Second)
+		dbs.session, err = mgo.DialWithTimeout(dbs.host+"/test", 10*time.Second)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "---- Unable to dial mongod:\n")
 			fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
