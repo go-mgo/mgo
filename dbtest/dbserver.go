@@ -2,7 +2,9 @@ package dbtest
 
 import (
 	"bytes"
+  "encoding/hex"
 	"fmt"
+  "math/rand"
 	"net"
 	"os"
 	"os/exec"
@@ -39,6 +41,7 @@ type DBServer struct {
 	version string // The request MongoDB version, when running within a container
 	eType   int    // Specify whether mongo should run as a container or regular process
 	debug   bool   // Log debug statements
+  containerName string // The container name, when running mgo within a container
 	tomb    tomb.Tomb
 }
 
@@ -84,6 +87,16 @@ func (dbs *DBServer) execContainer(port int) (*exec.Cmd) {
     panic(err)
   }
 	if dbs.debug { fmt.Printf("Pulled Mongo docker image\n") }
+
+  // Generate a name for the container. This will help to inspect the container
+  // and get the Mongo PID.
+  u := make([]byte, 8)
+  _, err = rand.Read(u)
+  if err != nil {
+    panic(err)
+  }
+  dbs.containerName = fmt.Sprintf("%s", hex.EncodeToString(u))
+
 	// On some platforms, we get "chown: changing ownership of '/proc/1/fd/1': Permission denied" unless
 	// we allocate a pseudo tty (-t option)
 	args = []string{
@@ -92,9 +105,28 @@ func (dbs *DBServer) execContainer(port int) (*exec.Cmd) {
 		"-p",
 		fmt.Sprintf("%d:%d", port, 27017),
 		"--rm", // Automatically remove the container when it exits
+    "--name",
+    dbs.containerName,
 		fmt.Sprintf("mongo:%s", dbs.version),
+		"--nssize", "1",
+		"--noprealloc",
+		"--smallfiles",
+		"--nojournal",
 	}
 	return exec.Command("docker", args...)
+}
+
+// Stop the docker container running Mongo.
+func (dbs *DBServer) stopContainer() {
+	args := []string{
+		"stop",
+    dbs.containerName,
+	}
+	cmd := exec.Command("docker", args...)
+	err := cmd.Run()
+  if err != nil {
+    panic(err)
+  }
 }
 
 // Start Mongo DB as process on host. It assumes Mongo is already installed
@@ -182,6 +214,10 @@ func (dbs *DBServer) Stop() {
 		}
 	}
 	if dbs.server != nil {
+    if dbs.eType == Docker {
+      // Invoke 'docker stop'
+      dbs.stopContainer()
+    }
 		dbs.tomb.Kill(nil)
 		dbs.server.Process.Signal(os.Interrupt)
 		select {
