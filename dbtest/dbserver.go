@@ -127,6 +127,15 @@ func (dbs *DBServer) stopContainer() {
   if err != nil {
     panic(err)
   }
+  // Remove the container and its unamed volume.
+  // In some cases the "docker run --rm" option does not remove the container.
+	args = []string{
+		"rm",
+    "-v",
+    dbs.containerName,
+	}
+	cmd = exec.Command("docker", args...)
+	err = cmd.Run()
 }
 
 // Start Mongo DB as process on host. It assumes Mongo is already installed
