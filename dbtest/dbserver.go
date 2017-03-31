@@ -91,7 +91,10 @@ func (dbs *DBServer) execContainer(port int) (*exec.Cmd) {
   // Generate a name for the container. This will help to inspect the container
   // and get the Mongo PID.
   u := make([]byte, 8)
-  _, err = rand.Read(u)
+  // The default number generator is deterministic.
+  s := rand.NewSource(time.Now().UnixNano())
+  r := rand.New(s)
+  _, err = r.Read(u)
   if err != nil {
     panic(err)
   }
