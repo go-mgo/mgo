@@ -232,11 +232,11 @@ func (dbs *DBServer) Stop() {
 		}
 	}
 	if dbs.server != nil {
+		dbs.tomb.Kill(nil)
 		if dbs.eType == Docker {
 			// Invoke 'docker stop'
 			dbs.stopContainer()
 		}
-		dbs.tomb.Kill(nil)
 		dbs.server.Process.Signal(os.Interrupt)
 		select {
 		case <-dbs.tomb.Dead():
