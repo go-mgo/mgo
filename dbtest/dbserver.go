@@ -126,7 +126,7 @@ func (dbs *DBServer) execContainer(port int) *exec.Cmd {
 // Returns the host name of the Mongo test instance.
 // If the test instance runs as a container, it returns the container name.
 // If the test instance runs in the host, returns the host name.
-func (dbs *DBServer) GetHostName() {
+func (dbs *DBServer) GetHostName() string {
 	if dbs.eType == Docker {
 		return dbs.containerName
 	} else {
