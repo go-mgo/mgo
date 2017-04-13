@@ -123,6 +123,21 @@ func (dbs *DBServer) execContainer(port int) *exec.Cmd {
 	return exec.Command("docker", args...)
 }
 
+// Returns the host name of the Mongo test instance.
+// If the test instance runs as a container, it returns the container name.
+// If the test instance runs in the host, returns the host name.
+func (dbs *DBServer) getHostName() {
+	if dbs.eType == Docker {
+		return dbs.containerName
+	} else {
+		if hostname, err := os.Hostname(); err != nil {
+			return hostname
+		} else {
+			return "127.0.0.1"
+		}
+	}
+}
+
 // Stop the docker container running Mongo.
 func (dbs *DBServer) stopContainer() {
 	args := []string{
