@@ -3,7 +3,7 @@ package txn_test
 import (
 	"flag"
 	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	"github.com/mgo/bson"
 	"gopkg.in/mgo.v2/dbtest"
 	"gopkg.in/mgo.v2/txn"
 	. "gopkg.in/check.v1"

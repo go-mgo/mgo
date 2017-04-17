@@ -33,7 +33,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/mgo.v2/bson"
+	"github.com/mgo/bson"
 )
 
 type replyFunc func(err error, reply *replyOp, docNum int, docData []byte)
@@ -91,6 +91,7 @@ type queryWrapper struct {
 	MaxScan        int         "$maxScan,omitempty"
 	MaxTimeMS      int         "$maxTimeMS,omitempty"
 	Comment        string      "$comment,omitempty"
+	Collation      *Collation  "$collation,omitempty"
 }
 
 func (op *queryOp) finalQuery(socket *mongoSocket) interface{} {
