@@ -299,7 +299,9 @@ func (dbs *DBServer) checkSessions() {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	panic("There are mgo sessions still alive.")
+  stats := mgo.GetStats()
+  panic(fmt.Sprintf("There are mgo sessions still alive. SocketCount=%d InUseCount=%d",
+    stats.SocketsAlive, stats.SocketsInUse))
 }
 
 // Wipe drops all created databases and their data.
