@@ -40,7 +40,7 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2/bson"
+	"github.com/g7r/mgo/bson"
 	"gopkg.in/yaml.v2"
 )
 

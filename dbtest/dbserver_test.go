@@ -7,8 +7,8 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/dbtest"
+	"github.com/g7r/mgo"
+	"github.com/g7r/mgo/dbtest"
 )
 
 type M map[string]interface{}

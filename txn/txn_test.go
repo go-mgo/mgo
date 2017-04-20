@@ -8,10 +8,10 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
-	"gopkg.in/mgo.v2/dbtest"
-	"gopkg.in/mgo.v2/txn"
+	"github.com/g7r/mgo"
+	"github.com/g7r/mgo/bson"
+	"github.com/g7r/mgo/dbtest"
+	"github.com/g7r/mgo/txn"
 )
 
 func TestAll(t *testing.T) {
