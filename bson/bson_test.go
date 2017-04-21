@@ -39,8 +39,8 @@ import (
 	"testing"
 	"time"
 
-	. "gopkg.in/check.v1"
 	"github.com/g7r/mgo/bson"
+	. "gopkg.in/check.v1"
 	"gopkg.in/yaml.v2"
 )
 
@@ -1110,6 +1110,19 @@ func (s ifaceSlice) GetBSON() (interface{}, error) {
 	return []int{len(s)}, nil
 }
 
+type omitEmptyAware struct {
+	empty bool
+	A     int
+}
+
+func (e omitEmptyAware) ShouldOmitAsEmpty() bool {
+	return e.empty
+}
+
+type condAware struct {
+	V omitEmptyAware ",omitempty"
+}
+
 type (
 	MyString string
 	MyBytes  []byte
@@ -1265,7 +1278,6 @@ var twoWayCrossItems = []crossTypeItem{
 	{&condTime{}, map[string]string{}},
 
 	{&condStruct{struct{ A []int }{[]int{1}}}, bson.M{"v": bson.M{"a": []interface{}{1}}}},
-	{&condStruct{struct{ A []int }{}}, bson.M{}},
 
 	{&condRaw{bson.Raw{Kind: 0x0A, Data: []byte{}}}, bson.M{"v": nil}},
 	{&condRaw{bson.Raw{Kind: 0x00}}, bson.M{}},
@@ -1365,10 +1377,18 @@ var oneWayCrossItems = []crossTypeItem{
 	// Ensure omitempty on struct with private fields works properly.
 	{&struct {
 		V struct{ v time.Time } ",omitempty"
-	}{}, map[string]interface{}{}},
+	}{}, map[string]interface{}{"v": map[string]interface{}{}}},
 
 	// Attempt to marshal slice into RawD (issue #120).
 	{bson.M{"x": []int{1, 2, 3}}, &struct{ X bson.RawD }{}},
+
+	{&condStruct{struct{ A []int }{}}, bson.M{"v": bson.M{"a": []interface{}{}}}},
+	{bson.M{"v": bson.M{"a": []interface{}{}}}, &condStruct{struct{ A []int }{[]int{}}}},
+
+	{condAware{omitEmptyAware{true, 0}}, bson.M{}},
+	{condAware{omitEmptyAware{false, 0}}, bson.M{"v": bson.M{"a": 0}}},
+	{condAware{omitEmptyAware{true, 1}}, bson.M{}},
+	{condAware{omitEmptyAware{false, 1}}, bson.M{"v": bson.M{"a": 1}}},
 }
 
 func testCrossPair(c *C, dump interface{}, load interface{}) {
