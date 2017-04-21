@@ -35,7 +35,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/mgo.v2/bson"
+	"github.com/g7r/mgo/bson"
 )
 
 // ---------------------------------------------------------------------------
@@ -646,6 +646,8 @@ func (cluster *mongoCluster) AcquireSocket(mode Mode, slaveOk bool, syncTimeout 
 				cluster.syncServers()
 				time.Sleep(100 * time.Millisecond)
 				continue
+			} else {
+				server.confirmMaster()
 			}
 		}
 		return s, nil

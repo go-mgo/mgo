@@ -33,7 +33,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/mgo.v2/bson"
+	"github.com/g7r/mgo/bson"
 )
 
 // ---------------------------------------------------------------------------
@@ -256,6 +256,12 @@ func (server *mongoServer) Info() *mongoServerInfo {
 	info := server.info
 	server.Unlock()
 	return info
+}
+
+func (server *mongoServer) confirmMaster() {
+	server.Lock()
+	server.abended = false
+	server.Unlock()
 }
 
 func (server *mongoServer) hasTags(serverTags []bson.D) bool {

@@ -187,15 +187,12 @@ func isZero(v reflect.Value) bool {
 		if vt == typeTime {
 			return v.Interface().(time.Time).IsZero()
 		}
-		for i := 0; i < v.NumField(); i++ {
-			if vt.Field(i).PkgPath != "" && !vt.Field(i).Anonymous {
-				continue // Private field
-			}
-			if !isZero(v.Field(i)) {
-				return false
+		if v.CanInterface() {
+			if omitEmptyAware, ok := v.Interface().(OmitEmptyAware); ok {
+				return omitEmptyAware.ShouldOmitAsEmpty()
 			}
 		}
-		return true
+		return false
 	}
 	return false
 }

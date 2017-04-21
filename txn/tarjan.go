@@ -1,7 +1,7 @@
 package txn
 
 import (
-	"gopkg.in/mgo.v2/bson"
+	"github.com/g7r/mgo/bson"
 	"sort"
 )
 
