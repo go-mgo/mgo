@@ -47,30 +47,32 @@ import (
 
 type mongoCluster struct {
 	sync.RWMutex
-	serverSynced sync.Cond
-	userSeeds    []string
-	dynaSeeds    []string
-	servers      mongoServers
-	masters      mongoServers
-	references   int
-	syncing      bool
-	direct       bool
-	failFast     bool
-	syncCount    uint
-	setName      string
-	cachedIndex  map[string]bool
-	sync         chan bool
-	dial         dialer
+	serverSynced   sync.Cond
+	userSeeds      []string
+	dynaSeeds      []string
+	servers        mongoServers
+	masters        mongoServers
+	references     int
+	syncing        bool
+	direct         bool
+	failFast       bool
+	syncCount      uint
+	setName        string
+	cachedIndex    map[string]bool
+	sync           chan bool
+	dial           dialer
+	resolveTimeout time.Duration
 }
 
-func newCluster(userSeeds []string, direct, failFast bool, dial dialer, setName string) *mongoCluster {
+func newCluster(userSeeds []string, direct, failFast bool, dial dialer, timeout time.Duration, setName string) *mongoCluster {
 	cluster := &mongoCluster{
-		userSeeds:  userSeeds,
-		references: 1,
-		direct:     direct,
-		failFast:   failFast,
-		dial:       dial,
-		setName:    setName,
+		userSeeds:      userSeeds,
+		references:     1,
+		direct:         direct,
+		failFast:       failFast,
+		dial:           dial,
+		resolveTimeout: timeout,
+		setName:        setName,
 	}
 	cluster.serverSynced.L = cluster.RWMutex.RLocker()
 	cluster.sync = make(chan bool, 1)
@@ -409,7 +411,7 @@ func (cluster *mongoCluster) server(addr string, tcpaddr *net.TCPAddr) *mongoSer
 	return newServer(addr, tcpaddr, cluster.sync, cluster.dial)
 }
 
-func resolveAddr(addr string) (*net.TCPAddr, error) {
+func resolveAddr(addr string, timeout time.Duration) (*net.TCPAddr, error) {
 	// Simple cases that do not need actual resolution. Works with IPv4 and v6.
 	if host, port, err := net.SplitHostPort(addr); err == nil {
 		if port, _ := strconv.Atoi(port); port > 0 {
@@ -431,7 +433,7 @@ func resolveAddr(addr string) (*net.TCPAddr, error) {
 		network := network
 		go func() {
 			// The unfortunate UDP dialing hack allows having a timeout on address resolution.
-			conn, err := net.DialTimeout(network, addr, 10*time.Second)
+			conn, err := net.DialTimeout(network, addr, timeout)
 			if err != nil {
 				addrChan <- nil
 			} else {
@@ -490,7 +492,7 @@ func (cluster *mongoCluster) syncServersIteration(direct bool) {
 		go func() {
 			defer wg.Done()
 
-			tcpaddr, err := resolveAddr(addr)
+			tcpaddr, err := resolveAddr(addr, cluster.resolveTimeout)
 			if err != nil {
 				log("SYNC Failed to start sync of ", addr, ": ", err.Error())
 				return
