@@ -40,19 +40,20 @@ type replyFunc func(err error, reply *replyOp, docNum int, docData []byte)
 
 type mongoSocket struct {
 	sync.Mutex
-	server        *mongoServer // nil when cached
-	conn          net.Conn
-	timeout       time.Duration
-	addr          string // For debugging only.
-	nextRequestId uint32
-	replyFuncs    map[uint32]replyFunc
-	references    int
-	creds         []Credential
-	logout        []Credential
-	cachedNonce   string
-	gotNonce      sync.Cond
-	dead          error
-	serverInfo    *mongoServerInfo
+	server         *mongoServer // nil when cached
+	conn           net.Conn
+	timeout        time.Duration
+	addr           string // For debugging only.
+	nextRequestId  uint32
+	replyFuncs     map[uint32]replyFunc
+	references     int
+	creds          []Credential
+	logout         []Credential
+	cachedNonce    string
+	gotNonce       sync.Cond
+	dead           error
+	serverInfo     *mongoServerInfo
+	closeAfterIdle bool
 }
 
 type queryOpFlags uint32
@@ -264,10 +265,13 @@ func (socket *mongoSocket) Release() {
 	if socket.references == 0 {
 		stats.socketsInUse(-1)
 		server := socket.server
+		closeAfterIdle := socket.closeAfterIdle
 		socket.Unlock()
 		socket.LogoutAll()
-		// If the socket is dead server is nil.
-		if server != nil {
+		if closeAfterIdle {
+			socket.Close()
+		} else if server != nil {
+			// If the socket is dead server is nil.
 			server.RecycleSocket(socket)
 		}
 	} else {
@@ -314,6 +318,19 @@ func (socket *mongoSocket) updateDeadline(which deadlineType) {
 // Close terminates the socket use.
 func (socket *mongoSocket) Close() {
 	socket.kill(errors.New("Closed explicitly"), false)
+}
+
+func (socket *mongoSocket) CloseAfterIdle() {
+	socket.Lock()
+	if socket.references == 0 {
+		socket.Unlock()
+		socket.Close()
+		logf("Socket %p to %s: idle and close.", socket, socket.addr)
+		return
+	}
+	socket.closeAfterIdle = true
+	socket.Unlock()
+	logf("Socket %p to %s: close after idle.", socket, socket.addr)
 }
 
 func (socket *mongoSocket) kill(err error, abend bool) {

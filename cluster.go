@@ -122,10 +122,10 @@ func (cluster *mongoCluster) removeServer(server *mongoServer) {
 	other := cluster.servers.Remove(server)
 	cluster.Unlock()
 	if other != nil {
-		other.Close()
+		other.CloseIdle()
 		log("Removed server ", server.Addr, " from cluster.")
 	}
-	server.Close()
+	server.CloseIdle()
 }
 
 type isMasterResult struct {
