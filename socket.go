@@ -320,6 +320,8 @@ func (socket *mongoSocket) Close() {
 	socket.kill(errors.New("Closed explicitly"), false)
 }
 
+// CloseAfterIdle terminates an idle socket, which has a zero
+// reference, or marks the socket to be terminate after idle.
 func (socket *mongoSocket) CloseAfterIdle() {
 	socket.Lock()
 	if socket.references == 0 {
