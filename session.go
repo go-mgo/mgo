@@ -631,6 +631,17 @@ func (s *Session) LiveServers() (addrs []string) {
 	return addrs
 }
 
+// ReadableServer returns a server address which is suitable for reading
+// according to the current session.
+func (s *Session) ReadableServer() (string, error) {
+	socket, err := s.acquireSocket(true)
+	if err != nil {
+		return "", err
+	}
+	defer socket.Release()
+	return socket.server.Addr, nil
+}
+
 // DB returns a value representing the named database. If name
 // is empty, the database name provided in the dialed URL is
 // used instead. If that is also empty, "test" is used as a

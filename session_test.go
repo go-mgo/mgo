@@ -199,6 +199,26 @@ func (s *S) TestURLInvalidReadPreferenceTags(c *C) {
 	}
 }
 
+func (s *S) TestReadableServer(c *C) {
+	session, err := mgo.Dial("localhost:40011,localhost:40012,localhost:40013")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	session.SetMode(mgo.Primary, true)
+	primary_address, err := session.ReadableServer()
+	c.Assert(err, IsNil)
+	c.Assert(primary_address, Equals, "localhost:40011")
+
+	session.SetMode(mgo.Secondary, true)
+	secondary_address, err := session.ReadableServer()
+	c.Assert(err, IsNil)
+
+	valid_addresses := []string{"localhost:40012", "localhost:40013"}
+	if secondary_address != valid_addresses[0] && secondary_address != valid_addresses[1] {
+		c.Fatalf("secondary_address should be in %v, not: %v", valid_addresses, secondary_address)
+	}
+}
+
 func (s *S) TestInsertFindOne(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
