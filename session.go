@@ -1333,6 +1333,80 @@ NextField:
 	return err
 }
 
+// InstantEnsureIndex is a function for create index from struct schema
+// Example struct { Color   string     `bson:"color" index:"background,sparse"` }
+func (c *Collection)InstantEnsureIndex(s interface{}) (err error) {
+	st := reflect.TypeOf(s)
+	if st.Kind() != reflect.Struct {
+		return errors.New("s must be a struct")
+	}
+
+	n := st.NumField()
+	indexMap := make(map[string][]string)
+
+	for i := 0; i != n; i++ {
+		field := st.Field(i)
+		if field.PkgPath != "" && !field.Anonymous {
+			continue // Private field
+		}
+
+		// Get fields in index tag
+		tag := field.Tag.Get("index")
+		if tag == "" && strings.Index(string(field.Tag), ":") < 0 {
+			tag = string(field.Tag)
+		}
+
+		if tag == "-" {
+			continue
+		}
+
+		fields := strings.Replace(tag, ",", "_", -1)
+
+		// Get key in bson tag
+		key := field.Tag.Get("bson")
+		if i := strings.Index(key, ","); i >= 0 {
+			key = key[:i]
+		}
+		if key == "" {
+			key = strings.ToLower(field.Name)
+		}
+
+		if v, found := indexMap[fields]; found {
+			v = append(v, key)
+			indexMap[fields] = v
+		} else {
+			indexMap[fields] = []string{key}
+		}
+
+	}
+
+	for k, v := range indexMap {
+		fields := strings.Split(k, "_")
+		index := mgo.Index{}
+		index.Key = v
+		for _, f := range fields {
+			switch f {
+			case "unique":
+				index.Unique = true
+			case "dropdups":
+				index.DropDups = true
+			case "background":
+				index.Background = true
+			case "sparse":
+				index.Sparse = true
+			default:
+				return fmt.Errorf("[%s] mgo.Index unknown index property", v)
+			}
+		}
+
+		if err = c.EnsureIndex(index); err != nil {
+			continue
+		}
+	}
+
+	return
+}
+
 // DropIndex drops the index with the provided key from the c collection.
 //
 // See EnsureIndex for details on the accepted key variants.
