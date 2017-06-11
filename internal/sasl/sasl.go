@@ -8,6 +8,7 @@
 package sasl
 
 // #cgo LDFLAGS: -lsasl2
+// #cgo CFLAGS: -Wno-deprecated-declarations
 //
 // struct sasl_conn {};
 //
