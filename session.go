@@ -4613,6 +4613,7 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 
 	if socket.ServerInfo().MaxWireVersion >= 2 {
 		// Servers with a more recent write protocol benefit from write commands.
+		inputOp := op
 		if op, ok := op.(*insertOp); ok && len(op.documents) > 1000 {
 			var lerr LastError
 
@@ -4635,6 +4636,54 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 					if op.flags&1 == 0 {
 						return &lerr, err
 					}
+				}
+			}
+			if len(lerr.ecases) != 0 {
+				return &lerr, lerr.ecases[0].Err
+			}
+			return &lerr, nil
+		} else if updateOps, ok := inputOp.(bulkUpdateOp); ok && len(updateOps) > 1000 {
+			var lerr LastError
+			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
+			all := updateOps
+			for i := 0; i < len(all); i += 1000 {
+				l := i + 1000
+				if l > len(all) {
+					l = len(all)
+				}
+				updateOps = all[i:l]
+				oplerr, err := c.writeOpCommand(socket, safeOp, updateOps, ordered, bypassValidation)
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
+				if err != nil {
+					for ei := range oplerr.ecases {
+						oplerr.ecases[ei].Index += i
+					}
+					lerr.ecases = append(lerr.ecases, oplerr.ecases...)
+				}
+			}
+			if len(lerr.ecases) != 0 {
+				return &lerr, lerr.ecases[0].Err
+			}
+			return &lerr, nil
+		} else if deleteOps, ok := inputOp.(bulkDeleteOp); ok && len(deleteOps) > 1000 {
+			var lerr LastError
+			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
+			all := deleteOps
+			for i := 0; i < len(all); i += 1000 {
+				l := i + 1000
+				if l > len(all) {
+					l = len(all)
+				}
+				deleteOps = all[i:l]
+				oplerr, err := c.writeOpCommand(socket, safeOp, deleteOps, ordered, bypassValidation)
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
+				if err != nil {
+					for ei := range oplerr.ecases {
+						oplerr.ecases[ei].Index += i
+					}
+					lerr.ecases = append(lerr.ecases, oplerr.ecases...)
 				}
 			}
 			if len(lerr.ecases) != 0 {
