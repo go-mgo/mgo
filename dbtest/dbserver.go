@@ -206,7 +206,7 @@ func (dbs *DBServer) start() {
 	}
 	err = dbs.server.Start()
 	if err != nil {
-		panic("Failed to start test Mongo instance", err)
+		panic("Failed to start Mongo instance: " + err.Error())
 	}
 	dbs.tomb.Go(dbs.monitor)
 	dbs.Wipe()
