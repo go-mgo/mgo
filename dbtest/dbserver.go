@@ -206,10 +206,19 @@ func (dbs *DBServer) start() {
 	}
 	err = dbs.server.Start()
 	if err != nil {
-		panic(err)
+		panic("Failed to start test Mongo instance", err)
 	}
 	dbs.tomb.Go(dbs.monitor)
 	dbs.Wipe()
+}
+
+func (dbs DBServer) printMongoDebugInfo() {
+  fmt.Fprintf(os.Stderr, "---- mongod processes running right now:\n")
+  cmd := exec.Command("/bin/sh", "-c", "ps auxw | grep mongod")
+  cmd.Stdout = os.Stderr
+  cmd.Stderr = os.Stderr
+  cmd.Run()
+  fmt.Fprintf(os.Stderr, "----------------------------------------\n")
 }
 
 func (dbs *DBServer) monitor() error {
@@ -218,12 +227,7 @@ func (dbs *DBServer) monitor() error {
 		// Present some debugging information.
 		fmt.Fprintf(os.Stderr, "---- mongod process died unexpectedly:\n")
 		fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
-		fmt.Fprintf(os.Stderr, "---- mongod processes running right now:\n")
-		cmd := exec.Command("/bin/sh", "-c", "ps auxw | grep mongod")
-		cmd.Stdout = os.Stderr
-		cmd.Stderr = os.Stderr
-		cmd.Run()
-		fmt.Fprintf(os.Stderr, "----------------------------------------\n")
+    dbs.printMongoDebugInfo()
 
 		panic("mongod process died unexpectedly")
 	}
@@ -277,6 +281,7 @@ func (dbs *DBServer) Session() *mgo.Session {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "---- Unable to dial mongod:\n")
 			fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
+      dbs.printMongoDebugInfo()
 			panic(err)
 		}
 	}
