@@ -270,14 +270,14 @@ func (dbs *DBServer) Stop() {
 // must be closed after the test is done with it.
 //
 // The first Session obtained from a DBServer will start it.
-func (dbs *DBServer) Session() *mgo.Session {
+func (dbs *DBServer) SessionWithTimeout(timeout time.Duration) *mgo.Session {
 	if dbs.server == nil {
 		dbs.start()
 	}
 	if dbs.session == nil {
 		mgo.ResetStats()
 		var err error
-		dbs.session, err = mgo.DialWithTimeout(dbs.host+"/test", 10*time.Second)
+		dbs.session, err = mgo.DialWithTimeout(dbs.host+"/test", timeout)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "---- Unable to dial mongod:\n")
 			fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
@@ -286,6 +286,14 @@ func (dbs *DBServer) Session() *mgo.Session {
 		}
 	}
 	return dbs.session.Copy()
+}
+
+// Session returns a new session to the server. The returned session
+// must be closed after the test is done with it.
+//
+// The first Session obtained from a DBServer will start it.
+func (dbs *DBServer) Session() *mgo.Session {
+  return dbs.SessionWithTimeout(10*time.Second)
 }
 
 // checkSessions ensures all mgo sessions opened were properly closed.
