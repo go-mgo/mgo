@@ -218,6 +218,26 @@ func (dbs DBServer) printMongoDebugInfo() {
   cmd.Stdout = os.Stderr
   cmd.Stderr = os.Stderr
   cmd.Run()
+  if dbs.eType == Docker {
+    args := []string{
+      "inspect",
+      dbs.containerName,
+    }
+    cmd = exec.Command("docker", args...)
+    cmd.Stdout = os.Stderr
+    cmd.Stderr = os.Stderr
+    fmt.Fprintf(os.Stderr, "---- Container inspect:\n")
+    cmd.Run()
+    args = []string{
+      "logs",
+      dbs.containerName,
+    }
+    cmd = exec.Command("docker", args...)
+    cmd.Stdout = os.Stderr
+    cmd.Stderr = os.Stderr
+    fmt.Fprintf(os.Stderr, "---- Container logs:\n")
+    cmd.Run()
+  }
   fmt.Fprintf(os.Stderr, "----------------------------------------\n")
 }
 
