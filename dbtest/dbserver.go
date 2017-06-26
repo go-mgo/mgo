@@ -213,7 +213,7 @@ func (dbs *DBServer) start() {
 }
 
 func (dbs DBServer) printMongoDebugInfo() {
-  fmt.Fprintf(os.Stderr, "---- mongod processes running right now:\n")
+  fmt.Fprintf(os.Stderr, "---- %s mongod processes running right now:\n", time.Now().String())
   cmd := exec.Command("/bin/sh", "-c", "ps auxw | grep mongod")
   cmd.Stdout = os.Stderr
   cmd.Stderr = os.Stderr
@@ -226,7 +226,7 @@ func (dbs DBServer) printMongoDebugInfo() {
     cmd = exec.Command("docker", args...)
     cmd.Stdout = os.Stderr
     cmd.Stderr = os.Stderr
-    fmt.Fprintf(os.Stderr, "---- Container inspect:\n")
+    fmt.Fprintf(os.Stderr, "---- %s Container inspect:\n", time.Now().String())
     cmd.Run()
     args = []string{
       "logs",
@@ -235,7 +235,7 @@ func (dbs DBServer) printMongoDebugInfo() {
     cmd = exec.Command("docker", args...)
     cmd.Stdout = os.Stderr
     cmd.Stderr = os.Stderr
-    fmt.Fprintf(os.Stderr, "---- Container logs:\n")
+    fmt.Fprintf(os.Stderr, "---- %s Container logs:\n", time.Now().String())
     cmd.Run()
   }
   fmt.Fprintf(os.Stderr, "----------------------------------------\n")
