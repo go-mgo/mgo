@@ -202,18 +202,21 @@ func (dbs *DBServer) start() {
 	dbs.server.Stdout = &dbs.output
 	dbs.server.Stderr = &dbs.output
 	if dbs.debug {
-		fmt.Printf("Starting Mongo instance: %v\n", dbs.server.Args)
+		fmt.Printf("[%s] Starting Mongo instance: %v\n", time.Now().String(), dbs.server.Args)
 	}
 	err = dbs.server.Start()
 	if err != nil {
 		panic("Failed to start Mongo instance: " + err.Error())
+	}
+	if dbs.debug {
+		fmt.Printf("[%s] Mongo instance started\n", time.Now().String())
 	}
 	dbs.tomb.Go(dbs.monitor)
 	dbs.Wipe()
 }
 
 func (dbs DBServer) printMongoDebugInfo() {
-  fmt.Fprintf(os.Stderr, "---- %s mongod processes running right now:\n", time.Now().String())
+  fmt.Fprintf(os.Stderr, "[%s] mongod processes running right now:\n", time.Now().String())
   cmd := exec.Command("/bin/sh", "-c", "ps auxw | grep mongod")
   cmd.Stdout = os.Stderr
   cmd.Stderr = os.Stderr
@@ -226,7 +229,7 @@ func (dbs DBServer) printMongoDebugInfo() {
     cmd = exec.Command("docker", args...)
     cmd.Stdout = os.Stderr
     cmd.Stderr = os.Stderr
-    fmt.Fprintf(os.Stderr, "---- %s Container inspect:\n", time.Now().String())
+    fmt.Fprintf(os.Stderr, "[%s] Container inspect:\n", time.Now().String())
     cmd.Run()
     args = []string{
       "logs",
@@ -235,7 +238,7 @@ func (dbs DBServer) printMongoDebugInfo() {
     cmd = exec.Command("docker", args...)
     cmd.Stdout = os.Stderr
     cmd.Stderr = os.Stderr
-    fmt.Fprintf(os.Stderr, "---- %s Container logs:\n", time.Now().String())
+    fmt.Fprintf(os.Stderr, "[%s] Container logs:\n", time.Now().String())
     cmd.Run()
   }
   fmt.Fprintf(os.Stderr, "----------------------------------------\n")
@@ -299,7 +302,7 @@ func (dbs *DBServer) SessionWithTimeout(timeout time.Duration) *mgo.Session {
 		var err error
 		dbs.session, err = mgo.DialWithTimeout(dbs.host+"/test", timeout)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "---- Unable to dial mongod:\n")
+			fmt.Fprintf(os.Stderr, "[%s] Unable to dial mongod. Timeout=%v, Error: %s\n", time.Now().String(), timeout, err.Error())
 			fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
       dbs.printMongoDebugInfo()
 			panic(err)
