@@ -3941,10 +3941,12 @@ func (iter *Iter) getMoreCmd() *queryOp {
 }
 
 type countCmd struct {
-	Count string
-	Query interface{}
-	Limit int32 ",omitempty"
-	Skip  int32 ",omitempty"
+	Count     string
+	Query     interface{}
+	Limit     int32  ",omitempty"
+	Skip      int32  ",omitempty"
+	Hint      bson.D `bson:"hint,omitempty"`
+	MaxTimeMS int    `bson:"maxTimeMS,omitempty"`
 }
 
 // Count returns the total number of documents in the result set.
@@ -3966,8 +3968,12 @@ func (q *Query) Count() (n int, err error) {
 	if query == nil {
 		query = bson.D{}
 	}
+	// not checking the error because if type assertion fails, we
+	// simply want a Zero bson.D
+	hint, _ := q.op.options.Hint.(bson.D)
 	result := struct{ N int }{}
-	err = session.DB(dbname).Run(countCmd{cname, query, limit, op.skip}, &result)
+	err = session.DB(dbname).Run(countCmd{cname, query, limit, op.skip, hint, op.options.MaxTimeMS}, &result)
+
 	return result.N, err
 }
 
