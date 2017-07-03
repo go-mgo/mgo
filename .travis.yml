@@ -41,5 +41,6 @@ script:
     - (cd bson && go test -check.v)
     - go test -check.v -fast
     - (cd txn && go test -check.v)
+    - make stopdb
 
 # vim:sw=4:ts=4:et
