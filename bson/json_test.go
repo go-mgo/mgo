@@ -1,12 +1,12 @@
 package bson_test
 
 import (
-	"gopkg.in/mgo.v2/bson"
-
-	. "gopkg.in/check.v1"
 	"reflect"
 	"strings"
 	"time"
+
+	. "gopkg.in/check.v1"
+	"gopkg.in/mgo.v2/bson"
 )
 
 type jsonTest struct {
@@ -34,11 +34,17 @@ var jsonTests = []jsonTest{
 		a: time.Date(2016, 5, 15, 1, 2, 3, 4000000, time.UTC),
 		b: `{"$date":"2016-05-15T01:02:03.004Z"}`,
 	}, {
+		a: time.Date(2016, 5, 15, 1, 2, 3, 4000000, time.FixedZone("CET", 60*60)),
+		b: `{"$date":"2016-05-15T01:02:03.004+01:00"}`,
+	}, {
 		b: `{"$date": {"$numberLong": "1002"}}`,
 		c: time.Date(1970, 1, 1, 0, 0, 1, 2e6, time.UTC),
 	}, {
 		b: `ISODate("2016-05-15T01:02:03.004Z")`,
 		c: time.Date(2016, 5, 15, 1, 2, 3, 4000000, time.UTC),
+	}, {
+		b: `ISODate("2016-05-15T01:02:03.004-07:00")`,
+		c: time.Date(2016, 5, 15, 1, 2, 3, 4000000, time.FixedZone("PDT", -7*60*60)),
 	}, {
 		b: `new Date(1000)`,
 		c: time.Date(1970, 1, 1, 0, 0, 1, 0, time.UTC),
@@ -179,6 +185,11 @@ func (s *S) TestJSON(c *C) {
 			value = zerov.Elem().Interface()
 		}
 		c.Logf("Loaded: %#v", value)
+		if ctime, ok := item.c.(time.Time); ok {
+			// time.Time must be compared with time.Time.Equal and not reflect.DeepEquals
+			c.Assert(ctime.Equal(value.(time.Time)), Equals, true)
+			continue
+		}
 		c.Assert(value, DeepEquals, item.c)
 	}
 }

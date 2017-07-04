@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
-	"gopkg.in/mgo.v2/internal/json"
 	"strconv"
+	"strings"
 	"time"
+
+	"gopkg.in/mgo.v2/internal/json"
 )
 
 // UnmarshalJSON unmarshals a JSON value that may hold non-standard
@@ -155,7 +157,7 @@ func jencBinaryType(v interface{}) ([]byte, error) {
 	return fbytes(`{"$binary":"%s","$type":"0x%x"}`, out, in.Kind), nil
 }
 
-const jdateFormat = "2006-01-02T15:04:05.999Z"
+const jdateFormat = "2006-01-02T15:04:05.999Z07:00"
 
 func jdecDate(data []byte) (interface{}, error) {
 	var v struct {
@@ -169,13 +171,15 @@ func jdecDate(data []byte) (interface{}, error) {
 		v.S = v.Func.S
 	}
 	if v.S != "" {
+		var errs []string
 		for _, format := range []string{jdateFormat, "2006-01-02"} {
 			t, err := time.Parse(format, v.S)
 			if err == nil {
 				return t, nil
 			}
+			errs = append(errs, err.Error())
 		}
-		return nil, fmt.Errorf("cannot parse date: %q", v.S)
+		return nil, fmt.Errorf("cannot parse date: %q [%s]", v.S, strings.Join(errs, ", "))
 	}
 
 	var vn struct {
