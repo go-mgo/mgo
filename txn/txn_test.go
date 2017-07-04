@@ -621,6 +621,39 @@ func (s *S) TestTxnQueueStashStressTest(c *C) {
 	}
 }
 
+func (s *S) TestTxnQueueMaxSize(c *C) {
+	txn.SetDebug(false)
+	txn.SetChaos(txn.Chaos{
+		KillChance: 1,
+		Breakpoint: "set-applying",
+	})
+	defer txn.SetChaos(txn.Chaos{})
+	err := s.accounts.Insert(M{"_id": 0, "balance": 100})
+	c.Assert(err, IsNil)
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Update: M{"$inc": M{"balance": 100}},
+	}}
+	for i := 0; i < 1000; i++ {
+		err := s.runner.Run(ops, "", nil)
+		c.Assert(err, Equals, txn.ErrChaos)
+	}
+	txn.SetDebug(true)
+	// Now that we've filled up the queue, we should see that there are 1000
+	// items in the queue, and the error applying a new one will change.
+	var doc bson.M
+	err = s.accounts.FindId(0).One(&doc)
+	c.Assert(err, IsNil)
+	c.Check(len(doc["txn-queue"].([]interface{})), Equals, 1000)
+	err = s.runner.Run(ops, "", nil)
+	c.Check(err, ErrorMatches, `txn-queue for 0 in "accounts" has too many transactions \(1001\)`)
+	// The txn-queue should not have grown
+	err = s.accounts.FindId(0).One(&doc)
+	c.Assert(err, IsNil)
+	c.Check(len(doc["txn-queue"].([]interface{})), Equals, 1000)
+}
+
 func (s *S) TestPurgeMissingPipelineSizeLimit(c *C) {
 	// This test ensures that PurgeMissing can handle very large
 	// txn-queue fields. Previous iterations of PurgeMissing would

@@ -212,6 +212,8 @@ var txnFields = bson.D{{"txn-queue", 1}, {"txn-revno", 1}, {"txn-remove", 1}, {"
 
 var errPreReqs = fmt.Errorf("transaction has pre-requisites and force is false")
 
+const maxTxnQueueLength = 1000
+
 // prepare injects t's id onto txn-queue for all affected documents
 // and collects the current txn-queue and txn-revno values during
 // the process. If the prepared txn-queue indicates that there are
@@ -244,6 +246,16 @@ NextDoc:
 		change.Upsert = false
 		chaos("")
 		if _, err := cquery.Apply(change, &info); err == nil {
+			if len(info.Queue) > maxTxnQueueLength {
+				// abort with TXN Queue too long, but remove the entry we just added
+				innerErr := c.UpdateId(dkey.Id,
+					bson.D{{"$pullAll", bson.D{{"txn-queue", []token{tt}}}}})
+				if innerErr != nil {
+					f.debugf("error while backing out of queue-too-long: %v", innerErr)
+				}
+				return nil, fmt.Errorf("txn-queue for %v in %q has too many transactions (%d)",
+					dkey.Id, dkey.C, len(info.Queue))
+			}
 			if info.Remove == "" {
 				// Fast path, unless workload is insert/remove heavy.
 				revno[dkey] = info.Revno
