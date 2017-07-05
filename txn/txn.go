@@ -216,10 +216,13 @@ const (
 // A Runner applies operations as part of a transaction onto any number
 // of collections within a database. See the Run method for details.
 type Runner struct {
-	tc *mgo.Collection // txns
-	sc *mgo.Collection // stash
-	lc *mgo.Collection // log
+	tc   *mgo.Collection // txns
+	sc   *mgo.Collection // stash
+	lc   *mgo.Collection // log
+	opts RunnerOptions   // runtime options
 }
+
+const defaultMaxTxnQueueLength = 1000
 
 // NewRunner returns a new transaction runner that uses tc to hold its
 // transactions.
@@ -232,7 +235,36 @@ type Runner struct {
 // will be used for implementing the transactional behavior of insert
 // and remove operations.
 func NewRunner(tc *mgo.Collection) *Runner {
-	return &Runner{tc, tc.Database.C(tc.Name + ".stash"), nil}
+	return &Runner{
+		tc:   tc,
+		sc:   tc.Database.C(tc.Name + ".stash"),
+		lc:   nil,
+		opts: DefaultRunnerOptions(),
+	}
+}
+
+// RunnerOptions encapsulates ways you can tweak transaction Runner behavior.
+type RunnerOptions struct {
+	// MaxTxnQueueLength is a way to limit bad behavior. Many operations on
+	// transaction queues are O(N^2), and transaction queues growing too large
+	// are usually indicative of a bug in behavior. This should be larger
+	// than the maximum number of concurrent operations to a single document.
+	// Normal operations are likely to only ever hit 10 or so, we use a default
+	// maximum length of 1000.
+	MaxTxnQueueLength int
+}
+
+// SetOptions allows people to change some of the internal behavior of a Runner.
+func (r *Runner) SetOptions(opts RunnerOptions) {
+	r.opts = opts
+}
+
+// DefaultRunnerOptions defines default behavior for a Runner.
+// Users can use the DefaultRunnerOptions to only override specific behavior.
+func DefaultRunnerOptions() RunnerOptions {
+	return RunnerOptions{
+		MaxTxnQueueLength: defaultMaxTxnQueueLength,
+	}
 }
 
 var ErrAborted = fmt.Errorf("transaction aborted")

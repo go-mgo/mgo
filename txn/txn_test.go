@@ -621,7 +621,7 @@ func (s *S) TestTxnQueueStashStressTest(c *C) {
 	}
 }
 
-func (s *S) TestTxnQueueMaxSize(c *C) {
+func (s *S) checkTxnQueueLength(c *C, expectedQueueLength int) {
 	txn.SetDebug(false)
 	txn.SetChaos(txn.Chaos{
 		KillChance: 1,
@@ -635,7 +635,7 @@ func (s *S) TestTxnQueueMaxSize(c *C) {
 		Id:     0,
 		Update: M{"$inc": M{"balance": 100}},
 	}}
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < expectedQueueLength; i++ {
 		err := s.runner.Run(ops, "", nil)
 		c.Assert(err, Equals, txn.ErrChaos)
 	}
@@ -645,13 +645,64 @@ func (s *S) TestTxnQueueMaxSize(c *C) {
 	var doc bson.M
 	err = s.accounts.FindId(0).One(&doc)
 	c.Assert(err, IsNil)
-	c.Check(len(doc["txn-queue"].([]interface{})), Equals, 1000)
+	c.Check(len(doc["txn-queue"].([]interface{})), Equals, expectedQueueLength)
 	err = s.runner.Run(ops, "", nil)
-	c.Check(err, ErrorMatches, `txn-queue for 0 in "accounts" has too many transactions \(1001\)`)
+	c.Check(err, ErrorMatches, `txn-queue for 0 in "accounts" has too many transactions \(\d+\)`)
 	// The txn-queue should not have grown
 	err = s.accounts.FindId(0).One(&doc)
 	c.Assert(err, IsNil)
-	c.Check(len(doc["txn-queue"].([]interface{})), Equals, 1000)
+	c.Check(len(doc["txn-queue"].([]interface{})), Equals, expectedQueueLength)
+}
+
+func (s *S) TestTxnQueueDefaultMaxSize(c *C) {
+	s.runner.SetOptions(txn.DefaultRunnerOptions())
+	s.checkTxnQueueLength(c, 1000)
+}
+
+func (s *S) TestTxnQueueCustomMaxSize(c *C) {
+	opts := txn.DefaultRunnerOptions()
+	opts.MaxTxnQueueLength = 100
+	s.runner.SetOptions(opts)
+	s.checkTxnQueueLength(c, 100)
+}
+
+func (s *S) TestTxnQueueUnlimited(c *C) {
+	opts := txn.DefaultRunnerOptions()
+	// A value of 0 should mean 'unlimited'
+	opts.MaxTxnQueueLength = 0
+	s.runner.SetOptions(opts)
+	// it isn't possible to actually prove 'unlimited' but we can prove that
+	// we at least can insert more than the default number of transactions
+	// without getting a 'too many transactions' failure.
+	txn.SetDebug(false)
+	txn.SetChaos(txn.Chaos{
+		KillChance: 1,
+		// Use set-prepared because we are adding more transactions than
+		// other tests, and this speeds up setup time a bit
+		Breakpoint: "set-prepared",
+	})
+	defer txn.SetChaos(txn.Chaos{})
+	err := s.accounts.Insert(M{"_id": 0, "balance": 100})
+	c.Assert(err, IsNil)
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Update: M{"$inc": M{"balance": 100}},
+	}}
+	for i := 0; i < 1100; i++ {
+		err := s.runner.Run(ops, "", nil)
+		c.Assert(err, Equals, txn.ErrChaos)
+	}
+	txn.SetDebug(true)
+	var doc bson.M
+	err = s.accounts.FindId(0).One(&doc)
+	c.Assert(err, IsNil)
+	c.Check(len(doc["txn-queue"].([]interface{})), Equals, 1100)
+	err = s.runner.Run(ops, "", nil)
+	c.Check(err, Equals, txn.ErrChaos)
+	err = s.accounts.FindId(0).One(&doc)
+	c.Assert(err, IsNil)
+	c.Check(len(doc["txn-queue"].([]interface{})), Equals, 1101)
 }
 
 func (s *S) TestPurgeMissingPipelineSizeLimit(c *C) {
