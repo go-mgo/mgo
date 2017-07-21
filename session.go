@@ -3475,7 +3475,7 @@ func (q *Query) Iter() *Iter {
 // A tailable iterator may only be used with capped collections.
 //
 // The timeout parameter indicates how long Next will block waiting
-// for a result before timing out.  If set to -1, Next will not
+// for a result before timing out.  If timeout < 0, Next will not
 // timeout, and will continue waiting for a result for as long as
 // the cursor is valid and the session is not closed. If set to 0,
 // Next times out as soon as it reaches the end of the result set.
