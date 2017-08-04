@@ -138,7 +138,8 @@ type Iter struct {
 	docsBeforeMore int
 	timeout        time.Duration
 	timedout       bool
-	findCmd        bool
+	isFindCmd      bool
+	isChangeStream bool
 }
 
 var (
@@ -991,6 +992,11 @@ func isNotFound(err error) bool {
 func isAuthError(err error) bool {
 	e, ok := err.(*QueryError)
 	return ok && e.Code == 13
+}
+
+func isNotMasterError(err error) bool {
+	e, ok := err.(*QueryError)
+	return ok && strings.Contains(e.Message, "not master")
 }
 
 func (db *Database) runUserCmd(cmdName string, user *User) error {
@@ -2382,7 +2388,7 @@ func (c *Collection) NewIter(session *Session, firstBatch []bson.Raw, cursorId i
 	}
 
 	if socket.ServerInfo().MaxWireVersion >= 4 && c.FullName != "admin.$cmd" {
-		iter.findCmd = true
+		iter.isFindCmd = true
 	}
 
 	iter.gotReply.L = &iter.m
@@ -3550,7 +3556,7 @@ func (q *Query) Iter() *Iter {
 	op.replyFunc = iter.op.replyFunc
 
 	if prepareFindOp(socket, &op, limit) {
-		iter.findCmd = true
+		iter.isFindCmd = true
 	}
 
 	iter.server = socket.Server()
@@ -3780,7 +3786,12 @@ func (iter *Iter) Next(result interface{}) bool {
 	iter.m.Lock()
 	iter.timedout = false
 	timeout := time.Time{}
+
+	// check should we expect more data.
 	for iter.err == nil && iter.docData.Len() == 0 && (iter.docsToReceive > 0 || iter.op.cursorId != 0) {
+		// we should expect more data.
+
+		// If we have yet to receive data, increment the timer until we timeout.
 		if iter.docsToReceive == 0 {
 			if iter.timeout >= 0 {
 				if timeout.IsZero() {
@@ -3792,6 +3803,7 @@ func (iter *Iter) Next(result interface{}) bool {
 					return false
 				}
 			}
+			// run a getmore to fetch more data.
 			iter.getMore()
 			if iter.err != nil {
 				break
@@ -3800,6 +3812,7 @@ func (iter *Iter) Next(result interface{}) bool {
 		iter.gotReply.Wait()
 	}
 
+	// We have data from the getMore.
 	// Exhaust available data before reporting any errors.
 	if docData, ok := iter.docData.Pop().([]byte); ok {
 		close := false
@@ -3815,6 +3828,7 @@ func (iter *Iter) Next(result interface{}) bool {
 			}
 		}
 		if iter.op.cursorId != 0 && iter.err == nil {
+			// we still have a live cursor and currently expect data.
 			iter.docsBeforeMore--
 			if iter.docsBeforeMore == -1 {
 				iter.getMore()
@@ -4004,7 +4018,7 @@ func (iter *Iter) getMore() {
 		}
 	}
 	var op interface{}
-	if iter.findCmd {
+	if iter.isFindCmd || iter.isChangeStream {
 		op = iter.getMoreCmd()
 	} else {
 		op = &iter.op
@@ -4608,7 +4622,7 @@ func (iter *Iter) replyFunc() replyFunc {
 			} else {
 				iter.err = ErrNotFound
 			}
-		} else if iter.findCmd {
+		} else if iter.isFindCmd {
 			debugf("Iter %p received reply document %d/%d (cursor=%d)", iter, docNum+1, int(op.replyDocs), op.cursorId)
 			var findReply struct {
 				Ok     bool
@@ -4620,7 +4634,7 @@ func (iter *Iter) replyFunc() replyFunc {
 				iter.err = err
 			} else if !findReply.Ok && findReply.Errmsg != "" {
 				iter.err = &QueryError{Code: findReply.Code, Message: findReply.Errmsg}
-			} else if len(findReply.Cursor.FirstBatch) == 0 && len(findReply.Cursor.NextBatch) == 0 {
+			} else if !iter.isChangeStream && len(findReply.Cursor.FirstBatch) == 0 && len(findReply.Cursor.NextBatch) == 0 {
 				iter.err = ErrNotFound
 			} else {
 				batch := findReply.Cursor.FirstBatch
