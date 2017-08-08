@@ -46,6 +46,7 @@ type mongoServer struct {
 	tcpaddr       *net.TCPAddr
 	unusedSockets []*mongoSocket
 	liveSockets   []*mongoSocket
+	numConnecting int
 	closed        bool
 	abended       bool
 	sync          chan bool
@@ -110,7 +111,7 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			return nil, abended, errServerClosed
 		}
 		n := len(server.unusedSockets)
-		if poolLimit > 0 && len(server.liveSockets)-n >= poolLimit {
+		if poolLimit > 0 && len(server.liveSockets)+server.numConnecting-n >= poolLimit {
 			server.Unlock()
 			return nil, false, errPoolLimit
 		}
@@ -125,10 +126,12 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 				continue
 			}
 		} else {
+			server.numConnecting++
 			server.Unlock()
 			socket, err = server.Connect(timeout)
+			server.Lock()
+			server.numConnecting--
 			if err == nil {
-				server.Lock()
 				// We've waited for the Connect, see if we got
 				// closed in the meantime
 				if server.closed {
@@ -138,8 +141,8 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 					return nil, abended, errServerClosed
 				}
 				server.liveSockets = append(server.liveSockets, socket)
-				server.Unlock()
 			}
+			server.Unlock()
 		}
 		return
 	}
