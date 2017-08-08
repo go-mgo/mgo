@@ -194,13 +194,13 @@ const (
 //
 //         Disables the automatic replica set server discovery logic, and
 //         forces the use of servers provided only (even if secondaries).
-//         Note that to talk to a secondary the consistency requirements
-//         must be relaxed to Monotonic or Eventual via SetMode.
+//         Note that to authenticate with or talk to a secondary the consistency
+//         requirements must be relaxed to Monotonic or Eventual via SetMode.
 //
 //
 //     connect=replicaSet
 //
-//  	   Discover replica sets automatically. Default connection behavior.
+//         Discover replica sets automatically. Default connection behavior.
 //
 //
 //     replicaSet=<setname>
@@ -686,6 +686,10 @@ type Credential struct {
 // authentication is valid for the whole session and will stay valid until
 // Logout is explicitly called for the same database, or the session is
 // closed.
+//
+// By default, authentication requires a connection to the primary.
+// To authenticate with a secondary, the consistency requirements must be
+// relaxed to Monotonic or Eventual via SetMode.
 func (db *Database) Login(user, pass string) error {
 	return db.Session.Login(&Credential{Username: user, Password: pass, Source: db.Name})
 }
@@ -694,6 +698,10 @@ func (db *Database) Login(user, pass string) error {
 // authentication is valid for the whole session and will stay valid until
 // Logout is explicitly called for the same database, or the session is
 // closed.
+//
+// By default, authentication requires a connection to the primary.
+// To authenticate with a secondary, the consistency requirements must be
+// relaxed to Monotonic or Eventual via SetMode.
 func (s *Session) Login(cred *Credential) error {
 	socket, err := s.acquireSocket(true)
 	if err != nil {
