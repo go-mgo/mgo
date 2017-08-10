@@ -83,6 +83,8 @@ func (dbs *DBServer) execContainer(port int) *exec.Cmd {
 	cmd := exec.Command("docker", args...)
 	if dbs.debug {
 		fmt.Printf("Pulling Mongo docker image\n")
+    cmd.Stdout = os.Stderr
+    cmd.Stderr = os.Stderr
 	}
 	err := cmd.Run()
 	if err != nil {
@@ -145,6 +147,10 @@ func (dbs *DBServer) stopContainer() {
 		dbs.containerName,
 	}
 	cmd := exec.Command("docker", args...)
+	if dbs.debug {
+    cmd.Stdout = os.Stderr
+    cmd.Stderr = os.Stderr
+  }
 	err := cmd.Run()
 	if err != nil {
 		panic(err)
@@ -157,6 +163,10 @@ func (dbs *DBServer) stopContainer() {
 		dbs.containerName,
 	}
 	cmd = exec.Command("docker", args...)
+	if dbs.debug {
+    cmd.Stdout = os.Stderr
+    cmd.Stderr = os.Stderr
+  }
 	err = cmd.Run()
 }
 
