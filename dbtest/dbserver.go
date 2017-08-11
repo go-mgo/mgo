@@ -232,6 +232,11 @@ func (dbs DBServer) printMongoDebugInfo() {
   cmd.Stderr = os.Stderr
   cmd.Run()
   if dbs.eType == Docker {
+    fmt.Fprintf(os.Stderr, "[%s] mongod containers running right now:\n", time.Now().String())
+    cmd := exec.Command("/bin/sh", "-c", "docker ps -a |grep mongo")
+    cmd.Stdout = os.Stderr
+    cmd.Stderr = os.Stderr
+    cmd.Run()
     args := []string{
       "inspect",
       dbs.containerName,
