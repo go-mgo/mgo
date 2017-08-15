@@ -3,12 +3,14 @@ package dbtest
 import (
 	"bytes"
 	"encoding/hex"
+  "errors"
 	"fmt"
 	"math/rand"
 	"net"
 	"os"
 	"os/exec"
 	"strconv"
+  "strings"
 	"time"
 
 	"gopkg.in/mgo.v2"
