@@ -3,14 +3,14 @@ package dbtest
 import (
 	"bytes"
 	"encoding/hex"
-  "errors"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
 	"os"
 	"os/exec"
 	"strconv"
-  "strings"
+	"strings"
 	"time"
 
 	"gopkg.in/mgo.v2"
@@ -165,7 +165,7 @@ func (dbs *DBServer) GetContainerHostPort() (int, error) {
 		err = cmd.Run()
 		if err != nil {
 			// This could be because the container has not started yet. Retry later
-			fmt.Printf("Failed to get container host port number. Will retry later...")
+			fmt.Printf("Failed to get container host port number. Will retry later...\n")
 			time.Sleep(3 * time.Second)
 			continue
 		}
@@ -177,11 +177,11 @@ func (dbs *DBServer) GetContainerHostPort() (int, error) {
 		}
 		i, err2 := strconv.Atoi(o[1])
 		if err2 != nil {
-			fmt.Printf("Unable to parse port number: error=%s, out=%s", err2.Error(), o[1])
+			fmt.Printf("Unable to parse port number: error=%s, out=%s\n", err2.Error(), o[1])
 		}
 		return i, err2
 	}
-	fmt.Printf("Failed to run command. error=%s, stderr=%s", err.Error(), stderr.String())
+	fmt.Printf("Failed to run command. error=%s, stderr=%s\n", err.Error(), stderr.String())
 	return -1, err
 }
 
@@ -243,11 +243,11 @@ func (dbs *DBServer) start() {
 	}
 	addr := l.Addr().(*net.TCPAddr)
 	l.Close()
-	dbs.host = addr.String()
 
 	dbs.tomb = tomb.Tomb{}
 	switch dbs.eType {
 	case LocalProcess:
+		dbs.host = addr.String()
 		dbs.server = dbs.execLocal(addr.Port)
 	case Docker:
 		dbs.server = dbs.execContainer(0)
@@ -257,7 +257,7 @@ func (dbs *DBServer) start() {
 	dbs.server.Stdout = &dbs.output
 	dbs.server.Stderr = &dbs.output
 	if dbs.debug {
-		fmt.Printf("[%s] Starting Mongo instance: %v\n", time.Now().String(), dbs.server.Args)
+		fmt.Printf("[%s] Starting Mongo instance: %v. Address: %s\n", time.Now().String(), dbs.server.Args, dbs.host)
 	}
 	err = dbs.server.Start()
 	if err != nil {
@@ -265,6 +265,13 @@ func (dbs *DBServer) start() {
 	}
 	if dbs.debug {
 		fmt.Printf("[%s] Mongo instance started\n", time.Now().String())
+	}
+	if dbs.eType == Docker {
+		p, err2 := dbs.GetContainerHostPort()
+		if err2 != nil {
+			panic(err2)
+		}
+		dbs.host = fmt.Sprintf("127.0.0.1:%d", p)
 	}
 	dbs.tomb.Go(dbs.monitor)
 	dbs.Wipe()
