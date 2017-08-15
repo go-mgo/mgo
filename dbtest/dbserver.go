@@ -83,8 +83,8 @@ func (dbs *DBServer) execContainer(port int) *exec.Cmd {
 	cmd := exec.Command("docker", args...)
 	if dbs.debug {
 		fmt.Printf("Pulling Mongo docker image\n")
-    cmd.Stdout = os.Stderr
-    cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
 	}
 	err := cmd.Run()
 	if err != nil {
@@ -104,15 +104,23 @@ func (dbs *DBServer) execContainer(port int) *exec.Cmd {
 	if err != nil {
 		panic(err)
 	}
-	dbs.containerName = fmt.Sprintf("%s", hex.EncodeToString(u))
+	dbs.containerName = fmt.Sprintf("mongo-%s", hex.EncodeToString(u))
 
 	// On some platforms, we get "chown: changing ownership of '/proc/1/fd/1': Permission denied" unless
 	// we allocate a pseudo tty (-t option)
+	var portArg string
+	if port > 0 {
+		portArg = fmt.Sprintf("%d:%d", port, 27017)
+	} else {
+		// Let docker allocate the port.
+		// This is useful when multiple tests are running on the same host
+		portArg = fmt.Sprintf("%d", 27017)
+	}
 	args = []string{
 		"run",
 		"-t",
 		"-p",
-		fmt.Sprintf("%d:%d", port, 27017),
+		portArg,
 		"--rm", // Automatically remove the container when it exits
 		"--name",
 		dbs.containerName,
@@ -140,6 +148,41 @@ func (dbs *DBServer) GetHostName() string {
 	}
 }
 
+// GetContainerHostPort returns the Host port for the test Mongo instance
+func (dbs *DBServer) GetContainerHostPort() (int, error) {
+	start := time.Now()
+	var err error
+	var stderr bytes.Buffer
+	for time.Since(start) < 30*time.Second {
+		stderr.Reset()
+		args := []string{"port", dbs.containerName, fmt.Sprintf("%d", 27017)}
+		cmd := exec.Command("docker", args...) // #nosec
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = &stderr
+		err = cmd.Run()
+		if err != nil {
+			// This could be because the container has not started yet. Retry later
+			fmt.Printf("Failed to get container host port number. Will retry later...")
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		s := strings.TrimSpace(out.String())
+		o := strings.Split(s, ":")
+		if len(o) < 2 {
+			fmt.Printf("Unable to get container host port number: %s", s)
+			return -1, errors.New(fmt.Sprintf("Unable to get container host port number. %s", s))
+		}
+		i, err2 := strconv.Atoi(o[1])
+		if err2 != nil {
+			fmt.Printf("Unable to parse port number: error=%s, out=%s", err2.Error(), o[1])
+		}
+		return i, err2
+	}
+	fmt.Printf("Failed to run command. error=%s, stderr=%s", err.Error(), stderr.String())
+	return -1, err
+}
+
 // Stop the docker container running Mongo.
 func (dbs *DBServer) stopContainer() {
 	args := []string{
@@ -148,9 +191,9 @@ func (dbs *DBServer) stopContainer() {
 	}
 	cmd := exec.Command("docker", args...)
 	if dbs.debug {
-    cmd.Stdout = os.Stderr
-    cmd.Stderr = os.Stderr
-  }
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
+	}
 	err := cmd.Run()
 	if err != nil {
 		panic(err)
@@ -164,9 +207,9 @@ func (dbs *DBServer) stopContainer() {
 	}
 	cmd = exec.Command("docker", args...)
 	if dbs.debug {
-    cmd.Stdout = os.Stderr
-    cmd.Stderr = os.Stderr
-  }
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
+	}
 	err = cmd.Run()
 }
 
@@ -205,7 +248,7 @@ func (dbs *DBServer) start() {
 	case LocalProcess:
 		dbs.server = dbs.execLocal(addr.Port)
 	case Docker:
-		dbs.server = dbs.execContainer(addr.Port)
+		dbs.server = dbs.execContainer(0)
 	default:
 		panic(fmt.Sprintf("unsupported exec type: %d", dbs.eType))
 	}
@@ -226,37 +269,43 @@ func (dbs *DBServer) start() {
 }
 
 func (dbs DBServer) printMongoDebugInfo() {
-  fmt.Fprintf(os.Stderr, "[%s] mongod processes running right now:\n", time.Now().String())
-  cmd := exec.Command("/bin/sh", "-c", "ps auxw | grep mongod")
-  cmd.Stdout = os.Stderr
-  cmd.Stderr = os.Stderr
-  cmd.Run()
-  if dbs.eType == Docker {
-    fmt.Fprintf(os.Stderr, "[%s] mongod containers running right now:\n", time.Now().String())
-    cmd := exec.Command("/bin/sh", "-c", "docker ps -a |grep mongo")
-    cmd.Stdout = os.Stderr
-    cmd.Stderr = os.Stderr
-    cmd.Run()
-    args := []string{
-      "inspect",
-      dbs.containerName,
-    }
-    cmd = exec.Command("docker", args...)
-    cmd.Stdout = os.Stderr
-    cmd.Stderr = os.Stderr
-    fmt.Fprintf(os.Stderr, "[%s] Container inspect:\n", time.Now().String())
-    cmd.Run()
-    args = []string{
-      "logs",
-      dbs.containerName,
-    }
-    cmd = exec.Command("docker", args...)
-    cmd.Stdout = os.Stderr
-    cmd.Stderr = os.Stderr
-    fmt.Fprintf(os.Stderr, "[%s] Container logs:\n", time.Now().String())
-    cmd.Run()
-  }
-  fmt.Fprintf(os.Stderr, "----------------------------------------\n")
+	fmt.Fprintf(os.Stderr, "[%s] mongod processes running right now:\n", time.Now().String())
+	cmd := exec.Command("/bin/sh", "-c", "ps auxw | grep mongod")
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	cmd.Run()
+	if dbs.eType == Docker {
+		fmt.Fprintf(os.Stderr, "[%s] mongod containers running right now:\n", time.Now().String())
+		cmd := exec.Command("/bin/sh", "-c", "docker ps -a |grep mongo")
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
+		cmd.Run()
+
+		cmd := exec.Command("/bin/sh", "-c", "")
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
+		cmd.Run()
+
+		args := []string{
+			"inspect",
+			dbs.containerName,
+		}
+		cmd = exec.Command("docker", args...)
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
+		fmt.Fprintf(os.Stderr, "[%s] Container inspect:\n", time.Now().String())
+		cmd.Run()
+		args = []string{
+			"logs",
+			dbs.containerName,
+		}
+		cmd = exec.Command("docker", args...)
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
+		fmt.Fprintf(os.Stderr, "[%s] Container logs:\n", time.Now().String())
+		cmd.Run()
+	}
+	fmt.Fprintf(os.Stderr, "----------------------------------------\n")
 }
 
 func (dbs *DBServer) monitor() error {
@@ -265,7 +314,7 @@ func (dbs *DBServer) monitor() error {
 		// Present some debugging information.
 		fmt.Fprintf(os.Stderr, "---- mongod process died unexpectedly:\n")
 		fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
-    dbs.printMongoDebugInfo()
+		dbs.printMongoDebugInfo()
 
 		panic("mongod process died unexpectedly")
 	}
@@ -319,7 +368,7 @@ func (dbs *DBServer) SessionWithTimeout(timeout time.Duration) *mgo.Session {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[%s] Unable to dial mongod. Timeout=%v, Error: %s\n", time.Now().String(), timeout, err.Error())
 			fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
-      dbs.printMongoDebugInfo()
+			dbs.printMongoDebugInfo()
 			panic(err)
 		}
 	}
@@ -331,7 +380,7 @@ func (dbs *DBServer) SessionWithTimeout(timeout time.Duration) *mgo.Session {
 //
 // The first Session obtained from a DBServer will start it.
 func (dbs *DBServer) Session() *mgo.Session {
-  return dbs.SessionWithTimeout(10*time.Second)
+	return dbs.SessionWithTimeout(10 * time.Second)
 }
 
 // checkSessions ensures all mgo sessions opened were properly closed.
@@ -350,9 +399,9 @@ func (dbs *DBServer) checkSessions() {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-  stats := mgo.GetStats()
-  panic(fmt.Sprintf("There are mgo sessions still alive. SocketCount=%d InUseCount=%d",
-    stats.SocketsAlive, stats.SocketsInUse))
+	stats := mgo.GetStats()
+	panic(fmt.Sprintf("There are mgo sessions still alive. SocketCount=%d InUseCount=%d",
+		stats.SocketsAlive, stats.SocketsInUse))
 }
 
 // Wipe drops all created databases and their data.
