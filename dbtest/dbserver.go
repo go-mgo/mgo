@@ -283,11 +283,6 @@ func (dbs DBServer) printMongoDebugInfo() {
 		cmd.Stderr = os.Stderr
 		cmd.Run()
 
-		cmd := exec.Command("/bin/sh", "-c", "")
-		cmd.Stdout = os.Stderr
-		cmd.Stderr = os.Stderr
-		cmd.Run()
-
 		args := []string{
 			"inspect",
 			dbs.containerName,
