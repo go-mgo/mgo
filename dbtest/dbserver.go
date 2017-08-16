@@ -155,7 +155,7 @@ func (dbs *DBServer) GetContainerHostPort() (int, error) {
 	start := time.Now()
 	var err error
 	var stderr bytes.Buffer
-	for time.Since(start) < 30*time.Second {
+	for time.Since(start) < 60*time.Second {
 		stderr.Reset()
 		args := []string{"port", dbs.containerName, fmt.Sprintf("%d", 27017)}
 		cmd := exec.Command("docker", args...) // #nosec
@@ -173,10 +173,12 @@ func (dbs *DBServer) GetContainerHostPort() (int, error) {
 		o := strings.Split(s, ":")
 		if len(o) < 2 {
 			fmt.Printf("Unable to get container host port number: %s", s)
+			dbs.printMongoDebugInfo()
 			return -1, errors.New(fmt.Sprintf("Unable to get container host port number. %s", s))
 		}
 		i, err2 := strconv.Atoi(o[1])
 		if err2 != nil {
+			dbs.printMongoDebugInfo()
 			fmt.Printf("Unable to parse port number: error=%s, out=%s\n", err2.Error(), o[1])
 		}
 		return i, err2
