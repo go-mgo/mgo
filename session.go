@@ -2397,7 +2397,10 @@ type queryError struct {
 	AssertionCode int "assertionCode"
 }
 
+// QueryError indicates an error that occurred during a Mongo query.
 type QueryError struct {
+	// A list of codes can be found here:
+	// https://github.com/mongodb/mongo/blob/master/src/mongo/base/error_codes.err
 	Code      int
 	Message   string
 	Assertion bool
