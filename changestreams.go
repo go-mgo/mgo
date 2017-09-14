@@ -10,6 +10,7 @@ import (
 
 type ChangeStream struct {
 	iter           *Iter
+	isClosed       bool
 	options        ChangeStreamOptions
 	pipeline       interface{}
 	resumeToken    *bson.Raw
@@ -103,6 +104,11 @@ func (changeStream *ChangeStream) Next(result interface{}) bool {
 		return false
 	}
 
+	if changeStream.isClosed {
+		changeStream.err = fmt.Errorf("illegal use of a closed ChangeStream")
+		return false
+	}
+
 	var err error
 
 	// attempt to fetch the change stream result.
@@ -136,6 +142,40 @@ func (changeStream *ChangeStream) Next(result interface{}) bool {
 	}
 
 	return true
+}
+
+// Err returns nil if no errors happened during iteration, or the actual
+// error otherwise.
+func (changeStream *ChangeStream) Err() error {
+	changeStream.m.Lock()
+	defer changeStream.m.Unlock()
+	return changeStream.err
+}
+
+// Close kills the server cursor used by the iterator, if any, and returns
+// nil if no errors happened during iteration, or the actual error otherwise.
+func (changeStream *ChangeStream) Close() error {
+	changeStream.m.Lock()
+	defer changeStream.m.Unlock()
+	changeStream.isClosed = true
+	err := changeStream.iter.Close()
+	if err != nil {
+		changeStream.err = err
+	}
+	return err
+}
+
+// ResumeToken returns a copy of the current resume token held by the change stream.
+// This token should be treated as an opaque token that can be provided to instantiate
+// a new change stream.
+func (changeStream *ChangeStream) ResumeToken() *bson.Raw {
+	changeStream.m.Lock()
+	defer changeStream.m.Unlock()
+	if changeStream.resumeToken == nil {
+		return nil
+	}
+	var tokenCopy bson.Raw = *changeStream.resumeToken
+	return &tokenCopy
 }
 
 func constructChangeStreamPipeline(pipeline interface{},
