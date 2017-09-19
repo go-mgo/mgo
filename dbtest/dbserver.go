@@ -97,6 +97,7 @@ func (dbs *DBServer) execContainer(port int) *exec.Cmd {
     if err == nil {
       break
     } else {
+      fmt.Printf("Failed to pull Mongo container image. err=%s", err.String())
       time.Sleep(5 * time.Second)
     }
   }
