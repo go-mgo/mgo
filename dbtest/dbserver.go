@@ -82,16 +82,27 @@ func (dbs *DBServer) execContainer(port int) *exec.Cmd {
 		"pull",
 		fmt.Sprintf("mongo:%s", dbs.version),
 	}
-	cmd := exec.Command("docker", args...)
-	if dbs.debug {
-		fmt.Printf("Pulling Mongo docker image\n")
-		cmd.Stdout = os.Stderr
-		cmd.Stderr = os.Stderr
-	}
-	err := cmd.Run()
-	if err != nil {
-		panic(err)
-	}
+  start := time.Now()
+  var err error
+  // Seeing intermittent issues such as:
+  // Error response from daemon: Get https://registry-1.docker.io/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+  for time.Since(start) < 60*time.Second {
+    cmd := exec.Command("docker", args...)
+    if dbs.debug {
+      fmt.Printf("Pulling Mongo docker image\n")
+      cmd.Stdout = os.Stderr
+      cmd.Stderr = os.Stderr
+    }
+    err = cmd.Run()
+    if err == nil {
+      break
+    } else {
+      time.Sleep(5 * time.Second)
+    }
+  }
+  if err != nil {
+    panic(err)
+  }
 	if dbs.debug {
 		fmt.Printf("Pulled Mongo docker image\n")
 	}
