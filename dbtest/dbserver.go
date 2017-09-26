@@ -432,6 +432,7 @@ func (dbs *DBServer) checkSessions() {
 // there is a session leak.
 func (dbs *DBServer) Wipe() {
 	if dbs.server == nil || dbs.session == nil {
+    fmt.Printf("Skip Wipe()")
 		return
 	}
 	dbs.checkSessions()
