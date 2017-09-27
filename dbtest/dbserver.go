@@ -451,6 +451,7 @@ func (dbs *DBServer) Wipe() {
 		switch name {
 		case "admin", "local", "config":
 		default:
+      fmt.Printf("Drop database '%s'", name)
 			err = session.DB(name).DropDatabase()
 			if err != nil {
 				panic(err)
