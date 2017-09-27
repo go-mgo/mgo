@@ -432,7 +432,7 @@ func (dbs *DBServer) checkSessions() {
 // there is a session leak.
 func (dbs *DBServer) Wipe() {
 	if dbs.server == nil || dbs.session == nil {
-    fmt.Printf("Skip Wipe()")
+    fmt.Printf("Skip Wipe()\n")
 		return
 	}
 	dbs.checkSessions()
@@ -451,7 +451,7 @@ func (dbs *DBServer) Wipe() {
 		switch name {
 		case "admin", "local", "config":
 		default:
-      fmt.Printf("Drop database '%s'", name)
+      fmt.Printf("Drop database '%s'\n", name)
 			err = session.DB(name).DropDatabase()
 			if err != nil {
 				panic(err)
