@@ -64,6 +64,8 @@ const (
 	flagLogReplay
 	flagNoCursorTimeout
 	flagAwaitData
+	flagExhaust
+	flagPartial
 )
 
 type queryOp struct {
@@ -91,6 +93,10 @@ type queryWrapper struct {
 	MaxScan        int         "$maxScan,omitempty"
 	MaxTimeMS      int         "$maxTimeMS,omitempty"
 	Comment        string      "$comment,omitempty"
+}
+
+func (op *queryOp) AllowPartial() {
+	op.flags |= flagPartial
 }
 
 func (op *queryOp) finalQuery(socket *mongoSocket) interface{} {
