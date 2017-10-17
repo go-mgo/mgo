@@ -33,7 +33,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/mgo.v2-unstable/bson"
+	"gopkg.in/mgo.v2/bson"
 )
 
 type replyFunc func(err error, reply *replyOp, docNum int, docData []byte)
@@ -523,6 +523,11 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 
 	socket.updateDeadline(writeDeadline)
 	_, err = socket.conn.Write(buf)
+	if err != nil {
+		socket.Unlock()
+		socket.kill(err, true)
+		return
+	}
 	if !wasWaiting && requestCount > 0 {
 		socket.updateDeadline(readDeadline)
 	}

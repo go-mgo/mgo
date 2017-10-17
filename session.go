@@ -41,7 +41,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/mgo.v2-unstable/bson"
+	"gopkg.in/mgo.v2/bson"
 )
 
 type Mode int
@@ -3078,7 +3078,7 @@ Error:
 // unmarshalled into by gobson.  This function blocks until either a result
 // is available or an error happens.  For example:
 //
-//     err := collection.Find(bson.M{"a", 1}).One(&result)
+//     err := collection.Find(bson.M{"a": 1}).One(&result)
 //
 // In case the resulting document includes a field named $err or errmsg, which
 // are standard ways for MongoDB to return query errors, the returned err will
@@ -4314,11 +4314,10 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 	var doc valueResult
 	for i := 0; i < maxUpsertRetries; i++ {
 		err = session.DB(dbname).Run(&cmd, &doc)
-
 		if err == nil {
 			break
 		}
-		if change.Upsert && IsDup(err) {
+		if change.Upsert && IsDup(err) && i+1 < maxUpsertRetries {
 			// Retry duplicate key errors on upserts.
 			// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
 			continue
@@ -4418,13 +4417,13 @@ func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 	s.m.RLock()
 	// If there is a slave socket reserved and its use is acceptable, take it as long
 	// as there isn't a master socket which would be preferred by the read preference mode.
-	if s.slaveSocket != nil && s.slaveOk && slaveOk && (s.masterSocket == nil || s.consistency != PrimaryPreferred && s.consistency != Monotonic) {
+	if s.slaveSocket != nil && s.slaveSocket.dead == nil && s.slaveOk && slaveOk && (s.masterSocket == nil || s.consistency != PrimaryPreferred && s.consistency != Monotonic) {
 		socket := s.slaveSocket
 		socket.Acquire()
 		s.m.RUnlock()
 		return socket, nil
 	}
-	if s.masterSocket != nil {
+	if s.masterSocket != nil && s.masterSocket.dead == nil {
 		socket := s.masterSocket
 		socket.Acquire()
 		s.m.RUnlock()
@@ -4436,6 +4435,14 @@ func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 	// so try again but with an exclusive lock now.
 	s.m.Lock()
 	defer s.m.Unlock()
+
+	// if socket was killed
+	if s.masterSocket != nil && s.masterSocket.dead != nil {
+		s.masterSocket = nil
+	}
+	if s.slaveSocket != nil && s.slaveSocket.dead != nil {
+		s.slaveSocket = nil
+	}
 
 	if s.slaveSocket != nil && s.slaveOk && slaveOk && (s.masterSocket == nil || s.consistency != PrimaryPreferred && s.consistency != Monotonic) {
 		s.slaveSocket.Acquire()
