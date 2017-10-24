@@ -34,7 +34,10 @@ import (
 	"time"
 
 	"github.com/lyft/mgo/bson"
+	"math/rand"
 )
+
+const socketExpiryJitterAmount = .3
 
 // ---------------------------------------------------------------------------
 // Mongo server encapsulation.
@@ -185,7 +188,9 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 	stats.conn(+1, master)
 	var socketExpiryTime *time.Time
 	if server.maxSocketReuseTime != 0 {
-		expiryTime := time.Now().Add(server.maxSocketReuseTime * time.Second)
+		duration := server.maxSocketReuseTime
+		durationWithJitter := time.Duration(float64(duration) * (1 + rand.Float64()*socketExpiryJitterAmount))
+		expiryTime := time.Now().Add(durationWithJitter)
 		socketExpiryTime = &expiryTime
 	}
 	return newSocket(server, conn, timeout, socketExpiryTime), nil

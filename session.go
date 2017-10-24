@@ -321,7 +321,7 @@ func ParseURL(url string) (*DialInfo, error) {
 		Source:             source,
 		PoolLimit:          poolLimit,
 		ReplicaSetName:     setName,
-		MaxSocketReuseTime: time.Duration(maxSocketReuseTimeSecs),
+		MaxSocketReuseTime: time.Duration(maxSocketReuseTimeSecs) * time.Second,
 	}
 	return &info, nil
 }

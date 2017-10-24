@@ -1660,7 +1660,7 @@ func (s *S) TestSocketExpiryEnsureSocketClosed(c *C) {
 	}()
 
 	// ensure that socket reuse expiry time expires
-	time.Sleep(time.Second)
+	time.Sleep(2*time.Second)
 
 	// Put the one socket back in the pool, freeing it for the copy session.
 	session.Refresh()
