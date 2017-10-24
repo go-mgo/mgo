@@ -1638,6 +1638,31 @@ func (s *S) TestPoolLimitMany(c *C) {
 	c.Assert(delay < 6e9, Equals, true)
 }
 
+func (s *S) TestPoolLimitRaceCondition(c *C) {
+	var session *mgo.Session
+	var err error
+	poolLimit := 2
+	session, err = mgo.Dial(fmt.Sprintf("localhost:40001?maxPoolSize=%d", poolLimit))
+	c.Assert(err, IsNil)
+	defer session.Close()
+	var wg sync.WaitGroup
+
+	for requests := 0; requests < poolLimit*2; requests++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			copy2 := session.Copy()
+			defer copy2.Close()
+			c.Check(copy2.Ping(), IsNil)
+			copy2.Refresh()
+			socketsAlive := mgo.GetStats().SocketsAlive
+			c.Assert(socketsAlive <= poolLimit, Equals, true,
+				Commentf("Pool limit exceeded: limit: %d, socketsAlive: %d", poolLimit, socketsAlive))
+		}(requests)
+	}
+	wg.Wait()
+}
+
 // test to ensure that expired sockets are removed from active sockets list
 func (s *S) TestSocketExpiryEnsureSocketClosed(c *C) {
 	var session *mgo.Session

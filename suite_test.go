@@ -40,6 +40,7 @@ import (
 	. "gopkg.in/check.v1"
 	"github.com/lyft/mgo"
 	"github.com/lyft/mgo/bson"
+	"strings"
 )
 
 var fast = flag.Bool("fast", false, "Skip slow tests")
@@ -155,6 +156,10 @@ func (s *S) pid(host string) int {
 		panic(err)
 	}
 	pidstr := string(output[1 : len(output)-1])
+
+	if strings.Contains(pidstr, "\n") {
+		pidstr = string(pidstr[0 : strings.Index(pidstr, "\n")])
+	}
 	pid, err := strconv.Atoi(pidstr)
 	if err != nil {
 		panic("cannot convert pid to int: " + pidstr)

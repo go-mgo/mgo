@@ -114,25 +114,34 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			server.Unlock()
 			return nil, abended, errServerClosed
 		}
-		n := len(server.unusedSockets)
-		if poolLimit > 0 && len(server.liveSockets)-n >= poolLimit {
-			server.Unlock()
-			return nil, false, errPoolLimit
-		}
-		if n > 0 {
-			socket = server.unusedSockets[n-1]
-			server.unusedSockets[n-1] = nil // Help GC.
-			server.unusedSockets = server.unusedSockets[:n-1]
+
+		unusedSocketsCount := len(server.unusedSockets)
+		// see if we've unused socket that we could use
+		if unusedSocketsCount > 0 {
+			socket = server.unusedSockets[unusedSocketsCount-1]
+			server.unusedSockets[unusedSocketsCount-1] = nil // Help GC.
+			server.unusedSockets = server.unusedSockets[:unusedSocketsCount-1]
 			info := server.info
 			server.Unlock()
 			err = socket.InitialAcquire(info, timeout)
 			if err != nil {
 				continue
 			}
-		} else {
+		} else if poolLimit > 0 && len(server.liveSockets) >= poolLimit {
 			server.Unlock()
-			socket, err = server.Connect(timeout)
-			if err == nil {
+			return nil, false, errPoolLimit
+		} else {
+			// no unused sockets found and we're below pool limit
+			// try to establish new connection to mongo server
+			socket = &mongoSocket{
+				socketState: Connecting,
+			}
+			// hold our spot in the liveSockets slice
+			server.liveSockets = append(server.liveSockets, socket)
+			server.Unlock()
+			// release server lock so we can initiate concurrent connections to mongodb
+			err = server.Connect(timeout, socket)
+			if err == nil && socket.socketState == Connected {
 				server.Lock()
 				// We've waited for the Connect, see if we got
 				// closed in the meantime
@@ -142,18 +151,21 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 					socket.Close()
 					return nil, abended, errServerClosed
 				}
-				server.liveSockets = append(server.liveSockets, socket)
+				server.Unlock()
+			} else {
+				// couldn't open connection to mongodb, releasing spot in liveSockets
+				server.Lock()
+				server.liveSockets = removeSocket(server.liveSockets, socket)
 				server.Unlock()
 			}
 		}
 		return
 	}
-	panic("unreachable")
 }
 
 // Connect establishes a new connection to the server. This should
 // generally be done through server.AcquireSocket().
-func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) {
+func (server *mongoServer) Connect(timeout time.Duration, socket *mongoSocket) error {
 	server.RLock()
 	master := server.info.Master
 	dial := server.dial
@@ -181,7 +193,7 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 	}
 	if err != nil {
 		logf("Connection to %s failed: %v", server.Addr, err.Error())
-		return nil, err
+		return err
 	}
 	logf("Connection to %s established.", server.Addr)
 
@@ -193,7 +205,9 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 		expiryTime := time.Now().Add(durationWithJitter)
 		socketExpiryTime = &expiryTime
 	}
-	return newSocket(server, conn, timeout, socketExpiryTime), nil
+	newSocket(server, socket, conn, timeout, socketExpiryTime)
+	socket.socketState = Connected
+	return nil
 }
 
 // Close forces closing all sockets that are alive, whether
