@@ -523,6 +523,11 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 
 	socket.updateDeadline(writeDeadline)
 	_, err = socket.conn.Write(buf)
+	if err != nil {
+		socket.Unlock()
+		socket.kill(err, true)
+		return
+	}
 	if !wasWaiting && requestCount > 0 {
 		socket.updateDeadline(readDeadline)
 	}
