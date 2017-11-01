@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/lyft/mgo/bson"
+	"io"
 )
 
 type replyFunc func(err error, reply *replyOp, docNum int, docData []byte)
@@ -338,6 +339,15 @@ func (socket *mongoSocket) kill(err error, abend bool) {
 		socket.Unlock()
 		return
 	}
+
+	if err, ok := err.(net.Error); ok && err.Timeout() {
+		stats.errSocketTimeout(+1)
+	} else if err == io.EOF {
+		stats.errSocketEOF(+1)
+	} else {
+		stats.errSocketClosed(+1)
+	}
+
 	logf("Socket %p to %s: closing: %s (abend=%v)", socket, socket.addr, err.Error(), abend)
 	socket.dead = err
 	socket.conn.Close()

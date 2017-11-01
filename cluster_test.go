@@ -1041,9 +1041,28 @@ func (s *S) TestSocketTimeout(c *C) {
 	// Do something.
 	result := struct{ Ok bool }{}
 	err = session.Run("getLastError", &result)
+	c.Assert(mgo.GetStats().ErrSocketTimeout, Equals, 1)
 	c.Assert(err, ErrorMatches, ".*: i/o timeout")
 	c.Assert(started.Before(time.Now().Add(-timeout)), Equals, true)
 	c.Assert(started.After(time.Now().Add(-timeout*2)), Equals, true)
+}
+
+func (s *S) TestSocketStatsReadEOF(c *C) {
+	if *fast {
+		c.Skip("-fast")
+	}
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	s.Stop("localhost:40001")
+	s.StartAll()
+
+	// Do something.
+	result := struct{ Ok bool }{}
+	err = session.Run("getLastError", &result)
+	c.Assert(mgo.GetStats().ErrSocketEOF == 1, Equals, true)
 }
 
 func (s *S) TestSocketTimeoutOnDial(c *C) {

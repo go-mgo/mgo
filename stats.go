@@ -69,16 +69,19 @@ func ResetStats() {
 }
 
 type Stats struct {
-	Clusters       int
-	MasterConns    int
-	SlaveConns     int
-	SentOps        int
-	ReceivedOps    int
-	ReceivedDocs   int
-	SocketsAlive   int
-	SocketsInUse   int
-	SocketRefs     int
-	SocketsExpired int
+	Clusters         int
+	MasterConns      int
+	SlaveConns       int
+	SentOps          int
+	ReceivedOps      int
+	ReceivedDocs     int
+	SocketsAlive     int
+	SocketsInUse     int
+	SocketRefs       int
+	SocketsExpired   int
+	ErrSocketTimeout int
+	ErrSocketEOF     int
+	ErrSocketClosed  int
 }
 
 // for mostly debugging purpose
@@ -161,6 +164,30 @@ func (stats *Stats) socketRefs(delta int) {
 	if stats != nil {
 		statsMutex.Lock()
 		stats.SocketRefs += delta
+		statsMutex.Unlock()
+	}
+}
+
+func (stats *Stats) errSocketTimeout(delta int) {
+	if stats != nil {
+		statsMutex.Lock()
+		stats.ErrSocketTimeout += delta
+		statsMutex.Unlock()
+	}
+}
+
+func (stats *Stats) errSocketEOF(delta int) {
+	if stats != nil {
+		statsMutex.Lock()
+		stats.ErrSocketEOF += delta
+		statsMutex.Unlock()
+	}
+}
+
+func (stats *Stats) errSocketClosed(delta int) {
+	if stats != nil {
+		statsMutex.Lock()
+		stats.ErrSocketEOF += delta
 		statsMutex.Unlock()
 	}
 }
