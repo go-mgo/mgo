@@ -196,7 +196,6 @@ func newSocket(server *mongoServer, socket *mongoSocket, conn net.Conn, timeout 
 	if err := socket.InitialAcquire(server.Info(), timeout); err != nil {
 		panic("newSocket: InitialAcquire returned error: " + err.Error())
 	}
-	stats.socketsAlive(+1)
 	debugf("Socket %p to %s: initialized", socket, socket.addr)
 	socket.resetNonce()
 	go socket.readLoop()
@@ -351,7 +350,6 @@ func (socket *mongoSocket) kill(err error, abend bool) {
 	logf("Socket %p to %s: closing: %s (abend=%v)", socket, socket.addr, err.Error(), abend)
 	socket.dead = err
 	socket.conn.Close()
-	stats.socketsAlive(-1)
 	replyFuncs := socket.replyFuncs
 	socket.replyFuncs = make(map[uint32]replyFunc)
 	server := socket.server

@@ -138,6 +138,7 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			}
 			// hold our spot in the liveSockets slice
 			server.liveSockets = append(server.liveSockets, socket)
+			stats.socketsAlive(+1)
 			server.Unlock()
 			// release server lock so we can initiate concurrent connections to mongodb
 			err = server.Connect(timeout, socket)
@@ -222,6 +223,7 @@ func (server *mongoServer) Close() {
 	server.Unlock()
 	logf("Connections to %s closing (%d live sockets).", server.Addr, len(liveSockets))
 	for i, s := range liveSockets {
+		stats.socketsAlive(-1)
 		s.Close()
 		liveSockets[i] = nil
 	}
@@ -261,6 +263,7 @@ func (server *mongoServer) AbendSocket(socket *mongoSocket) {
 		server.Unlock()
 		return
 	}
+	stats.socketsAlive(-1)
 	server.liveSockets = removeSocket(server.liveSockets, socket)
 	server.unusedSockets = removeSocket(server.unusedSockets, socket)
 	server.Unlock()
