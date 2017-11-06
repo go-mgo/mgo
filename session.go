@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"github.com/lyft/mgo/bson"
+	"math/rand"
 )
 
 type Mode int
@@ -421,6 +422,7 @@ func (addr *ServerAddr) TCPAddr() *net.TCPAddr {
 
 // DialWithInfo establishes a new session to the cluster identified by info.
 func DialWithInfo(info *DialInfo) (*Session, error) {
+	rand.Seed(time.Now().UnixNano())
 	addrs := make([]string, len(info.Addrs))
 	for i, addr := range info.Addrs {
 		p := strings.LastIndexAny(addr, "]:")
