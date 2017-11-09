@@ -647,7 +647,7 @@ func (s *S) checkTxnQueueLength(c *C, expectedQueueLength int) {
 	c.Assert(err, IsNil)
 	c.Check(len(doc["txn-queue"].([]interface{})), Equals, expectedQueueLength)
 	err = s.runner.Run(ops, "", nil)
-	c.Check(err, ErrorMatches, `txn-queue for 0 in "accounts" has too many transactions \(\d+\)`)
+	c.Assert(err, Equals, txn.ErrAborted)
 	// The txn-queue should not have grown
 	err = s.accounts.FindId(0).One(&doc)
 	c.Assert(err, IsNil)

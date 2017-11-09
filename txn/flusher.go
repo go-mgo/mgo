@@ -245,14 +245,15 @@ NextDoc:
 		chaos("")
 		if _, err := cquery.Apply(change, &info); err == nil {
 			if f.opts.MaxTxnQueueLength > 0 && len(info.Queue) > f.opts.MaxTxnQueueLength {
-				// abort with TXN Queue too long, but remove the entry we just added
-				innerErr := c.UpdateId(dkey.Id,
-					bson.D{{"$pullAll", bson.D{{"txn-queue", []token{tt}}}}})
-				if innerErr != nil {
-					f.debugf("error while backing out of queue-too-long: %v", innerErr)
-				}
-				return nil, fmt.Errorf("txn-queue for %v in %q has too many transactions (%d)",
-					dkey.Id, dkey.C, len(info.Queue))
+				// txn-queue is too long, abort this transaction. abortOrReload will pull the tokens from
+				// all of the docs that we've touched so far.
+				revno[dkey] = info.Revno
+				f.queue[dkey] = info.Queue
+				revnos := assembledRevnos(t.Ops, revno)
+				pull := map[bson.ObjectId]*transaction{t.Id: t}
+				// shouldn't we create a pull that includes this transaction?
+				err := f.abortOrReload(t, revnos, pull)
+				return nil, err
 			}
 			if info.Remove == "" {
 				// Fast path, unless workload is insert/remove heavy.
@@ -620,8 +621,8 @@ func (f *flusher) assert(t *transaction, revnos []int64, pull map[bson.ObjectId]
 
 func (f *flusher) abortOrReload(t *transaction, revnos []int64, pull map[bson.ObjectId]*transaction) (err error) {
 	f.debugf("Aborting or reloading %s (was %q)", t, t.State)
-	if t.State == tprepared {
-		qdoc := bson.D{{"_id", t.Id}, {"s", tprepared}}
+	if t.State == tprepared || t.State == tpreparing {
+		qdoc := bson.D{{"_id", t.Id}, {"s", t.State}}
 		udoc := bson.D{{"$set", bson.D{{"s", taborting}}}}
 		chaos("set-aborting")
 		if err = f.tc.Update(qdoc, udoc); err == nil {
@@ -642,6 +643,7 @@ func (f *flusher) abortOrReload(t *transaction, revnos []int64, pull map[bson.Ob
 		if pull == nil {
 			pull = map[bson.ObjectId]*transaction{t.Id: t}
 		}
+		f.debugf("pull %v", pull)
 		seen := make(map[docKey]bool)
 		for i, op := range t.Ops {
 			dkey := op.docKey()
@@ -651,6 +653,7 @@ func (f *flusher) abortOrReload(t *transaction, revnos []int64, pull map[bson.Ob
 			seen[dkey] = true
 
 			pullAll := tokensToPull(f.queue[dkey], pull, "")
+			f.debugf("pulling %v from %s %v", pullAll, dkey.C, dkey.Id)
 			if len(pullAll) == 0 {
 				continue
 			}
