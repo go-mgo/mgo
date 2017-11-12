@@ -666,6 +666,78 @@ func (s *S) TestTxnQueueCustomMaxSize(c *C) {
 	s.checkTxnQueueLength(c, 100)
 }
 
+func (s *S) TestTxnQueueMultipleDocs(c *C) {
+	expectedLength := 100
+	maxDocs := 110
+	opts := txn.DefaultRunnerOptions()
+	opts.MaxTxnQueueLength = expectedLength
+	s.runner.SetOptions(opts)
+	txn.SetDebug(false)
+	createOps := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Insert: M{"balance": 1000},
+	}}
+	for i := 1; i < maxDocs; i++ {
+		createOps = append(createOps, txn.Op{
+			C:      "accounts",
+			Id:     i,
+			Insert: M{"balance": 0},
+		})
+	}
+	err := s.runner.Run(createOps, "", nil)
+	c.Assert(err, IsNil)
+	// Force a bad transaction into the queue
+	badTxnId := "deadbeef1234567812345678_12345678"
+	err = s.accounts.UpdateId(0, M{"$set": M{"txn-queue": []string{badTxnId}}})
+	c.Assert(err, IsNil)
+	for i := 1; i < expectedLength; i++ {
+		ops := []txn.Op{{
+			C:      "accounts",
+			Id:     0,
+			Update: M{"$inc": M{"balance": -1}},
+		}, {
+			C:      "accounts",
+			Id:     i,
+			Update: M{"$inc": M{"balance": 1}},
+		}}
+		err = s.runner.Run(ops, "", nil)
+		c.Assert(err, NotNil)
+		c.Assert(err, ErrorMatches, `cannot find transaction ObjectIdHex."deadbeef1234567812345678".`)
+	}
+	// Now that we've filled up the txn-queue of the first document, any
+	// further changes should be aborted
+	var doc bson.M
+	err = s.accounts.FindId(0).One(&doc)
+	c.Assert(err, IsNil)
+	c.Check(len(doc["txn-queue"].([]interface{})), Equals, expectedLength)
+	txn.SetDebug(true)
+	for i := 100; i < maxDocs; i++ {
+		ops := []txn.Op{{
+			C:      "accounts",
+			Id:     0,
+			Update: M{"$inc": M{"balance": -1}},
+		}, {
+			C:      "accounts",
+			Id:     i,
+			Update: M{"$inc": M{"balance": 1}},
+		}}
+		err = s.runner.Run(ops, "", nil)
+		c.Assert(err, NotNil)
+		c.Assert(err, Equals, txn.ErrAborted)
+	}
+	err = s.accounts.FindId(0).One(&doc)
+	c.Assert(err, IsNil)
+	c.Check(len(doc["txn-queue"].([]interface{})), Equals, expectedLength)
+	err = s.accounts.UpdateId(0, M{"$pullAll": M{"txn-queue": []string{badTxnId}}})
+	c.Assert(err, IsNil)
+	c.Log("Updated removing the invalid transaction")
+	// Now we should be able to cleanup
+	err = s.runner.ResumeAll()
+	c.Assert(err, IsNil)
+	c.Log("resumed all")
+}
+
 func (s *S) TestTxnQueueUnlimited(c *C) {
 	opts := txn.DefaultRunnerOptions()
 	// A value of 0 should mean 'unlimited'
