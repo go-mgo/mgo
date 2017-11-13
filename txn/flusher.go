@@ -251,8 +251,12 @@ NextDoc:
 				f.queue[dkey] = info.Queue
 				revnos := assembledRevnos(t.Ops, revno)
 				pull := map[bson.ObjectId]*transaction{t.Id: t}
-				// shouldn't we create a pull that includes this transaction?
 				err := f.abortOrReload(t, revnos, pull)
+				if err == nil {
+					// If we managed to abort the transaction, report on the bad data
+					return nil, fmt.Errorf("txn-queue for %v in %q has too many transactions (%d)",
+						dkey.Id, dkey.C, len(info.Queue))
+				}
 				return nil, err
 			}
 			if info.Remove == "" {
@@ -643,7 +647,6 @@ func (f *flusher) abortOrReload(t *transaction, revnos []int64, pull map[bson.Ob
 		if pull == nil {
 			pull = map[bson.ObjectId]*transaction{t.Id: t}
 		}
-		f.debugf("pull %v", pull)
 		seen := make(map[docKey]bool)
 		for i, op := range t.Ops {
 			dkey := op.docKey()
@@ -653,7 +656,6 @@ func (f *flusher) abortOrReload(t *transaction, revnos []int64, pull map[bson.Ob
 			seen[dkey] = true
 
 			pullAll := tokensToPull(f.queue[dkey], pull, "")
-			f.debugf("pulling %v from %s %v", pullAll, dkey.C, dkey.Id)
 			if len(pullAll) == 0 {
 				continue
 			}
