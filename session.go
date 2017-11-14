@@ -2387,10 +2387,6 @@ func (c *Collection) NewIter(session *Session, firstBatch []bson.Raw, cursorId i
 		err:     err,
 	}
 
-	if socket.ServerInfo().MaxWireVersion >= 4 && c.FullName != "admin.$cmd" {
-		iter.isFindCmd = true
-	}
-
 	iter.gotReply.L = &iter.m
 	for _, doc := range firstBatch {
 		iter.docData.Push(doc.Data)
@@ -2400,6 +2396,15 @@ func (c *Collection) NewIter(session *Session, firstBatch []bson.Raw, cursorId i
 		iter.op.collection = c.FullName
 		iter.op.replyFunc = iter.replyFunc()
 	}
+
+	if err != nil {
+		return iter
+	}
+
+	if socket.ServerInfo().MaxWireVersion >= 4 && c.FullName != "admin.$cmd" {
+		iter.isFindCmd = true
+	}
+
 	return iter
 }
 
