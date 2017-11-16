@@ -35,8 +35,9 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2-unstable"
-	"gopkg.in/mgo.v2-unstable/bson"
+
+	"github.com/ContextLogic/mgo"
+	"github.com/ContextLogic/mgo/bson"
 )
 
 func (s *S) TestNewSession(c *C) {
@@ -1476,7 +1477,6 @@ func (s *S) TestSecondaryModeWithMongosInsert(c *C) {
 	coll.Find(nil).One(&result)
 	c.Assert(result.A, Equals, 1)
 }
-
 
 func (s *S) TestRemovalOfClusterMember(c *C) {
 	if *fast {
