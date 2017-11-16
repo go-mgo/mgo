@@ -36,7 +36,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/mgo.v2-unstable/bson"
+	"github.com/ContextLogic/mgo/bson"
 )
 
 type GridFS struct {

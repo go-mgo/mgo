@@ -9,8 +9,9 @@ import (
 	"strconv"
 	"time"
 
-	"gopkg.in/mgo.v2-unstable"
-	"gopkg.in/tomb.v2"
+	tomb "gopkg.in/tomb.v2"
+
+	"github.com/ContextLogic/mgo"
 )
 
 // DBServer controls a MongoDB server process to be used within test suites.
