@@ -32,8 +32,9 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2-unstable"
-	"gopkg.in/mgo.v2-unstable/bson"
+
+	"github.com/ContextLogic/mgo"
+	"github.com/ContextLogic/mgo/bson"
 )
 
 func (s *S) TestGridFSCreate(c *C) {

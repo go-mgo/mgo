@@ -1,4 +1,4 @@
-﻿// BSON library for Go
+// BSON library for Go
 //
 // Copyright (c) 2010-2012 - Gustavo Niemeyer <gustavo@niemeyer.net>
 //
@@ -33,9 +33,9 @@ import (
 	"regexp"
 	"strings"
 
-	"gopkg.in/mgo.v2-unstable/bson"
-
 	. "gopkg.in/check.v1"
+
+	"github.com/ContextLogic/mgo/bson"
 )
 
 // --------------------------------------------------------------------------

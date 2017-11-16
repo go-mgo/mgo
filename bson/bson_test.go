@@ -40,8 +40,9 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2-unstable/bson"
-	"gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v2"
+
+	"github.com/ContextLogic/mgo/bson"
 )
 
 func TestAll(t *testing.T) {

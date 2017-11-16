@@ -7,8 +7,8 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/mgo.v2-unstable"
-	"gopkg.in/mgo.v2-unstable/dbtest"
+	"github.com/ContextLogic/mgo"
+	"github.com/ContextLogic/mgo/dbtest"
 )
 
 type M map[string]interface{}
