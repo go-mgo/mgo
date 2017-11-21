@@ -1052,17 +1052,38 @@ func (s *S) TestSocketStatsReadEOF(c *C) {
 		c.Skip("-fast")
 	}
 
-	session, err := mgo.Dial("localhost:40001")
+	// Dial the shard.
+	session, err := mgo.Dial("localhost:40203")
 	c.Assert(err, IsNil)
 	defer session.Close()
 
-	s.Stop("localhost:40001")
-	s.StartAll()
+	// Dial the replica set to figure the master out.
+	rs, err := mgo.Dial("root:rapadura@localhost:40031")
+	c.Assert(err, IsNil)
+	defer rs.Close()
 
-	// Do something.
-	result := struct{ Ok bool }{}
-	err = session.Run("getLastError", &result)
+	// With strong consistency, this will open a socket to the master.
+	result := &struct{ Host string }{}
+	err = rs.Run("serverStatus", result)
+	c.Assert(err, IsNil)
+
+	// Kill the master.
+	host := result.Host
+	s.Stop(host)
+
+	// This must fail, since the connection was broken.
+	err = rs.Run("serverStatus", result)
 	c.Assert(mgo.GetStats().ErrSocketEOF == 1, Equals, true)
+}
+
+func (s *S) TestSocketClosedCount(c *C) {
+	session, err := mgo.Dial("localhost:40001")
+	if err != nil {
+		c.Fatal(err)
+	}
+	session.Close()
+
+	c.Assert(mgo.GetStats().ErrSocketClosed == 1, Equals, true)
 }
 
 func (s *S) TestSocketTimeoutOnDial(c *C) {

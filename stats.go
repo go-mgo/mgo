@@ -187,7 +187,7 @@ func (stats *Stats) errSocketEOF(delta int) {
 func (stats *Stats) errSocketClosed(delta int) {
 	if stats != nil {
 		statsMutex.Lock()
-		stats.ErrSocketEOF += delta
+		stats.ErrSocketClosed += delta
 		statsMutex.Unlock()
 	}
 }

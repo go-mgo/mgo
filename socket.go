@@ -339,10 +339,10 @@ func (socket *mongoSocket) kill(err error, abend bool) {
 		return
 	}
 
-	if err, ok := err.(net.Error); ok && err.Timeout() {
-		stats.errSocketTimeout(+1)
-	} else if err == io.EOF {
+	if err == io.EOF {
 		stats.errSocketEOF(+1)
+	} else if err, ok := err.(net.Error); ok && err.Timeout() {
+		stats.errSocketTimeout(+1)
 	} else {
 		stats.errSocketClosed(+1)
 	}
