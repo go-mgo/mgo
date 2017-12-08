@@ -549,7 +549,9 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 	case 0xFF: // Min key
 		in = MinKey
 	default:
-		panic(fmt.Sprintf("Unknown element kind (0x%02X)", kind))
+    var st []byte = make([]byte, 4096)
+    w := runtime.Stack(st, false)
+    panic(fmt.Sprintf("Unknown element kind (0x%02X) BT: %s", kind, string(st[:w])))
 	}
 
 	outt := out.Type()
