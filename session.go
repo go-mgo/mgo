@@ -4219,6 +4219,7 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 		Query:      op.query,
 		Sort:       op.options.OrderBy,
 		Fields:     op.selector,
+		Comment:    change.Comment,
 	}
 
 	session = session.Clone()

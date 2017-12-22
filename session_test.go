@@ -1035,6 +1035,15 @@ func (s *S) TestFindAndModify(c *C) {
 	c.Assert(info.UpsertedId, IsNil)
 
 	result = M{}
+	info, err = coll.Find(M{"n": 44}).Apply(mgo.Change{Update: M{"n": 50, "o": 52}, Comment: "b"}, result)
+	c.Assert(err, IsNil)
+	c.Assert(result["n"], Equals, 50)
+	c.Assert(result["o"], Equals, 52)
+	c.Assert(info.Updated, Equals, 0)
+	c.Assert(info.Removed, Equals, 0)
+	c.Assert(info.UpsertedId, NotNil)
+
+	result = M{}
 	info, err = coll.Find(M{"n": 50}).Apply(mgo.Change{Upsert: true, Update: M{"n": 51, "o": 52}}, result)
 	c.Assert(err, IsNil)
 	c.Assert(result["n"], IsNil)
