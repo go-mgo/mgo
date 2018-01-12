@@ -2,11 +2,11 @@ THIS IS UNMAINTAINED
 --------------------
 
 Seven years after creating the mgo driver, I'm formally pausing my work on its maintenance.
-There are multiple reasons for that, but the main ones is that I've stopped using MongoDB
+There are multiple reasons for that, but the main ones are that I've stopped using MongoDB
 for any new projects, and supporting its good community was taking too much of my
 personal time without a relevant benefit for those around me.
 
-Moving forward I would suggest you to look at once of these options:
+Moving forward I would suggest you to look at one of these options:
 
   * [globalsign/mgo](https://github.com/globalsign/mgo) - Community supported fork of mgo.
   * [BoltDB](https://github.com/coreos/bbolt) - Single file in-memory document database for Go.
