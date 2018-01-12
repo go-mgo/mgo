@@ -10,6 +10,7 @@ Moving forward I would suggest you to look at one of these options:
 
   * [globalsign/mgo](https://github.com/globalsign/mgo) - Community supported fork of mgo.
   * [BoltDB](https://github.com/coreos/bbolt) - Single file in-memory document database for Go.
+  * [Storm](https://github.com/asdine/storm) - A BoltDB toolkit which adds query and index capabilities.
   * [Badger](https://github.com/dgraph-io/badger) - Fast in-memory document database for Go.
   * [DGraph](https://github.com/dgraph-io/dgraph) - Distributed graph database on top of Badger.
   * [lib/pq](https://github.com/lib/pq) - PostgreSQL driver in pure Go.
