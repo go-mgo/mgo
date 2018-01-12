@@ -1,7 +1,7 @@
 THIS IS UNMAINTAINED
 --------------------
 
-6 years after creating the mgo driver, I'm formally pausing my work on its maintenance.
+Seven years after creating the mgo driver, I'm formally pausing my work on its maintenance.
 There are multiple reasons for that, but the main ones is that I've stopped using MongoDB
 for any new projects, and supporting its good community was taking too much of my
 personal time without a relevant benefit for those around me.
