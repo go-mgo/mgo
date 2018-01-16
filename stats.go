@@ -30,43 +30,29 @@ import (
 	"sync"
 )
 
-var stats *Stats
-var statsMutex sync.Mutex
+var stats Stats
 
 func SetStats(enabled bool) {
-	statsMutex.Lock()
-	if enabled {
-		if stats == nil {
-			stats = &Stats{}
-		}
-	} else {
-		stats = nil
-	}
-	statsMutex.Unlock()
+	stats.reset(enabled)
 }
 
-func GetStats() (snapshot Stats) {
-	statsMutex.Lock()
-	snapshot = *stats
-	statsMutex.Unlock()
-	return
+func GetStats() Stats {
+	stats.mu.RLock()
+	defer stats.mu.RUnlock()
+	return stats
 }
 
 func ResetStats() {
-	statsMutex.Lock()
+	// If we call ResetStats we assume you want to use stats, so we enable
+	// them.
 	debug("Resetting stats")
-	old := stats
-	stats = &Stats{}
-	// These are absolute values:
-	stats.Clusters = old.Clusters
-	stats.SocketsInUse = old.SocketsInUse
-	stats.SocketsAlive = old.SocketsAlive
-	stats.SocketRefs = old.SocketRefs
-	statsMutex.Unlock()
-	return
+	stats.reset(true)
 }
 
 type Stats struct {
+	mu      sync.RWMutex
+	enabled bool
+
 	Clusters     int
 	MasterConns  int
 	SlaveConns   int
@@ -78,70 +64,74 @@ type Stats struct {
 	SocketRefs   int
 }
 
-func (stats *Stats) cluster(delta int) {
-	if stats != nil {
-		statsMutex.Lock()
-		stats.Clusters += delta
-		statsMutex.Unlock()
+func (stats *Stats) reset(enabled bool) {
+	stats.mu.Lock()
+	defer stats.mu.Unlock()
+
+	stats.MasterConns = 0
+	stats.SlaveConns = 0
+	stats.SentOps = 0
+	stats.ReceivedOps = 0
+	stats.ReceivedDocs = 0
+
+	if !enabled {
+		// These are absolute values so we don't reset them unless we are
+		// disabling stats altogether.
+		stats.Clusters = 0
+		stats.SocketsInUse = 0
+		stats.SocketsAlive = 0
+		stats.SocketRefs = 0
 	}
+}
+
+func (stats *Stats) cluster(delta int) {
+	stats.mu.Lock()
+	stats.Clusters += delta
+	stats.mu.Unlock()
 }
 
 func (stats *Stats) conn(delta int, master bool) {
-	if stats != nil {
-		statsMutex.Lock()
-		if master {
-			stats.MasterConns += delta
-		} else {
-			stats.SlaveConns += delta
-		}
-		statsMutex.Unlock()
+	stats.mu.Lock()
+	if master {
+		stats.MasterConns += delta
+	} else {
+		stats.SlaveConns += delta
 	}
+	stats.mu.Unlock()
 }
 
 func (stats *Stats) sentOps(delta int) {
-	if stats != nil {
-		statsMutex.Lock()
-		stats.SentOps += delta
-		statsMutex.Unlock()
-	}
+	stats.mu.Lock()
+	stats.SentOps += delta
+	stats.mu.Unlock()
 }
 
 func (stats *Stats) receivedOps(delta int) {
-	if stats != nil {
-		statsMutex.Lock()
-		stats.ReceivedOps += delta
-		statsMutex.Unlock()
-	}
+	stats.mu.Lock()
+	stats.ReceivedOps += delta
+	stats.mu.Unlock()
 }
 
 func (stats *Stats) receivedDocs(delta int) {
-	if stats != nil {
-		statsMutex.Lock()
-		stats.ReceivedDocs += delta
-		statsMutex.Unlock()
-	}
+	stats.mu.Lock()
+	stats.ReceivedDocs += delta
+	stats.mu.Unlock()
 }
 
 func (stats *Stats) socketsInUse(delta int) {
-	if stats != nil {
-		statsMutex.Lock()
-		stats.SocketsInUse += delta
-		statsMutex.Unlock()
-	}
+	stats.mu.Lock()
+	stats.SocketsInUse += delta
+	stats.mu.Unlock()
 }
 
 func (stats *Stats) socketsAlive(delta int) {
-	if stats != nil {
-		statsMutex.Lock()
-		stats.SocketsAlive += delta
-		statsMutex.Unlock()
-	}
+	stats.mu.Lock()
+	stats.SocketsAlive += delta
+	stats.mu.Unlock()
 }
 
 func (stats *Stats) socketRefs(delta int) {
-	if stats != nil {
-		statsMutex.Lock()
-		stats.SocketRefs += delta
-		statsMutex.Unlock()
-	}
+	stats.mu.Lock()
+	stats.SocketRefs += delta
+	stats.mu.Unlock()
 }
