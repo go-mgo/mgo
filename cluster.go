@@ -62,8 +62,8 @@ type mongoCluster struct {
 	sync               chan bool
 	dial               dialer
 	maxSocketReuseTime time.Duration
-	poolLimit 	   		int
-	minPoolSize			int
+	poolLimit          int
+	minPoolSize        int
 }
 
 func newCluster(userSeeds []string, direct, failFast bool, dial dialer, setName string, maxSocketReuseTime time.Duration) *mongoCluster {
