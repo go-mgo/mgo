@@ -62,7 +62,8 @@ type mongoCluster struct {
 	sync               chan bool
 	dial               dialer
 	maxSocketReuseTime time.Duration
-	poolLimit 	   int
+	poolLimit 	   		int
+	minPoolSize			int
 }
 
 func newCluster(userSeeds []string, direct, failFast bool, dial dialer, setName string, maxSocketReuseTime time.Duration) *mongoCluster {
@@ -190,7 +191,7 @@ func (cluster *mongoCluster) syncServer(server *mongoServer) (info *mongoServerI
 
 		// It's not clear what would be a good timeout here. Is it
 		// better to wait longer or to retry?
-		socket, _, err := server.AcquireSocket(0, syncTimeout)
+		socket, _, err := server.AcquireSocket(0, 0, syncTimeout)
 		if err != nil {
 			tryerr = err
 			logf("SYNC Failed to get socket to %s: %v", addr, err)
@@ -626,7 +627,7 @@ func (cluster *mongoCluster) AcquireSocket(mode Mode, slaveOk bool, syncTimeout 
 			continue
 		}
 
-		s, abended, err := server.AcquireSocket(cluster.poolLimit, socketTimeout)
+		s, abended, err := server.AcquireSocket(cluster.poolLimit, 0, socketTimeout)
 		if err == errPoolLimit {
 			if !warnedLimit {
 				warnedLimit = true
