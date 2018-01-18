@@ -187,6 +187,16 @@ func (server *mongoServer) Connect(timeout time.Duration) (*mongoSocket, error) 
 // Close forces closing all sockets that are alive, whether
 // they're currently in use or not.
 func (server *mongoServer) Close() {
+	server.close(false)
+}
+
+// CloseIdle closing all sockets that are idle,
+// sockets currently in use will be closed after idle.
+func (server *mongoServer) CloseIdle() {
+	server.close(true)
+}
+
+func (server *mongoServer) close(waitForIdle bool) {
 	server.Lock()
 	server.closed = true
 	liveSockets := server.liveSockets
@@ -196,7 +206,11 @@ func (server *mongoServer) Close() {
 	server.Unlock()
 	logf("Connections to %s closing (%d live sockets).", server.Addr, len(liveSockets))
 	for i, s := range liveSockets {
-		s.Close()
+		if waitForIdle {
+			s.CloseAfterIdle()
+		} else {
+			s.Close()
+		}
 		liveSockets[i] = nil
 	}
 	for i := range unusedSockets {
