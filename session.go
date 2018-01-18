@@ -4178,12 +4178,14 @@ type Change struct {
 	Upsert    bool        // Whether to insert in case the document isn't found
 	Remove    bool        // Whether to remove the document found rather than updating
 	ReturnNew bool        // Should the modified document be returned rather than the old one
+	Comment   string      // Comment for findAndModify
 }
 
 type findModifyCmd struct {
 	Collection                  string      "findAndModify"
 	Query, Update, Sort, Fields interface{} ",omitempty"
 	Upsert, Remove, New         bool        ",omitempty"
+	Comment                     string      ",omitempty"
 }
 
 type valueResult struct {
@@ -4241,6 +4243,7 @@ func (q *Query) Apply(change Change, result interface{}) (info *ChangeInfo, err 
 		Query:      op.query,
 		Sort:       op.options.OrderBy,
 		Fields:     op.selector,
+		Comment:    change.Comment,
 	}
 
 	session = session.Clone()
