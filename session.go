@@ -318,6 +318,9 @@ func ParseURL(url string) (*DialInfo, error) {
 			return nil, errors.New("unsupported connection URL option: " + k + "=" + v)
 		}
 	}
+	if poolLimit != 0 && minPoolSize > poolLimit {
+		return nil, errors.New("minPoolSize shouldn't be more than poolLimit")
+	}
 	info := DialInfo{
 		Addrs:              uinfo.addrs,
 		Direct:             direct,
