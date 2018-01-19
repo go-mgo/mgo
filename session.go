@@ -276,6 +276,7 @@ func ParseURL(url string) (*DialInfo, error) {
 	source := ""
 	setName := ""
 	poolLimit := 0
+	minPoolSize := 0
 	maxSocketReuseTimeSecs := 0
 	for k, v := range uinfo.options {
 		switch k {
@@ -292,6 +293,12 @@ func ParseURL(url string) (*DialInfo, error) {
 			if err != nil {
 				return nil, errors.New("bad value for maxPoolSize: " + v)
 			}
+		case "minPoolSize":
+			minPoolSize, err = strconv.Atoi(v)
+			if err != nil {
+				return nil, errors.New("bad value for minPoolSize: " + v)
+			}
+			debugf("using minPoolSize: %d", minPoolSize)
 		case "maxSocketReuseTimeSecs":
 			maxSocketReuseTimeSecs, err = strconv.Atoi(v)
 			if err != nil {
@@ -311,6 +318,9 @@ func ParseURL(url string) (*DialInfo, error) {
 			return nil, errors.New("unsupported connection URL option: " + k + "=" + v)
 		}
 	}
+	if poolLimit != 0 && minPoolSize > poolLimit {
+		return nil, errors.New("minPoolSize shouldn't be more than poolLimit")
+	}
 	info := DialInfo{
 		Addrs:              uinfo.addrs,
 		Direct:             direct,
@@ -321,6 +331,7 @@ func ParseURL(url string) (*DialInfo, error) {
 		Service:            service,
 		Source:             source,
 		PoolLimit:          poolLimit,
+		MinPoolSize:        minPoolSize,
 		ReplicaSetName:     setName,
 		MaxSocketReuseTime: time.Duration(maxSocketReuseTimeSecs) * time.Second,
 	}
@@ -388,6 +399,10 @@ type DialInfo struct {
 	// PoolLimit defines the per-server socket pool limit. Defaults to 4096.
 	// See Session.SetPoolLimit for details.
 	PoolLimit int
+
+	// MinPoolSize defines minimum pool size. Defaults to 0.
+	// See Session.SetPoolLimit for details.
+	MinPoolSize int
 
 	// Max time for a socket before it can no longer be reused. Set 0 to disable
 	// Default: 0
@@ -467,6 +482,7 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 	} else {
 		session.cluster_.poolLimit = 4096
 	}
+	session.cluster_.minPoolSize = info.MinPoolSize
 	cluster.Release()
 
 	// People get confused when we return a session that is not actually
@@ -1708,6 +1724,17 @@ func (s *Session) SetPoolLimit(limit int) {
 	s.cluster_.Lock()
 	debugf("s.cluster_.poolLimit: %d", s.cluster_.poolLimit)
 	s.cluster_.poolLimit = limit
+	s.cluster_.Unlock()
+}
+
+// SetMinPoolSize sets the minimum number of sockets in use in a single server
+// Before reusing sockets, it is checked if total live sockets count is reached
+// to minPoolSize. If it is not reached to minPoolSize, then we should reuse socket
+// Benefit of this is to have minimum number of connections open always.
+func (s *Session) SetMinPoolSize(poolSize int) {
+	s.cluster_.Lock()
+	debugf("s.cluster_.minPoolSize: %d", s.cluster_.minPoolSize)
+	s.cluster_.minPoolSize = poolSize
 	s.cluster_.Unlock()
 }
 
@@ -3794,7 +3821,7 @@ func (iter *Iter) acquireSocket() (*mongoSocket, error) {
 		sockTimeout := iter.session.sockTimeout
 		iter.session.m.Unlock()
 		socket.Release()
-		socket, _, err = iter.server.AcquireSocket(0, sockTimeout)
+		socket, _, err = iter.server.AcquireSocket(0, 0, sockTimeout)
 		if err != nil {
 			return nil, err
 		}

@@ -99,14 +99,15 @@ var errPoolLimit = errors.New("per-server connection limit reached")
 var errServerClosed = errors.New("server was closed")
 
 // AcquireSocket returns a socket for communicating with the server.
-// This will attempt to reuse an old connection, if one is available. Otherwise,
+// If total number of sockets is more than minPoolSize then it will attempt
+// to reuse an old connection, if one is available. Otherwise,
 // it will establish a new one. The returned socket is owned by the call site,
 // and will return to the cache when the socket has its Release method called
 // the same number of times as AcquireSocket + Acquire were called for it.
 // If the poolLimit argument is greater than zero and the number of sockets in
 // use in this server is greater than the provided limit, errPoolLimit is
 // returned.
-func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (socket *mongoSocket, abended bool, err error) {
+func (server *mongoServer) AcquireSocket(poolLimit int, minPoolSize int, timeout time.Duration) (socket *mongoSocket, abended bool, err error) {
 	for {
 		server.Lock()
 		abended = server.abended
@@ -116,8 +117,10 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 		}
 
 		unusedSocketsCount := len(server.unusedSockets)
-		// see if we've unused socket that we could use
-		if unusedSocketsCount > 0 {
+		liveSocketsCount := len(server.liveSockets)
+		// see if we've unused socket that we could use and
+		// total sockets are more than min pool size
+		if unusedSocketsCount > 0 && liveSocketsCount > minPoolSize {
 			socket = server.unusedSockets[unusedSocketsCount-1]
 			server.unusedSockets[unusedSocketsCount-1] = nil // Help GC.
 			server.unusedSockets = server.unusedSockets[:unusedSocketsCount-1]
@@ -127,7 +130,7 @@ func (server *mongoServer) AcquireSocket(poolLimit int, timeout time.Duration) (
 			if err != nil {
 				continue
 			}
-		} else if poolLimit > 0 && len(server.liveSockets) >= poolLimit {
+		} else if poolLimit > 0 && liveSocketsCount >= poolLimit {
 			server.Unlock()
 			return nil, false, errPoolLimit
 		} else {
@@ -327,7 +330,7 @@ func (server *mongoServer) pinger(loop bool) {
 			time.Sleep(delay)
 		}
 		op := op
-		socket, _, err := server.AcquireSocket(0, delay)
+		socket, _, err := server.AcquireSocket(0, 0, delay)
 		if err == nil {
 			start := time.Now()
 			_, _ = socket.SimpleQuery(&op)
