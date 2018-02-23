@@ -154,6 +154,50 @@ func (s *S) TestURLReadPreference(c *C) {
 	}
 }
 
+func (s *S) TestURLWriteConcern(c *C) {
+	type test struct {
+		url  string
+		safe *mgo.Safe
+	}
+
+	tests := []test{
+		{"localhost:31012?w=1", &mgo.Safe{W: 1}},
+		{"localhost:31012?w=0", &mgo.Safe{W: 0}},
+		{"localhost:31012?w=2", &mgo.Safe{W: 2}},
+		{"localhost:31012?w=3", &mgo.Safe{W: 3}},
+		{"localhost:31012?w=42", &mgo.Safe{W: 42}},
+		{"localhost:31012?w=majority", &mgo.Safe{WMode: "majority"}},
+		{"localhost:31012?w=foo", &mgo.Safe{WMode: "foo"}},
+		{"localhost:31012?w=one", &mgo.Safe{WMode: "one"}},
+		{"localhost:31012?wtimeoutMS=100", &mgo.Safe{WTimeout: 100}},
+		{"localhost:31012?wtimeoutMS=0", &mgo.Safe{WTimeout: 0}},
+		{"localhost:31012?wtimeoutMS=1", &mgo.Safe{WTimeout: 1}},
+		{"localhost:31012?journal=true", &mgo.Safe{J: true}},
+		{"localhost:31012?journal=false", &mgo.Safe{J: false}},
+		{"localhost:31012", &mgo.Safe{}},
+	}
+
+	for _, test := range tests {
+		info, err := mgo.ParseURL(test.url)
+		c.Assert(err, IsNil)
+		c.Assert(info.WriteConcern, NotNil)
+		c.Assert(info.WriteConcern, DeepEquals, test.safe)
+	}
+
+	errorCases := []string{
+		"localhost:31012?w=-1",
+		"localhost:31012?w=-34",
+		"localhost:31012?wtimeoutMS=-34",
+		"localhost:31012?wtimeoutMS=-1",
+	}
+
+	for _, url := range errorCases {
+		info, err := mgo.ParseURL(url)
+		c.Assert(err, NotNil)
+		c.Assert(info, IsNil)
+	}
+}
+
 func (s *S) TestURLInvalidReadPreference(c *C) {
 	urls := []string{
 		"localhost:40001?readPreference=foo",

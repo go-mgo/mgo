@@ -201,7 +201,7 @@ const (
 //
 //     connect=replicaSet
 //
-//  	   Discover replica sets automatically. Default connection behavior.
+//	   Discover replica sets automatically. Default connection behavior.
 //
 //
 //     replicaSet=<setname>
@@ -281,6 +281,7 @@ func ParseURL(url string) (*DialInfo, error) {
 	setName := ""
 	poolLimit := 0
 	readPreferenceMode := Primary
+	writeConcern := &Safe{}
 	var readPreferenceTagSets []bson.D
 	for _, opt := range uinfo.options {
 		switch opt.key {
@@ -332,6 +333,29 @@ func ParseURL(url string) (*DialInfo, error) {
 				break
 			}
 			fallthrough
+		case "w":
+			intval, err := strconv.Atoi(opt.value)
+			if err == nil {
+				if intval < 0 {
+					return nil, errors.New("w values must be equal or greater than 0")
+				}
+				writeConcern.W = intval
+			} else {
+				writeConcern.WMode = opt.value
+			}
+		case "journal":
+			if opt.value == "true" {
+				writeConcern.J = true
+			} else if opt.value == "false" {
+				writeConcern.J = false
+			}
+		case "wtimeoutMS":
+			intval, err := strconv.Atoi(opt.value)
+			if err == nil && intval >= 0 {
+				writeConcern.WTimeout = intval
+			} else {
+				return nil, errors.New("invalud wtimeoutMS value: " + opt.value)
+			}
 		default:
 			return nil, errors.New("unsupported connection URL option: " + opt.key + "=" + opt.value)
 		}
@@ -355,6 +379,7 @@ func ParseURL(url string) (*DialInfo, error) {
 			Mode:    readPreferenceMode,
 			TagSets: readPreferenceTagSets,
 		},
+		WriteConcern:   writeConcern,
 		ReplicaSetName: setName,
 	}
 	return &info, nil
@@ -425,6 +450,9 @@ type DialInfo struct {
 	// ReadPreference defines the manner in which servers are chosen. See
 	// Session.SetMode and Session.SelectServers.
 	ReadPreference *ReadPreference
+
+	// WriteConcern defines default write concern for sessions.
+	WriteConcern *Safe
 
 	// DialServer optionally specifies the dial function for establishing
 	// connections with the MongoDB servers.
@@ -521,6 +549,10 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 		session.SetMode(info.ReadPreference.Mode, true)
 	} else {
 		session.SetMode(Strong, true)
+	}
+
+	if info.WriteConcern != nil {
+		session.SetSafe(info.WriteConcern)
 	}
 
 	return session, nil
