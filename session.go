@@ -967,7 +967,7 @@ func (db *Database) UpsertUser(user *User) error {
 	}
 	err := rundb.runUserCmd("updateUser", user)
 	// retry with createUser when isAuthError in order to enable the "localhost exception"
-	if isNotFound(err) || isAuthError(err) {
+	if isNotFound(err) || isNoMatchingDoc(err) || isAuthError(err) {
 		return rundb.runUserCmd("createUser", user)
 	}
 	if !isNoCmd(err) {
@@ -1019,6 +1019,11 @@ func isNoCmd(err error) bool {
 func isNotFound(err error) bool {
 	e, ok := err.(*QueryError)
 	return ok && e.Code == 11
+}
+
+func isNoMatchingDoc(err error) bool {
+	e, ok := err.(*QueryError)
+	return ok && e.Code == 47
 }
 
 func isAuthError(err error) bool {
@@ -1078,7 +1083,7 @@ func (db *Database) AddUser(username, password string, readOnly bool) error {
 		}
 	}
 	err := db.runUserCmd("updateUser", user)
-	if isNotFound(err) {
+	if isNotFound(err) || isNoMatchingDoc(err) {
 		return db.runUserCmd("createUser", user)
 	}
 	if !isNoCmd(err) {
@@ -1101,7 +1106,7 @@ func (db *Database) RemoveUser(user string) error {
 		users := db.C("system.users")
 		return users.Remove(bson.M{"user": user})
 	}
-	if isNotFound(err) {
+	if isNotFound(err) || isNoMatchingDoc(err) {
 		return ErrNotFound
 	}
 	return err
@@ -4007,6 +4012,9 @@ func (iter *Iter) For(result interface{}, f func() error) (err error) {
 // socket depends on the cluster sync loop, and the cluster sync loop might
 // attempt actions which cause replyFunc to be called, inducing a deadlock.
 func (iter *Iter) acquireSocket() (*mongoSocket, error) {
+	if iter.session.cluster_ == nil {
+		return nil, errors.New("Closed explicitly")
+	}
 	socket, err := iter.session.acquireSocket(true)
 	if err != nil {
 		return nil, err
