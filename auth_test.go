@@ -416,10 +416,13 @@ func (s *S) TestAuthRemoveUser(c *C) {
 	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = mydb.Login("myuser", "mypass")
-	c.Assert(err, ErrorMatches, "auth fail(s|ed)|.*Authentication failed.")
+	c.Assert(err, ErrorMatches, "auth fail(s|ed)|.*Authentication failed.|Could not find user.*")
 }
 
 func (s *S) TestAuthLoginTwiceDoesNothing(c *C) {
+	if s.versionAtLeast(3, 7, 3) {
+		c.Skip("Login caching invalidated by mechanism negotation in 3.7.3+")
+	}
 	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -438,6 +441,9 @@ func (s *S) TestAuthLoginTwiceDoesNothing(c *C) {
 }
 
 func (s *S) TestAuthLoginLogoutLoginDoesNothing(c *C) {
+	if s.versionAtLeast(3, 7, 3) {
+		c.Skip("Login caching invalidated by mechanism negotation in 3.7.3+")
+	}
 	session, err := mgo.Dial("localhost:40002")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -580,6 +586,9 @@ func (s *S) TestAuthLoginCachingWithNewSession(c *C) {
 }
 
 func (s *S) TestAuthLoginCachingAcrossPool(c *C) {
+	if s.versionAtLeast(3, 7, 3) {
+		c.Skip("Login caching invalidated by mechanism negotation in 3.7.3+")
+	}
 	// Logins are cached even when the conenction goes back
 	// into the pool.
 
@@ -631,6 +640,9 @@ func (s *S) TestAuthLoginCachingAcrossPool(c *C) {
 }
 
 func (s *S) TestAuthLoginCachingAcrossPoolWithLogout(c *C) {
+	if s.versionAtLeast(3, 7, 3) {
+		c.Skip("Login caching invalidated by mechanism negotation in 3.7.3+")
+	}
 	// Now verify that logouts are properly flushed if they
 	// are not revalidated after leaving the pool.
 
