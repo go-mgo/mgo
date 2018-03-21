@@ -977,6 +977,58 @@ func (s *S) TestAuthScramSha256URLSaslprep(c *C) {
 	c.Assert(err, Equals, mgo.ErrNotFound)
 }
 
+func (s *S) TestAuthScramNegotiation(c *C) {
+	if !s.versionAtLeast(3, 7, 3) {
+		c.Skip("SCRAM-SHA-256 tests depend on 3.7.3")
+	}
+	host := "localhost:40002"
+
+	c.Logf("Connecting to %s... (case 1)", host)
+	session, err := mgo.Dial(fmt.Sprintf("\u2168:\u2168@%s", host))
+	c.Assert(err, IsNil)
+	defer session.Close()
+	mycoll := session.DB("admin").C("mycoll")
+	c.Logf("Connected! Testing the need for authentication...")
+	err = mycoll.Find(nil).One(nil)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+
+	c.Logf("Connecting to %s... (case 2)", host)
+	session, err = mgo.Dial(fmt.Sprintf("I\u00ADX:I\u00ADX@%s", host))
+	c.Assert(err, IsNil)
+	defer session.Close()
+	mycoll = session.DB("admin").C("mycoll")
+	c.Logf("Connected! Testing the need for authentication...")
+	err = mycoll.Find(nil).One(nil)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+
+	c.Logf("Connecting to %s... (case 3)", host)
+	session, err = mgo.Dial(fmt.Sprintf("mongodb://%%E2%%85%%A8:%%E2%%85%%A8@%s", host))
+	c.Assert(err, IsNil)
+	defer session.Close()
+	mycoll = session.DB("admin").C("mycoll")
+	c.Logf("Connected! Testing the need for authentication...")
+	err = mycoll.Find(nil).One(nil)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+
+	c.Logf("Connecting to %s... (case 4)", host)
+	session, err = mgo.Dial(fmt.Sprintf("sha1:sha1@%s", host))
+	c.Assert(err, IsNil)
+	defer session.Close()
+	mycoll = session.DB("admin").C("mycoll")
+	c.Logf("Connected! Testing the need for authentication...")
+	err = mycoll.Find(nil).One(nil)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+
+	c.Logf("Connecting to %s... (case 5)", host)
+	session, err = mgo.Dial(fmt.Sprintf("both:both@%s", host))
+	c.Assert(err, IsNil)
+	defer session.Close()
+	mycoll = session.DB("admin").C("mycoll")
+	c.Logf("Connected! Testing the need for authentication...")
+	err = mycoll.Find(nil).One(nil)
+	c.Assert(err, Equals, mgo.ErrNotFound)
+}
+
 func (s *S) TestAuthX509Cred(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)

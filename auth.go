@@ -89,6 +89,17 @@ type saslResult struct {
 	ErrMsg         string
 }
 
+type saslMechNegotation struct {
+	IsMaster           int    `bson:"ismaster"`
+	SaslSupportedMechs string `bson:"saslSupportedMechs"`
+}
+
+type saslMechResult struct {
+	Ok                 bool     `bson:"ok"`
+	SaslSupportedMechs []string `bson:"saslSupportedMechs,omitempty"`
+	ErrMsg             string
+}
+
 type saslStepper interface {
 	Step(serverData []byte) (clientData []byte, done bool, err error)
 	Close()
@@ -162,9 +173,28 @@ func (socket *mongoSocket) resetNonce() {
 
 func (socket *mongoSocket) Login(cred Credential) error {
 	socket.Lock()
-	if cred.Mechanism == "" && socket.serverInfo.MaxWireVersion >= 3 {
-		cred.Mechanism = "SCRAM-SHA-1"
+	maxWire := socket.serverInfo.MaxWireVersion
+	socket.Unlock()
+
+	// Must update credential mechanism before later caching
+	if cred.Mechanism == "" {
+		switch {
+		case maxWire >= 7:
+			debugf("Needs mechanism negotiation")
+			mech, err := socket.negotiateDefaultMech(cred)
+			if err != nil {
+				return err
+			}
+			cred.Mechanism = mech
+			debugf("Got mechanism '%s'", mech)
+		case maxWire >= 3:
+			cred.Mechanism = "SCRAM-SHA-1"
+		default:
+			cred.Mechanism = "MONGODB-CR"
+		}
 	}
+
+	socket.Lock()
 	for _, sockCred := range socket.creds {
 		if sockCred == cred {
 			debugf("Socket %p to %s: login: db=%q user=%q (already logged in)", socket, socket.addr, cred.Source, cred.Username)
@@ -184,7 +214,7 @@ func (socket *mongoSocket) Login(cred Credential) error {
 
 	var err error
 	switch cred.Mechanism {
-	case "", "MONGODB-CR", "MONGO-CR": // Name changed to MONGODB-CR in SERVER-8501.
+	case "MONGODB-CR", "MONGO-CR": // Name changed to MONGODB-CR in SERVER-8501.
 		err = socket.loginClassic(cred)
 	case "PLAIN":
 		err = socket.loginPlain(cred)
@@ -201,6 +231,27 @@ func (socket *mongoSocket) Login(cred Credential) error {
 		debugf("Socket %p to %s: login successful", socket, socket.addr)
 	}
 	return err
+}
+
+func (socket *mongoSocket) negotiateDefaultMech(cred Credential) (string, error) {
+	user := cred.Source + "." + cred.Username
+	req := &saslMechNegotation{IsMaster: 1, SaslSupportedMechs: user}
+	res := saslMechResult{}
+	err := socket.loginRun(cred.Source, &req, &res, func() error {
+		if !res.Ok {
+			return errors.New(res.ErrMsg)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	for _, mech := range res.SaslSupportedMechs {
+		if mech == "SCRAM-SHA-256" {
+			return "SCRAM-SHA-256", nil
+		}
+	}
+	return "SCRAM-SHA-1", nil
 }
 
 func (socket *mongoSocket) loginClassic(cred Credential) error {
