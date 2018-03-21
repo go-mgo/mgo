@@ -136,6 +136,12 @@ function configAuth(addr) {
     } else {
         db.addUser("reader", "rapadura", true)
     }
+    if (v > [3, 6] && addr == "127.0.0.1:40002") {
+        // username IX is used for SCRAM-SHA-256 so we can test saslprep on it
+        db.createUser({user:"IX", pwd:"IX", mechanisms: ["SCRAM-SHA-256"], roles: ["readAnyDatabase"]})
+        db.createUser({user:"sha1", pwd:"sha1", mechanisms: ["SCRAM-SHA-1"], roles: ["readAnyDatabase"]})
+        db.createUser({user:"both", pwd:"both", mechanisms: ["SCRAM-SHA-1", "SCRAM-SHA-256"], roles: ["readAnyDatabase"]})
+    }
 }
 
 function countHealthy(rs) {

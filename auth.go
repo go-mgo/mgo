@@ -29,11 +29,13 @@ package mgo
 import (
 	"crypto/md5"
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
 
+	"github.com/xdg/stringprep"
 	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/mgo.v2/internal/scram"
 )
@@ -178,7 +180,7 @@ func (socket *mongoSocket) Login(cred Credential) error {
 	}
 	socket.Unlock()
 
-	debugf("Socket %p to %s: login: db=%q user=%q", socket, socket.addr, cred.Source, cred.Username)
+	debugf("Socket %p to %s: login: db=%q user=%q mech=%s", socket, socket.addr, cred.Source, cred.Username, cred.Mechanism)
 
 	var err error
 	switch cred.Mechanism {
@@ -274,9 +276,11 @@ func (socket *mongoSocket) loginPlain(cred Credential) error {
 func (socket *mongoSocket) loginSASL(cred Credential) error {
 	var sasl saslStepper
 	var err error
+	// SCRAM is handled without external libraries.
 	if cred.Mechanism == "SCRAM-SHA-1" {
-		// SCRAM is handled without external libraries.
-		sasl = saslNewScram(cred)
+		sasl = saslNewScram1(cred)
+	} else if cred.Mechanism == "SCRAM-SHA-256" {
+		sasl, err = saslNewScram256(cred)
 	} else if len(cred.ServiceHost) > 0 {
 		sasl, err = saslNew(cred, cred.ServiceHost)
 	} else {
@@ -353,11 +357,25 @@ func (socket *mongoSocket) loginSASL(cred Credential) error {
 	return nil
 }
 
-func saslNewScram(cred Credential) *saslScram {
+func saslNewScram1(cred Credential) *saslScram {
 	credsum := md5.New()
 	credsum.Write([]byte(cred.Username + ":mongo:" + cred.Password))
 	client := scram.NewClient(sha1.New, cred.Username, hex.EncodeToString(credsum.Sum(nil)))
 	return &saslScram{cred: cred, client: client}
+}
+
+func saslNewScram256(cred Credential) (*saslScram, error) {
+	preppedUser, err := stringprep.SASLprep.Prepare(cred.Username)
+	if err != nil {
+		return nil, err
+	}
+	preppedPass, err := stringprep.SASLprep.Prepare(cred.Password)
+	if err != nil {
+		return nil, err
+	}
+
+	client := scram.NewClient(sha256.New, preppedUser, preppedPass)
+	return &saslScram{cred: cred, client: client}, nil
 }
 
 type saslScram struct {

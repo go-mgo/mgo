@@ -18,7 +18,9 @@ for (var i in ports) {
         if (auth[j] == port) {
             admin.auth("root", "rapadura")
             admin.system.users.find().forEach(function(u) {
-                if (u.user == "root" || u.user == "reader") {
+                if (u.user == "root" || u.user == "reader" || u.user == "IX"
+                    || u.user == "sha1" || u.user == "both"
+                ) {
                         return;
                 }
                 if (typeof admin.dropUser == "function") {
