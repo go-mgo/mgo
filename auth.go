@@ -206,7 +206,7 @@ func (socket *mongoSocket) loginClassic(cred Credential) error {
 	// synchronous, which means the nonce won't get reset while we're
 	// using it and any other login requests will block waiting for a
 	// new nonce.
-	socket.resetNonce();
+	socket.resetNonce()
 	nonce, err := socket.getNonce()
 	if err != nil {
 		return err
