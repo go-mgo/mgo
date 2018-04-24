@@ -961,32 +961,26 @@ func (s *S) TestAuthScramSha256URLSaslprep(c *C) {
 	}
 	host := "localhost:40002"
 
-	c.Logf("Connecting to %s... (case 1)", host)
-	session, err := mgo.Dial(fmt.Sprintf("\u2168:\u2168@%s?authMechanism=SCRAM-SHA-256", host))
-	c.Assert(err, IsNil)
-	defer session.Close()
-	mycoll := session.DB("admin").C("mycoll")
-	c.Logf("Connected! Testing the need for authentication...")
-	err = mycoll.Find(nil).One(nil)
-	c.Assert(err, Equals, mgo.ErrNotFound)
+	cases := []string{
+		"IX:IX",
+		"IX:I%C2%ADX",
+		"%E2%85%A8:IV",
+		"%E2%85%A8:I%C2%ADV",
+		"\u2168:\u2163",
+	}
 
-	c.Logf("Connecting to %s... (case 2)", host)
-	session, err = mgo.Dial(fmt.Sprintf("I\u00ADX:I\u00ADX@%s?authMechanism=SCRAM-SHA-256", host))
-	c.Assert(err, IsNil)
-	defer session.Close()
-	mycoll = session.DB("admin").C("mycoll")
-	c.Logf("Connected! Testing the need for authentication...")
-	err = mycoll.Find(nil).One(nil)
-	c.Assert(err, Equals, mgo.ErrNotFound)
+	for i, v := range cases {
+		uri := fmt.Sprintf("%s@%s?authMechanism=SCRAM-SHA-256", v, host)
+		c.Logf("Case %d: %s", i, uri)
+		session, err := mgo.Dial(uri)
+		c.Assert(err, IsNil)
+		defer session.Close()
+		mycoll := session.DB("admin").C("mycoll")
+		c.Logf("Connected! Testing the need for authentication...")
+		err = mycoll.Find(nil).One(nil)
+		c.Assert(err, Equals, mgo.ErrNotFound)
+	}
 
-	c.Logf("Connecting to %s... (case 3)", host)
-	session, err = mgo.Dial(fmt.Sprintf("mongodb://%%E2%%85%%A8:%%E2%%85%%A8@%s?authMechanism=SCRAM-SHA-256", host))
-	c.Assert(err, IsNil)
-	defer session.Close()
-	mycoll = session.DB("admin").C("mycoll")
-	c.Logf("Connected! Testing the need for authentication...")
-	err = mycoll.Find(nil).One(nil)
-	c.Assert(err, Equals, mgo.ErrNotFound)
 }
 
 func (s *S) TestAuthScramNegotiation(c *C) {
@@ -995,50 +989,23 @@ func (s *S) TestAuthScramNegotiation(c *C) {
 	}
 	host := "localhost:40002"
 
-	c.Logf("Connecting to %s... (case 1)", host)
-	session, err := mgo.Dial(fmt.Sprintf("\u2168:\u2168@%s", host))
-	c.Assert(err, IsNil)
-	defer session.Close()
-	mycoll := session.DB("admin").C("mycoll")
-	c.Logf("Connected! Testing the need for authentication...")
-	err = mycoll.Find(nil).One(nil)
-	c.Assert(err, Equals, mgo.ErrNotFound)
+	cases := []string{
+		"IX:IX",
+		"sha1:sha1",
+		"both:both",
+	}
 
-	c.Logf("Connecting to %s... (case 2)", host)
-	session, err = mgo.Dial(fmt.Sprintf("I\u00ADX:I\u00ADX@%s", host))
-	c.Assert(err, IsNil)
-	defer session.Close()
-	mycoll = session.DB("admin").C("mycoll")
-	c.Logf("Connected! Testing the need for authentication...")
-	err = mycoll.Find(nil).One(nil)
-	c.Assert(err, Equals, mgo.ErrNotFound)
-
-	c.Logf("Connecting to %s... (case 3)", host)
-	session, err = mgo.Dial(fmt.Sprintf("mongodb://%%E2%%85%%A8:%%E2%%85%%A8@%s", host))
-	c.Assert(err, IsNil)
-	defer session.Close()
-	mycoll = session.DB("admin").C("mycoll")
-	c.Logf("Connected! Testing the need for authentication...")
-	err = mycoll.Find(nil).One(nil)
-	c.Assert(err, Equals, mgo.ErrNotFound)
-
-	c.Logf("Connecting to %s... (case 4)", host)
-	session, err = mgo.Dial(fmt.Sprintf("sha1:sha1@%s", host))
-	c.Assert(err, IsNil)
-	defer session.Close()
-	mycoll = session.DB("admin").C("mycoll")
-	c.Logf("Connected! Testing the need for authentication...")
-	err = mycoll.Find(nil).One(nil)
-	c.Assert(err, Equals, mgo.ErrNotFound)
-
-	c.Logf("Connecting to %s... (case 5)", host)
-	session, err = mgo.Dial(fmt.Sprintf("both:both@%s", host))
-	c.Assert(err, IsNil)
-	defer session.Close()
-	mycoll = session.DB("admin").C("mycoll")
-	c.Logf("Connected! Testing the need for authentication...")
-	err = mycoll.Find(nil).One(nil)
-	c.Assert(err, Equals, mgo.ErrNotFound)
+	for i, v := range cases {
+		dialStr := fmt.Sprintf("%s@%s", v, host)
+		c.Logf("Case %d: %s", i, dialStr)
+		session, err := mgo.Dial(dialStr)
+		c.Assert(err, IsNil)
+		defer session.Close()
+		mycoll := session.DB("admin").C("mycoll")
+		c.Logf("Connected! Testing the need for authentication...")
+		err = mycoll.Find(nil).One(nil)
+		c.Assert(err, Equals, mgo.ErrNotFound)
+	}
 }
 
 func (s *S) TestAuthX509Cred(c *C) {

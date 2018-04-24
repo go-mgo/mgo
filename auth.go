@@ -417,16 +417,12 @@ func saslNewScram1(cred Credential) *saslScram {
 }
 
 func saslNewScram256(cred Credential) (*saslScram, error) {
-	preppedUser, err := stringprep.SASLprep.Prepare(cred.Username)
-	if err != nil {
-		return nil, err
-	}
 	preppedPass, err := stringprep.SASLprep.Prepare(cred.Password)
 	if err != nil {
 		return nil, err
 	}
 
-	client := scram.NewClient(sha256.New, preppedUser, preppedPass)
+	client := scram.NewClient(sha256.New, cred.Username, preppedPass)
 	return &saslScram{cred: cred, client: client}, nil
 }
 

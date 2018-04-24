@@ -19,7 +19,7 @@ for (var i in ports) {
             admin.auth("root", "rapadura")
             admin.system.users.find().forEach(function(u) {
                 if (u.user == "root" || u.user == "reader" || u.user == "IX"
-                    || u.user == "sha1" || u.user == "both"
+                    || u.user == "\u2168" || u.user == "sha1" || u.user == "both"
                 ) {
                         return;
                 }
