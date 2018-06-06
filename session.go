@@ -684,6 +684,24 @@ func (db *Database) Run(cmd interface{}, result interface{}) error {
 	return db.run(socket, cmd, result)
 }
 
+// RunRaw executes mongodb command prepared in caller according to
+// mongodb wired protocol and passed as payload.
+// It returns response recieved on socket back to caller.
+//
+// Wired protocol:
+//
+//     https://docs.mongodb.com/manual/reference/mongodb-wire-protocol
+//
+func (db *Database) RunRaw(payload []byte) (reply []byte, err error) {
+	socket, err := db.Session.acquireSocket(true)
+	if err != nil {
+		return nil, err
+	}
+	defer socket.Release()
+
+	return socket.QueryRaw(payload)
+}
+
 // Credential holds details to authenticate with a MongoDB server.
 type Credential struct {
 	// Username and Password hold the basic details for authentication.
