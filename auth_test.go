@@ -39,7 +39,7 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2-unstable"
+	"gopkg.in/mgo.v2"
 )
 
 func (s *S) TestAuthLoginDatabase(c *C) {
