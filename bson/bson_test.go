@@ -249,6 +249,13 @@ func (s *S) TestUnmarshalNonNilInterface(c *C) {
 	c.Assert(m, DeepEquals, bson.M{"a": 1})
 }
 
+func (s *S) TestMarshalBuffer(c *C) {
+	buf := make([]byte, 0, 256)
+	data, err := bson.MarshalBuffer(bson.M{"a": 1}, buf)
+	c.Assert(err, IsNil)
+	c.Assert(data, DeepEquals, buf[:len(data)])
+}
+
 // --------------------------------------------------------------------------
 // Some one way marshaling operations which would unmarshal differently.
 
