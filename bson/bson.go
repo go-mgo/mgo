@@ -253,10 +253,22 @@ func NewObjectIdWithTime(t time.Time) ObjectId {
 	return ObjectId(string(b[:]))
 }
 
+// objectIdStringer contains the function used in String() method of ObjectId type.
+// It can be set by user through the exported SetIdStringer function.
+var objectIdStringer = func(id ObjectId) string {
+	return fmt.Sprintf(`ObjectIdHex("%x")`, string(id)) // id default stringer
+}
+
+// SetIdStringer defines how the string representation of ObjectId type should be in its String() method.
+func SetIdStringer(f func(ObjectId) string) {
+	objectIdStringer = f
+}
+
 // String returns a hex string representation of the id.
-// Example: ObjectIdHex("4d88e15b60f486e428412dc9").
+// The default representation looks like: ObjectIdHex("4d88e15b60f486e428412dc9"),
+// which can be changed/defined through the function argument provided for SetIdStringer.
 func (id ObjectId) String() string {
-	return fmt.Sprintf(`ObjectIdHex("%x")`, string(id))
+	return objectIdStringer(id)
 }
 
 // Hex returns a hex representation of the ObjectId.
