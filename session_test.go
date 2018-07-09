@@ -130,6 +130,21 @@ func (s *S) TestURLParsing(c *C) {
 		}
 		c.Assert(err, ErrorMatches, "unsupported connection URL option: (foo=1|bar=2)")
 	}
+
+	sslUrls := map[string]bool{
+		"localhost:40001?ssl=true":  true,
+		"localhost:40001?ssl=false": false,
+	}
+	for url, expectedValue := range sslUrls {
+		info, err := mgo.ParseURL(url)
+		c.Assert(info.SSL, Equals, expectedValue)
+		c.Assert(err, IsNil)
+	}
+
+	invalidSSLUrl := "localhost:40001?ssl=vinDiesel"
+	info, err := mgo.ParseURL(invalidSSLUrl)
+	c.Assert(info, IsNil)
+	c.Assert(err, ErrorMatches, "unsupported connection URL option: ssl=vinDiesel")
 }
 
 func (s *S) TestInsertFindOne(c *C) {
