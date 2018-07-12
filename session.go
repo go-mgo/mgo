@@ -4651,6 +4651,58 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 			}
 			return &lerr, nil
 		}
+		if updateOp, ok := op.(bulkUpdateOp); ok && len(updateOp) > 1000 {
+			var lerr LastError
+
+			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
+			for i := 0; i < len(updateOp); i += 1000 {
+				l := i + 1000
+				if l > len(updateOp) {
+					l = len(updateOp)
+				}
+
+				oplerr, err := c.writeOpCommand(socket, safeOp, updateOp[i:l], ordered, bypassValidation)
+
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
+				if err != nil {
+					lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
+					if ordered {
+						break
+					}
+				}
+			}
+			if len(lerr.ecases) != 0 {
+				return &lerr, lerr.ecases[0].Err
+			}
+			return &lerr, nil
+		}
+		if deleteOps, ok := op.(bulkDeleteOp); ok && len(deleteOps) > 1000 {
+			var lerr LastError
+
+			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
+			for i := 0; i < len(deleteOps); i += 1000 {
+				l := i + 1000
+				if l > len(deleteOps) {
+					l = len(deleteOps)
+				}
+
+				oplerr, err := c.writeOpCommand(socket, safeOp, deleteOps[i:l], ordered, bypassValidation)
+
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
+				if err != nil {
+					lerr.ecases = append(lerr.ecases, BulkErrorCase{i, err})
+					if ordered {
+						break
+					}
+				}
+			}
+			if len(lerr.ecases) != 0 {
+				return &lerr, lerr.ecases[0].Err
+			}
+			return &lerr, nil
+		}
 		return c.writeOpCommand(socket, safeOp, op, ordered, bypassValidation)
 	} else if updateOps, ok := op.(bulkUpdateOp); ok {
 		var lerr LastError
