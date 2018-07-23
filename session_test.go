@@ -1207,6 +1207,49 @@ func (s *S) TestCountSkipLimit(c *C) {
 	c.Assert(n, Equals, 4)
 }
 
+func (s *S) TestCountMaxTimeMS(c *C) {
+	if !s.versionAtLeast(2, 6) {
+		c.Skip("SetMaxTime only supported in 2.6+")
+	}
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+
+	ns := make([]int, 100000)
+	for _, n := range ns {
+		err := coll.Insert(M{"n": n})
+		c.Assert(err, IsNil)
+	}
+	_, err = coll.Find(M{"n": M{"$gt": 1}}).SetMaxTime(1 * time.Millisecond).Count()
+	e := err.(*mgo.QueryError)
+	// We hope this query took longer than 1 ms, which triggers an error code 50
+	c.Assert(e.Code, Equals, 50)
+
+}
+
+func (s *S) TestCountHint(c *C) {
+	if !s.versionAtLeast(2, 6) {
+		c.Skip("Not implemented until mongo 2.5.5 https://jira.mongodb.org/browse/SERVER-2677")
+	}
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	coll := session.DB("mydb").C("mycoll")
+	err = coll.Insert(M{"n": 1})
+	c.Assert(err, IsNil)
+
+	_, err = coll.Find(M{"n": M{"$gt": 1}}).Hint("does_not_exists").Count()
+	e := err.(*mgo.QueryError)
+	// If Hint wasn't doing anything, then Count would ignore the non existent index hint
+	// and return the normal ount. But we instead get an error code 2: bad hint
+	c.Assert(e.Code, Equals, 2)
+}
+
 func (s *S) TestQueryExplain(c *C) {
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
