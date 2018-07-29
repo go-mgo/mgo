@@ -2166,6 +2166,56 @@ func (c *Collection) Repair() *Iter {
 	return clonedc.NewIter(session, result.Cursor.FirstBatch, result.Cursor.Id, err)
 }
 
+// Exists checks to see if a collection exists, if it does the passed
+// result will be populated.
+func (c *Collection) Exists(result interface{}) bool {
+	// Clone session and set it to Monotonic mode so that the server
+	// used for the query may be safely obtained afterwards, if
+	// necessary for iteration when a cursor is received.
+	session := c.Database.Session
+	cloned := session.nonEventual()
+	defer cloned.Close()
+
+	var cmdResult struct{
+		Ok float64 `bson:"ok"`
+		Cursor cursorData `bson:"cursor"`
+	}
+
+	clonedc := c.With(cloned)
+
+	err := clonedc.Database.Run(bson.D{{"listCollections", 1}, {"filter", bson.M{"name": c.Name}}}, &cmdResult)
+	if cmdResult.Ok == 1 {
+		cursor := clonedc.NewIter(session, cmdResult.Cursor.FirstBatch, cmdResult.Cursor.Id, err)
+		if cursor.Next(result) {
+			return true
+		}
+		return false
+	}
+
+	if err != nil && strings.HasPrefix(err.Error(), "no such cmd") {
+		err = clonedc.Database.C("system.namespaces").Find(bson.M{"name": fmt.Sprintf("%s.%s", clonedc.Database.Name, c.Name)}).One(result)
+		if err == nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+// IsCapped checks to see if a collection is a capped collection
+func (c *Collection) IsCapped() bool {
+	var result struct{
+		Options struct {
+			Capped bool `bson: "capped"`
+		} `bson:"options"`
+	}
+
+	if c.Exists(&result) {
+		return result.Options.Capped
+	}
+	return false
+}
+
 // FindId is a convenience helper equivalent to:
 //
 //     query := collection.Find(bson.M{"_id": id})
