@@ -690,8 +690,7 @@ func getStructInfo(st reflect.Type) (*structInfo, error) {
 				}
 				for _, finfo := range sinfo.FieldsList {
 					if _, found := fieldsMap[finfo.Key]; found {
-						msg := "Duplicated key '" + finfo.Key + "' in struct " + st.String()
-						return nil, errors.New(msg)
+						continue
 					}
 					if finfo.Inline == nil {
 						finfo.Inline = []int{i, finfo.Num}

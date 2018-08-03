@@ -598,8 +598,6 @@ var marshalErrorItems = []testItemType{
 		"Attempted to marshal empty Raw document"},
 	{&inlineCantPtr{&struct{ A, B int }{1, 2}},
 		"Option ,inline needs a struct value or map field"},
-	{&inlineDupName{1, struct{ A, B int }{2, 3}},
-		"Duplicated key 'a' in struct bson_test.inlineDupName"},
 	{&inlineDupMap{},
 		"Multiple ,inline maps in struct bson_test.inlineDupMap"},
 	{&inlineBadKeyMap{},
@@ -1034,6 +1032,10 @@ type inlineDupName struct {
 	A int
 	V struct{ A, B int } ",inline"
 }
+type deepInlineDupName struct {
+	A             int
+	inlineDupName ",inline"
+}
 type inlineMap struct {
 	A int
 	M map[string]interface{} ",inline"
@@ -1292,6 +1294,8 @@ var twoWayCrossItems = []crossTypeItem{
 	{&inlineMapInt{A: 1, M: nil}, map[string]int{"a": 1}},
 	{&inlineMapMyM{A: 1, M: MyM{"b": MyM{"c": 3}}}, map[string]interface{}{"a": 1, "b": map[string]interface{}{"c": 3}}},
 	{&inlineUnexported{M: map[string]interface{}{"b": 1}, unexported: unexported{A: 2}}, map[string]interface{}{"b": 1, "a": 2}},
+	{&inlineDupName{1, struct{ A, B int }{0, 2}}, map[string]interface{}{"a": 1, "b": 2}},
+	{&deepInlineDupName{1, inlineDupName{0, struct{ A, B int }{0, 2}}}, map[string]interface{}{"a": 1, "b": 2}},
 
 	// []byte <=> Binary
 	{&struct{ B []byte }{[]byte("abc")}, map[string]bson.Binary{"b": bson.Binary{Data: []byte("abc")}}},
@@ -1369,6 +1373,10 @@ var oneWayCrossItems = []crossTypeItem{
 
 	// Attempt to marshal slice into RawD (issue #120).
 	{bson.M{"x": []int{1, 2, 3}}, &struct{ X bson.RawD }{}},
+
+	// Use outhermost fields in case of name collision
+	{&inlineDupName{1, struct{ A, B int }{3, 2}}, map[string]interface{}{"a": 1, "b": 2}},
+	{&deepInlineDupName{1, inlineDupName{2, struct{ A, B int }{3, 4}}}, map[string]interface{}{"a": 1, "b": 4}},
 }
 
 func testCrossPair(c *C, dump interface{}, load interface{}) {
