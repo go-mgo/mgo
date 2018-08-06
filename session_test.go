@@ -107,6 +107,31 @@ func (s *S) TestURLSingle(c *C) {
 	c.Assert(result.Ok, Equals, 1)
 }
 
+func (s *S) TestLazyConn(c *C) {
+	s.Stop(":40002")
+	info, err := mgo.ParseURL("mongodb://localhost:40002/")
+	c.Assert(err, IsNil)
+
+	info.LazyConn = true
+	info.Timeout = 100 * time.Millisecond
+
+	sess, err := mgo.DialWithInfo(info)
+	defer func() {
+		sess.Close()
+		s.StartAll()
+	}()
+	c.Assert(err, IsNil)
+
+	err = sess.Ping()
+	c.Assert(err, NotNil)
+
+	s.StartAll()
+	time.Sleep(200 * time.Millisecond)
+
+	err = sess.Ping()
+	c.Assert(err, IsNil)
+}
+
 func (s *S) TestURLMany(c *C) {
 	session, err := mgo.Dial("mongodb://localhost:40011,localhost:40012/")
 	c.Assert(err, IsNil)

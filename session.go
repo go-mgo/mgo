@@ -318,6 +318,7 @@ func ParseURL(url string) (*DialInfo, error) {
 		Source:         source,
 		PoolLimit:      poolLimit,
 		ReplicaSetName: setName,
+		LazyConn:       false,
 	}
 	return &info, nil
 }
@@ -390,6 +391,10 @@ type DialInfo struct {
 
 	// WARNING: This field is obsolete. See DialServer above.
 	Dial func(addr net.Addr) (net.Conn, error)
+
+	// LazyConn controls wether connection to the server should be delayed
+	// (true value) or should connect to the server inmediatly (false value).
+	LazyConn bool
 }
 
 // mgo.v3: Drop DialInfo.Dial.
@@ -460,9 +465,11 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 	// established to any servers yet (e.g. what if url was wrong). So,
 	// ping the server to ensure there's someone there, and abort if it
 	// fails.
-	if err := session.Ping(); err != nil {
-		session.Close()
-		return nil, err
+	if !info.LazyConn {
+		if err := session.Ping(); err != nil {
+			session.Close()
+			return nil, err
+		}
 	}
 	session.SetMode(Strong, true)
 	return session, nil
