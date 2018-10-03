@@ -3658,6 +3658,22 @@ func (iter *Iter) Done() bool {
 	}
 }
 
+// NeedsNetwork returns true if only if a follow up Next call will issue
+// a getMore operation to mongo
+func (iter *Iter) NeedsNetwork() bool {
+	iter.m.Lock()
+	defer iter.m.Unlock()
+
+	if iter.err != nil || iter.op.cursorId == 0 {
+		return false
+	} else if iter.docData.Len() == 0 && iter.docsToReceive == 0 {
+		return true
+	} else if iter.docsBeforeMore == 0 { // prefetch
+		return true
+	}
+	return false
+}
+
 // Timeout returns true if Next returned false due to a timeout of
 // a tailable cursor. In those cases, Next may be called again to continue
 // the iteration at the previous cursor position.
