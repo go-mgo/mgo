@@ -10,13 +10,18 @@ env:
     global:
         - BUCKET=https://niemeyer.s3.amazonaws.com
     matrix:
-        - GO=1.4.1 MONGODB=x86_64-2.2.7
-        - GO=1.4.1 MONGODB=x86_64-2.4.14
-        - GO=1.4.1 MONGODB=x86_64-2.6.11
-        - GO=1.4.1 MONGODB=x86_64-3.0.9
-        - GO=1.4.1 MONGODB=x86_64-3.2.3-nojournal
-        - GO=1.5.3 MONGODB=x86_64-3.0.9
-        - GO=1.6   MONGODB=x86_64-3.0.9
+        - GO=1.4.1  MONGODB=x86_64-2.2.7
+        - GO=1.4.1  MONGODB=x86_64-2.4.14
+        - GO=1.4.1  MONGODB=x86_64-2.6.11
+        - GO=1.4.1  MONGODB=x86_64-3.0.9
+        - GO=1.4.1  MONGODB=x86_64-3.2.3-nojournal
+        - GO=1.5.x  MONGODB=x86_64-3.0.9
+        - GO=1.6.x  MONGODB=x86_64-3.0.9
+        - GO=1.7.x  MONGODB=x86_64-3.0.9
+        - GO=1.8.x  MONGODB=x86_64-3.0.9
+        - GO=1.9.x  MONGODB=x86_64-3.0.9
+        - GO=1.10.x MONGODB=x86_64-3.0.9
+        - GO=1.11.x MONGODB=x86_64-4.1.4
 
 install:
     - eval "$(gimme $GO)"
