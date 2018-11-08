@@ -3827,19 +3827,20 @@ func (iter *Iter) Timeout() bool {
 func (iter *Iter) Next(result interface{}) bool {
 	iter.m.Lock()
 	iter.timedout = false
-	timeout := time.Time{}
+	deadline := time.Time{}
 
 	// check should we expect more data.
 	for iter.err == nil && iter.docData.Len() == 0 && (iter.docsToReceive > 0 || iter.op.cursorId != 0) {
-		// we should expect more data.
+		// either there is a getMore running or we will schedule one, set
+		// the deadline regardless.
+		if iter.timeout >= 0 && deadline.IsZero() {
+			deadline = time.Now().Add(iter.timeout)
+		}
 
 		// If we have yet to receive data, increment the timer until we timeout.
 		if iter.docsToReceive == 0 {
-			if iter.timeout >= 0 {
-				if timeout.IsZero() {
-					timeout = time.Now().Add(iter.timeout)
-				}
-				if time.Now().After(timeout) {
+			if !deadline.IsZero() {
+				if time.Now().After(deadline) {
 					iter.timedout = true
 					iter.m.Unlock()
 					return false
