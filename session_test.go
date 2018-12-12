@@ -1694,15 +1694,30 @@ func (s *S) TestFindIterLimit(c *C) {
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
-var cursorTimeout = flag.Bool("cursor-timeout", false, "Enable cursor timeout test")
+var cursorTimeout = flag.Bool("cursor-timeout", false, "Enable cursor timeout tests")
+
+// This error message varies based on server version.
+var cursorTimeoutRegex = "invalid cursor|Cursor not found, cursor id: .*|cursor id .* not found"
 
 func (s *S) TestFindIterCursorTimeout(c *C) {
 	if !*cursorTimeout {
 		c.Skip("-cursor-timeout")
 	}
+
+	if !s.versionAtLeast(3, 0, 2) {
+		c.Skip("cursorTimeoutMillis parameter requires 3.0.2+")
+	}
+
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
+
+	// Set a short cursor timeout on the server.
+	err = session.Run(bson.D{{"setParameter", 1}, {"cursorTimeoutMillis", int64(10)}}, nil)
+	c.Assert(err, IsNil)
+
+	// Set timeout back to normal when this test completes.
+	defer session.Run(bson.D{{"setParameter", 1}, {"cursorTimeoutMillis", int64(6 * 10 * 1000)}}, nil)
 
 	type Doc struct {
 		Id int "_id"
@@ -1710,7 +1725,7 @@ func (s *S) TestFindIterCursorTimeout(c *C) {
 
 	coll := session.DB("test").C("test")
 	coll.Remove(nil)
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 10; i++ {
 		err = coll.Insert(Doc{i})
 		c.Assert(err, IsNil)
 	}
@@ -1722,20 +1737,80 @@ func (s *S) TestFindIterCursorTimeout(c *C) {
 		c.Fatalf("iterator failed to return any documents")
 	}
 
-	for i := 10; i > 0; i-- {
-		c.Logf("Sleeping... %d minutes to go...", i)
-		time.Sleep(1*time.Minute + 2*time.Second)
-	}
+	// Give the cursor an opportunity to time out. While we only set timeout to 10ms, in practice
+	// it seems to take a bit longer for the server to actually kill the cursor.
+	time.Sleep(5 * time.Second)
 
 	// Drain any existing documents that were fetched.
 	if !iter.Next(&doc) {
 		c.Fatalf("iterator with timed out cursor failed to return previously cached document")
 	}
 	if iter.Next(&doc) {
-		c.Fatalf("timed out cursor returned document")
+		c.Fatalf("timed out cursor returned document, expected error")
 	}
 
-	c.Assert(iter.Err(), Equals, mgo.ErrCursor)
+	c.Assert(iter.Err(), ErrorMatches, cursorTimeoutRegex)
+}
+
+func (s *S) TestFindIterCursorNoTimeout(c *C) {
+	if !*cursorTimeout {
+		c.Skip("-cursor-timeout")
+	}
+
+	if !s.versionAtLeast(3, 0, 2) {
+		c.Skip("cursorTimeoutMillis parameter requires 3.0.2+")
+	}
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	// Set a short cursor timeout on the server.
+	err = session.Run(bson.D{{"setParameter", 1}, {"cursorTimeoutMillis", int64(10)}}, nil)
+	c.Assert(err, IsNil)
+
+	// Set timeout back to normal when this test completes.
+	defer session.Run(bson.D{{"setParameter", 1}, {"cursorTimeoutMillis", int64(6 * 10 * 1000)}}, nil)
+
+	session.SetCursorTimeout(0)
+
+	type Doc struct {
+		Id int "_id"
+	}
+
+	coll := session.DB("test").C("test")
+	coll.Remove(nil)
+	for i := 0; i < 10; i++ {
+		err = coll.Insert(Doc{i})
+		c.Assert(err, IsNil)
+	}
+
+	session.SetBatch(1)
+	iter := coll.Find(nil).Iter()
+	var doc Doc
+	if !iter.Next(&doc) {
+		c.Fatalf("iterator failed to return any documents")
+	}
+
+	// Sleep until cursorTimeoutMillis has passed. While we only set timeout to 10ms, in practice
+	// it seems to take a bit longer for the server to actually kill cursors.
+	time.Sleep(5 * time.Second)
+
+	// Drain any existing documents that were fetched.
+	if !iter.Next(&doc) {
+		c.Fatalf("iterator failed to return previously cached document")
+	}
+	for i := 0; i < 8; i++ {
+		if !iter.Next(&doc) {
+			c.Errorf("iterator failed on iteration %d", i)
+			break
+		}
+	}
+	if iter.Next(&doc) {
+		c.Error("iterator returned more than 10 documents")
+	}
+
+	c.Assert(iter.Err(), IsNil)
 }
 
 func (s *S) TestTooManyItemsLimitBug(c *C) {
