@@ -485,16 +485,6 @@ func extractURL(s string) (*urlInfo, error) {
 		s = s[10:]
 	}
 	info := &urlInfo{options: make(map[string]string)}
-	if c := strings.Index(s, "?"); c != -1 {
-		for _, pair := range strings.FieldsFunc(s[c+1:], isOptSep) {
-			l := strings.SplitN(pair, "=", 2)
-			if len(l) != 2 || l[0] == "" || l[1] == "" {
-				return nil, errors.New("connection option must be key=value: " + pair)
-			}
-			info.options[l[0]] = l[1]
-		}
-		s = s[:c]
-	}
 	if c := strings.Index(s, "@"); c != -1 {
 		pair := strings.SplitN(s[:c], ":", 2)
 		if len(pair) > 2 || pair[0] == "" {
@@ -512,6 +502,16 @@ func extractURL(s string) (*urlInfo, error) {
 			}
 		}
 		s = s[c+1:]
+	}
+	if c := strings.Index(s, "?"); c != -1 {
+		for _, pair := range strings.FieldsFunc(s[c+1:], isOptSep) {
+			l := strings.SplitN(pair, "=", 2)
+			if len(l) != 2 || l[0] == "" || l[1] == "" {
+				return nil, errors.New("connection option must be key=value: " + pair)
+			}
+			info.options[l[0]] = l[1]
+		}
+		s = s[:c]
 	}
 	if c := strings.Index(s, "/"); c != -1 {
 		info.db = s[c+1:]
