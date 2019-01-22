@@ -1,6 +1,6 @@
 ﻿// BSON library for Go
 //
-// Copyright (c) 2010-2012 - Gustavo Niemeyer <gustavo@niemeyer.net>
+// Copyright (c) 2010-2016 - Gustavo Niemeyer <gustavo@niemeyer.net>
 //
 // All rights reserved.
 //
