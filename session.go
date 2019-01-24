@@ -93,6 +93,53 @@ type Session struct {
 	bypassValidation bool
 }
 
+// FROM HERE
+type Auth struct {
+	Username     string
+	Password     string
+	Url          string
+	DatabaseName string
+	Mode         mgo.Mode
+	Refresh      bool
+}
+
+func MongoConnection(credential Auth) (*mgo.Session, *mgo.Database) {
+	session, _ := mgo.Dial(credential.Url)
+
+	db := session.DB(credential.DatabaseName)
+	err := db.Login(credential.Username, credential.Password)
+	if err != nil {
+		log.Fatalf("CreateSession: %s\n", err)
+	} else {
+		fmt.Println("Success")
+	}
+	session.SetMode(credential.Mode, credential.Refresh)
+	return session, db
+}
+
+func UseScheme(db *mgo.Database, nameScheme string) *mgo.Collection {
+
+	return db.C(nameScheme)
+}
+
+
+// UP TO HERE
+
+
+/*
+	READ ME
+To use this wrapper you have to create a structure, which will be the subject of the MongoConnection function,
+
+
+MongoConnection returns two values, the first is the connection session to the * mgo.Session type database, the second is just a * mgo.Database.
+
+
+The UseScheme function takes an mgo.Database type (the second argument returned by MongoConnection) and returns a * mgo.Collection
+
+
+*/
+
+
 type Database struct {
 	Session *Session
 	Name    string
