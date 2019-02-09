@@ -105,7 +105,6 @@ type Auth struct {
 
 func MongoConnection(credential Auth) (*mgo.Session, *mgo.Database) {
 	session, _ := mgo.Dial(credential.Url)
-
 	db := session.DB(credential.DatabaseName)
 	err := db.Login(credential.Username, credential.Password)
 	if err != nil {
@@ -118,7 +117,6 @@ func MongoConnection(credential Auth) (*mgo.Session, *mgo.Database) {
 }
 
 func UseScheme(db *mgo.Database, nameScheme string) *mgo.Collection {
-
 	return db.C(nameScheme)
 }
 
