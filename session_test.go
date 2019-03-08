@@ -38,7 +38,7 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2"
+	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
 
@@ -3561,6 +3561,10 @@ func (s *S) TestEnsureIndexEvalGetIndexes(c *C) {
 	c.Assert(err, IsNil)
 	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({d: '2d'})"}}, nil)
 	c.Assert(err, IsNil)
+	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({e: NumberLong(1)})"}}, nil)
+	c.Assert(err, IsNil)
+	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({f: NumberInt(1)})"}}, nil)
+	c.Assert(err, IsNil)
 
 	indexes, err := coll.Indexes()
 	c.Assert(err, IsNil)
@@ -3579,6 +3583,10 @@ func (s *S) TestEnsureIndexEvalGetIndexes(c *C) {
 		c.Assert(indexes[4].Name, Equals, "d_")
 		c.Assert(indexes[4].Key, DeepEquals, []string{"$2d:d"})
 	}
+	c.Assert(indexes[5].Name, Equals, "e_1")
+	c.Assert(indexes[5].Key, DeepEquals, []string{"e"})
+	c.Assert(indexes[6].Name, Equals, "f_1")
+	c.Assert(indexes[6].Key, DeepEquals, []string{"f"})
 }
 
 var testTTL = flag.Bool("test-ttl", false, "test TTL collections (may take 1 minute)")
