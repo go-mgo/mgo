@@ -42,7 +42,7 @@ type DBServer struct {
 	host          string
 	version       string // The request MongoDB version, when running within a container
 	eType         int    // Specify whether mongo should run as a container or regular process
-  network       string // The name of the docker network to which the UT container should be attached
+	network       string // The name of the docker network to which the UT container should be attached
 	debug         bool   // Log debug statements
 	containerName string // The container name, when running mgo within a container
 	tomb          tomb.Tomb
@@ -88,28 +88,28 @@ func (dbs *DBServer) execContainer(port int, network string) *exec.Cmd {
 		"pull",
 		fmt.Sprintf("mongo:%s", dbs.version),
 	}
-  start := time.Now()
-  var err error
-  // Seeing intermittent issues such as:
-  // Error response from daemon: Get https://registry-1.docker.io/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
-  for time.Since(start) < 60*time.Second {
-    cmd := exec.Command("docker", args...)
-    if dbs.debug {
-      fmt.Printf("[%s] Pulling Mongo docker image\n", time.Now().String())
-      cmd.Stdout = os.Stderr
-      cmd.Stderr = os.Stderr
-    }
-    err = cmd.Run()
-    if err == nil {
-      break
-    } else {
-      fmt.Printf("[%s] Failed to pull Mongo container image. err=%s", time.Now().String(), err.Error())
-      time.Sleep(5 * time.Second)
-    }
-  }
-  if err != nil {
-    panic(err)
-  }
+	start := time.Now()
+	var err error
+	// Seeing intermittent issues such as:
+	// Error response from daemon: Get https://registry-1.docker.io/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+	for time.Since(start) < 60*time.Second {
+		cmd := exec.Command("docker", args...)
+		if dbs.debug {
+			fmt.Printf("[%s] Pulling Mongo docker image\n", time.Now().String())
+			cmd.Stdout = os.Stderr
+			cmd.Stderr = os.Stderr
+		}
+		err = cmd.Run()
+		if err == nil {
+			break
+		} else {
+			fmt.Printf("[%s] Failed to pull Mongo container image. err=%s", time.Now().String(), err.Error())
+			time.Sleep(5 * time.Second)
+		}
+	}
+	if err != nil {
+		panic(err)
+	}
 	if dbs.debug {
 		fmt.Printf("[%s] Pulled Mongo docker image\n", time.Now().String())
 	}
@@ -142,14 +142,14 @@ func (dbs *DBServer) execContainer(port int, network string) *exec.Cmd {
 		"-p",
 		portArg,
 		"--rm", // Automatically remove the container when it exits
-  }
-  if network != "" {
-    args = append(args, []string{
-      "--net",
-      network,
-    }...)
-  }
-  args = append(args, []string{
+	}
+	if network != "" {
+		args = append(args, []string{
+			"--net",
+			network,
+		}...)
+	}
+	args = append(args, []string{
 		"--name",
 		dbs.containerName,
 		fmt.Sprintf("mongo:%s", dbs.version),
@@ -208,7 +208,7 @@ func (dbs *DBServer) GetContainerHostPort() (int, error) {
 			fmt.Printf("[%s] Unable to parse port number: error=%s, out=%s\n", time.Now().String(), err2.Error(), o[1])
 		} else {
 			fmt.Printf("[%s] MongoDB Container host port number: %d\n", time.Now().String(), i)
-    }
+		}
 		return i, err2
 	}
 	fmt.Printf("[%s] Failed to run command. error=%s, stderr=%s\n", time.Now().String(), err.Error(), stderr.String())
@@ -448,7 +448,7 @@ func (dbs *DBServer) checkSessions() {
 // there is a session leak.
 func (dbs *DBServer) Wipe() {
 	if dbs.server == nil || dbs.session == nil {
-    fmt.Printf("[%s] Skip Wipe()\n", time.Now().String())
+		fmt.Printf("[%s] Skip Wipe()\n", time.Now().String())
 		return
 	}
 	dbs.checkSessions()
@@ -467,7 +467,7 @@ func (dbs *DBServer) Wipe() {
 		switch name {
 		case "admin", "local", "config":
 		default:
-      fmt.Printf("Drop database '%s'\n", name)
+			fmt.Printf("Drop database '%s'\n", name)
 			err = session.DB(name).DropDatabase()
 			if err != nil {
 				panic(err)
