@@ -89,7 +89,7 @@ func (dbs *DBServer) execContainer(port int) *exec.Cmd {
   for time.Since(start) < 60*time.Second {
     cmd := exec.Command("docker", args...)
     if dbs.debug {
-      fmt.Printf("Pulling Mongo docker image\n")
+      fmt.Printf("[%s] Pulling Mongo docker image\n", time.Now().String())
       cmd.Stdout = os.Stderr
       cmd.Stderr = os.Stderr
     }
@@ -97,7 +97,7 @@ func (dbs *DBServer) execContainer(port int) *exec.Cmd {
     if err == nil {
       break
     } else {
-      fmt.Printf("Failed to pull Mongo container image. err=%s", err.Error())
+      fmt.Printf("[%s] Failed to pull Mongo container image. err=%s", time.Now().String(), err.Error())
       time.Sleep(5 * time.Second)
     }
   }
@@ -105,7 +105,7 @@ func (dbs *DBServer) execContainer(port int) *exec.Cmd {
     panic(err)
   }
 	if dbs.debug {
-		fmt.Printf("Pulled Mongo docker image\n")
+		fmt.Printf("[%s] Pulled Mongo docker image\n", time.Now().String())
 	}
 
 	// Generate a name for the container. This will help to inspect the container
@@ -177,7 +177,7 @@ func (dbs *DBServer) GetContainerHostPort() (int, error) {
 		err = cmd.Run()
 		if err != nil {
 			// This could be because the container has not started yet. Retry later
-			fmt.Printf("Failed to get container host port number. Will retry later...\n")
+			fmt.Printf("[%s] Failed to get container host port number. Will retry later...\n", time.Now().String())
 			time.Sleep(3 * time.Second)
 			continue
 		}
@@ -191,11 +191,13 @@ func (dbs *DBServer) GetContainerHostPort() (int, error) {
 		i, err2 := strconv.Atoi(o[1])
 		if err2 != nil {
 			dbs.printMongoDebugInfo()
-			fmt.Printf("Unable to parse port number: error=%s, out=%s\n", err2.Error(), o[1])
-		}
+			fmt.Printf("[%s] Unable to parse port number: error=%s, out=%s\n", time.Now().String(), err2.Error(), o[1])
+		} else {
+			fmt.Printf("[%s] MongoDB Container host port number: %d\n", time.Now().String(), i)
+    }
 		return i, err2
 	}
-	fmt.Printf("Failed to run command. error=%s, stderr=%s\n", err.Error(), stderr.String())
+	fmt.Printf("[%s] Failed to run command. error=%s, stderr=%s\n", time.Now().String(), err.Error(), stderr.String())
 	return -1, err
 }
 
@@ -384,7 +386,7 @@ func (dbs *DBServer) SessionWithTimeout(timeout time.Duration) *mgo.Session {
 		var err error
 		dbs.session, err = mgo.DialWithTimeout(dbs.host+"/test", timeout)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[%s] Unable to dial mongod. Timeout=%v, Error: %s\n", time.Now().String(), timeout, err.Error())
+			fmt.Fprintf(os.Stderr, "[%s] Unable to dial mongod located at '%s'. Timeout=%v, Error: %s\n", time.Now().String(), dbs.host, timeout, err.Error())
 			fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
 			dbs.printMongoDebugInfo()
 			panic(err)
@@ -432,7 +434,7 @@ func (dbs *DBServer) checkSessions() {
 // there is a session leak.
 func (dbs *DBServer) Wipe() {
 	if dbs.server == nil || dbs.session == nil {
-    fmt.Printf("Skip Wipe()\n")
+    fmt.Printf("[%s] Skip Wipe()\n", time.Now().String())
 		return
 	}
 	dbs.checkSessions()
