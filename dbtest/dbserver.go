@@ -42,6 +42,7 @@ type DBServer struct {
 	host          string
 	version       string // The request MongoDB version, when running within a container
 	eType         int    // Specify whether mongo should run as a container or regular process
+  network       string // The name of the docker network to which the UT container should be attached
 	debug         bool   // Log debug statements
 	containerName string // The container name, when running mgo within a container
 	tomb          tomb.Tomb
@@ -69,9 +70,14 @@ func (dbs *DBServer) SetExecType(execType int) {
 	dbs.eType = execType
 }
 
+// SetNetwork sets the name of the docker network to which the UT container should be attached.
+func (dbs *DBServer) SetNetwork(network string) {
+	dbs.network = network
+}
+
 // Start Mongo DB within Docker container on host.
 // It assumes Docker is already installed
-func (dbs *DBServer) execContainer(port int) *exec.Cmd {
+func (dbs *DBServer) execContainer(port int, network string) *exec.Cmd {
 	if dbs.version == "" {
 		dbs.version = "latest"
 	}
@@ -136,6 +142,14 @@ func (dbs *DBServer) execContainer(port int) *exec.Cmd {
 		"-p",
 		portArg,
 		"--rm", // Automatically remove the container when it exits
+  }
+  if network != "" {
+    args = append(args, []string{
+      "--net",
+      network,
+    }...)
+  }
+  args = append(args, []string{
 		"--name",
 		dbs.containerName,
 		fmt.Sprintf("mongo:%s", dbs.version),
@@ -143,7 +157,7 @@ func (dbs *DBServer) execContainer(port int) *exec.Cmd {
 		"--noprealloc",
 		"--smallfiles",
 		"--nojournal",
-	}
+	}...)
 	return exec.Command("docker", args...)
 }
 
@@ -266,14 +280,14 @@ func (dbs *DBServer) start() {
 		dbs.host = addr.String()
 		dbs.server = dbs.execLocal(addr.Port)
 	case Docker:
-		dbs.server = dbs.execContainer(0)
+		dbs.server = dbs.execContainer(0, dbs.network)
 	default:
 		panic(fmt.Sprintf("unsupported exec type: %d", dbs.eType))
 	}
 	dbs.server.Stdout = &dbs.output
 	dbs.server.Stderr = &dbs.output
 	if dbs.debug {
-		fmt.Printf("[%s] Starting Mongo instance: %v. Address: %s\n", time.Now().String(), dbs.server.Args, dbs.host)
+		fmt.Printf("[%s] Starting Mongo instance: %v. Address: %s. Network: '%s'\n", time.Now().String(), dbs.server.Args, dbs.host, dbs.network)
 	}
 	err = dbs.server.Start()
 	if err != nil {
