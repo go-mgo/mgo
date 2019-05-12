@@ -39,7 +39,8 @@ type DBServer struct {
 	output        bytes.Buffer
 	server        *exec.Cmd
 	dbpath        string
-	host          string // The IP address or host name of the mgo instance.
+	hostPort      string // The IP address and port number of the mgo instance.
+  hostname      string // The IP address or hostname of the container.
 	version       string // The request MongoDB version, when running within a container
 	eType         int    // Specify whether mongo should run as a container or regular process
 	network       string // The name of the docker network to which the UT container should be attached
@@ -162,11 +163,11 @@ func (dbs *DBServer) execContainer(port int, network string) *exec.Cmd {
 }
 
 // Returns the host name of the Mongo test instance.
-// If the test instance runs as a container, it returns the container name.
+// If the test instance runs as a container, it returns the IP address of the container.
 // If the test instance runs in the host, returns the host name.
 func (dbs *DBServer) GetHostName() string {
 	if dbs.eType == Docker {
-		return dbs.host
+		return dbs.hostname
 	} else {
 		if hostname, err := os.Hostname(); err != nil {
 			return hostname
@@ -199,8 +200,8 @@ func (dbs *DBServer) GetContainerHostPort() (string, int, error) {
 			time.Sleep(3 * time.Second)
 			continue
 		}
-		ipAddr := strings.TrimSpace(out.String())
-		dbs.host = ipAddr
+		ipAddr := strings.Trim(strings.TrimSpace(out.String()), "'")
+		dbs.hostname = ipAddr
 
 		// Get port
 		out.Reset()
@@ -227,7 +228,7 @@ func (dbs *DBServer) GetContainerHostPort() (string, int, error) {
 			dbs.printMongoDebugInfo()
 			fmt.Printf("[%s] Unable to parse port number: error=%s, out=%s\n", time.Now().String(), err2.Error(), o[1])
 		} else {
-			fmt.Printf("[%s] MongoDB available at: %s:%d\n", time.Now().String(), ipAddr, i)
+			fmt.Printf("[%s] MongoDB available on bridge network at: %s. Host port: %d. Container port: %d\n", time.Now().String(), ipAddr, i, 27017)
 		}
 		return ipAddr, i, err2
 	}
@@ -297,7 +298,7 @@ func (dbs *DBServer) start() {
 	dbs.tomb = tomb.Tomb{}
 	switch dbs.eType {
 	case LocalProcess:
-		dbs.host = addr.String()
+		dbs.hostPort = addr.String()
 		dbs.server = dbs.execLocal(addr.Port)
 	case Docker:
 		dbs.server = dbs.execContainer(0, dbs.network)
@@ -307,7 +308,7 @@ func (dbs *DBServer) start() {
 	dbs.server.Stdout = &dbs.output
 	dbs.server.Stderr = &dbs.output
 	if dbs.debug {
-		fmt.Printf("[%s] Starting Mongo instance: %v. Address: %s. Network: '%s'\n", time.Now().String(), dbs.server.Args, dbs.host, dbs.network)
+		fmt.Printf("[%s] Starting Mongo instance: %v. Address: %s. Network: '%s'\n", time.Now().String(), dbs.server.Args, dbs.hostPort, dbs.network)
 	}
 	err = dbs.server.Start()
 	if err != nil {
@@ -317,11 +318,11 @@ func (dbs *DBServer) start() {
 		fmt.Printf("[%s] Mongo instance started\n", time.Now().String())
 	}
 	if dbs.eType == Docker {
-		ipAddr, p, err2 := dbs.GetContainerHostPort()
+		ipAddr, _, err2 := dbs.GetContainerHostPort()
 		if err2 != nil {
 			panic(err2)
 		}
-		dbs.host = fmt.Sprintf("%s:%d", ipAddr, p)
+		dbs.hostPort = fmt.Sprintf("%s:%d", ipAddr, 27017)
 	}
 	dbs.tomb.Go(dbs.monitor)
 	dbs.Wipe()
@@ -418,9 +419,10 @@ func (dbs *DBServer) SessionWithTimeout(timeout time.Duration) *mgo.Session {
 	if dbs.session == nil {
 		mgo.ResetStats()
 		var err error
-		dbs.session, err = mgo.DialWithTimeout(dbs.host+"/test", timeout)
+    fmt.Printf("[%s] Dialing mongod located at '%s'\n", time.Now().String(), dbs.hostPort)
+		dbs.session, err = mgo.DialWithTimeout(dbs.hostPort+"/test", timeout)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[%s] Unable to dial mongod located at '%s'. Timeout=%v, Error: %s\n", time.Now().String(), dbs.host, timeout, err.Error())
+			fmt.Fprintf(os.Stderr, "[%s] Unable to dial mongod located at '%s'. Timeout=%v, Error: %s\n", time.Now().String(), dbs.hostPort, timeout, err.Error())
 			fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
 			dbs.printMongoDebugInfo()
 			panic(err)
