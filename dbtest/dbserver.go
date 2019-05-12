@@ -3,7 +3,6 @@ package dbtest
 import (
 	"bytes"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -77,8 +76,8 @@ func (dbs *DBServer) SetNetwork(network string) {
 }
 
 // Start Mongo DB within Docker container on host.
-// It assumes Docker is already installed
-func (dbs *DBServer) execContainer(port int, network string) *exec.Cmd {
+// It assumes Docker is already installed.
+func (dbs *DBServer) execContainer(network string) *exec.Cmd {
 	if dbs.version == "" {
 		dbs.version = "latest"
 	}
@@ -127,21 +126,9 @@ func (dbs *DBServer) execContainer(port int, network string) *exec.Cmd {
 	}
 	dbs.containerName = fmt.Sprintf("mongo-%s", hex.EncodeToString(u))
 
-	// On some platforms, we get "chown: changing ownership of '/proc/1/fd/1': Permission denied" unless
-	// we allocate a pseudo tty (-t option)
-	var portArg string
-	if port > 0 {
-		portArg = fmt.Sprintf("%d:%d", port, 27017)
-	} else {
-		// Let docker allocate the port.
-		// This is useful when multiple tests are running on the same host
-		portArg = fmt.Sprintf("%d", 27017)
-	}
 	args = []string{
 		"run",
 		"-t",
-		"-p",
-		portArg,
 		"--rm", // Automatically remove the container when it exits
 	}
 	if network != "" {
@@ -177,12 +164,10 @@ func (dbs *DBServer) GetHostName() string {
 	}
 }
 
-// GetContainerHostPort returns the IP address and port for the test Mongo instance
-// The Host port is the port which is exposed to the host OS. This is useful if the client tries
-// to connect to the Mongo instance from the host.
-// If the client connects directly on the docker bridge network (such as when the client is also 
+// GetContainerIpAddr returns the IP address of the test Mongo instance
+// The client should connect directly on the docker bridge network (such as when the client is also 
 // running in a container), then client should connect to port 27017.
-func (dbs *DBServer) GetContainerHostPort() (string, int, error) {
+func (dbs *DBServer) GetContainerIpAddr() (string, error) {
 	start := time.Now()
 	var err error
 	var stderr bytes.Buffer
@@ -202,38 +187,9 @@ func (dbs *DBServer) GetContainerHostPort() (string, int, error) {
 		}
 		ipAddr := strings.Trim(strings.TrimSpace(out.String()), "'")
 		dbs.hostname = ipAddr
-
-		// Get port
-		out.Reset()
-		args = []string{"port", dbs.containerName, fmt.Sprintf("%d", 27017)}
-		cmd = exec.Command("docker", args...) // #nosec
-		cmd.Stdout = &out
-		cmd.Stderr = &stderr
-		err = cmd.Run()
-		if err != nil {
-			// This could be because the container has not started yet. Retry later
-			fmt.Printf("[%s] Failed to get container host port number. Will retry later...\n", time.Now().String())
-			time.Sleep(3 * time.Second)
-			continue
-		}
-		s := strings.TrimSpace(out.String())
-		o := strings.Split(s, ":")
-		if len(o) < 2 {
-			fmt.Printf("Unable to get container host port number: %s", s)
-			dbs.printMongoDebugInfo()
-			return "", -1, errors.New(fmt.Sprintf("Unable to get container host port number. %s", s))
-		}
-		i, err2 := strconv.Atoi(o[1])
-		if err2 != nil {
-			dbs.printMongoDebugInfo()
-			fmt.Printf("[%s] Unable to parse port number: error=%s, out=%s\n", time.Now().String(), err2.Error(), o[1])
-		} else {
-			fmt.Printf("[%s] MongoDB available on bridge network at: %s. Host port: %d. Container port: %d\n", time.Now().String(), ipAddr, i, 27017)
-		}
-		return ipAddr, i, err2
+		return dbs.hostname, err
 	}
-	fmt.Printf("[%s] Failed to run command. error=%s, stderr=%s\n", time.Now().String(), err.Error(), stderr.String())
-	return "", -1, err
+	return "", fmt.Errorf("[%s] Failed to run command. error=%s, stderr=%s\n", time.Now().String(), err.Error(), stderr.String())
 }
 
 // Stop the docker container running Mongo.
@@ -301,7 +257,7 @@ func (dbs *DBServer) start() {
 		dbs.hostPort = addr.String()
 		dbs.server = dbs.execLocal(addr.Port)
 	case Docker:
-		dbs.server = dbs.execContainer(0, dbs.network)
+		dbs.server = dbs.execContainer(dbs.network)
 	default:
 		panic(fmt.Sprintf("unsupported exec type: %d", dbs.eType))
 	}
@@ -318,7 +274,7 @@ func (dbs *DBServer) start() {
 		fmt.Printf("[%s] Mongo instance started\n", time.Now().String())
 	}
 	if dbs.eType == Docker {
-		ipAddr, _, err2 := dbs.GetContainerHostPort()
+		ipAddr, err2 := dbs.GetContainerIpAddr()
 		if err2 != nil {
 			panic(err2)
 		}
