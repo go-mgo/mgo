@@ -177,6 +177,10 @@ func (dbs *DBServer) GetHostName() string {
 }
 
 // GetContainerHostPort returns the IP address and port for the test Mongo instance
+// The Host port is the port which is exposed to the host OS. This is useful if the client tries
+// to connect to the Mongo instance from the host.
+// If the client connects directly on the docker bridge network (such as when the client is also 
+// running in a container), then client should connect to port 27017.
 func (dbs *DBServer) GetContainerHostPort() (string, int, error) {
 	start := time.Now()
 	var err error
