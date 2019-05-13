@@ -164,6 +164,11 @@ func (dbs *DBServer) GetHostName() string {
 	}
 }
 
+// GetContainerName returns the name of the container, when running the Mongo UT instance in a container.
+func (dbs *DBServer) GetContainerName() string {
+  return dbs.containerName
+}
+
 // GetContainerIpAddr returns the IP address of the test Mongo instance
 // The client should connect directly on the docker bridge network (such as when the client is also 
 // running in a container), then client should connect to port 27017.
