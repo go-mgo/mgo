@@ -350,7 +350,9 @@ func (socket *mongoSocket) kill(err error, abend bool) {
 
 	logf("Socket %p to %s: closing: %s (abend=%v)", socket, socket.addr, err.Error(), abend)
 	socket.dead = err
-	socket.conn.Close()
+	if socket.conn != nil {
+		socket.conn.Close()
+	}
 	stats.socketsAlive(-1)
 	replyFuncs := socket.replyFuncs
 	socket.replyFuncs = make(map[uint32]replyFunc)
