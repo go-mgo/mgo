@@ -28,6 +28,7 @@ package mgo
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"sort"
 	"sync"
@@ -198,6 +199,14 @@ func (server *mongoServer) Connect(timeout time.Duration, socket *mongoSocket) e
 		logf("Connection to %s failed: %v", server.Addr, err.Error())
 		return err
 	}
+
+	if conn == nil {
+		// if a dialer is incorrectly implemented, it may return (nil, nil)
+		// which will cause a panic downstream
+		logf("Received nil connection to %s", server.Addr)
+		return fmt.Errorf("received nil connection to %s", server.Addr)
+	}
+
 	logf("Connection to %s established.", server.Addr)
 
 	stats.conn(+1, master)
