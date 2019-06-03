@@ -182,9 +182,6 @@ func (dbs *DBServer) GetContainerName() string {
 // The client should connect directly on the docker bridge network (such as when the client is also
 // running in a container), then client should connect to port 27017.
 func (dbs *DBServer) GetContainerIpAddr() (string, error) {
-	if dbs.network == "" {
-		return "127.0.0.1", nil
-	}
 	start := time.Now()
 	var err error
 	var stderr bytes.Buffer
@@ -204,7 +201,11 @@ func (dbs *DBServer) GetContainerIpAddr() (string, error) {
 		}
 		ipAddr := strings.Trim(strings.TrimSpace(out.String()), "'")
 		dbs.hostname = ipAddr
-		return dbs.hostname, err
+		if dbs.network == "" {
+			return "127.0.0.1", nil
+		} else {
+			return dbs.hostname, err
+		}
 	}
 	return "", fmt.Errorf("[%s] Failed to run command. error=%s, stderr=%s\n", time.Now().String(), err.Error(), stderr.String())
 }
