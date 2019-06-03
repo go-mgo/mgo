@@ -43,6 +43,7 @@ type DBServer struct {
 	version       string // The request MongoDB version, when running within a container
 	eType         int    // Specify whether mongo should run as a container or regular process
 	network       string // The name of the docker network to which the UT container should be attached
+  exposePort    bool   // Specify whether container port should be exposed to the host OS.
 	debug         bool   // Log debug statements
 	containerName string // The container name, when running mgo within a container
 	tomb          tomb.Tomb
@@ -75,9 +76,14 @@ func (dbs *DBServer) SetNetwork(network string) {
 	dbs.network = network
 }
 
+// SetExposePort sets whether the container port should be exposed to the host OS.
+func (dbs *DBServer) SetExposePort(exposePort bool) {
+	dbs.exposePort = exposePort
+}
+
 // Start Mongo DB within Docker container on host.
 // It assumes Docker is already installed.
-func (dbs *DBServer) execContainer(network string) *exec.Cmd {
+func (dbs *DBServer) execContainer(network string, exposePort bool) *exec.Cmd {
 	if dbs.version == "" {
 		dbs.version = "latest"
 	}
@@ -137,6 +143,9 @@ func (dbs *DBServer) execContainer(network string) *exec.Cmd {
 			network,
 		}...)
 	}
+  if exposePort {
+		args = append(args, []string{"-p", fmt.Sprintf("%d:%d", 27017, 27017)}...)
+  }
 	args = append(args, []string{
 		"--name",
 		dbs.containerName,
@@ -262,7 +271,7 @@ func (dbs *DBServer) start() {
 		dbs.hostPort = addr.String()
 		dbs.server = dbs.execLocal(addr.Port)
 	case Docker:
-		dbs.server = dbs.execContainer(dbs.network)
+		dbs.server = dbs.execContainer(dbs.network, dbs.exposePort)
 	default:
 		panic(fmt.Sprintf("unsupported exec type: %d", dbs.eType))
 	}
