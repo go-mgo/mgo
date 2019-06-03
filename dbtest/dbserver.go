@@ -39,11 +39,11 @@ type DBServer struct {
 	server        *exec.Cmd
 	dbpath        string
 	hostPort      string // The IP address and port number of the mgo instance.
-  hostname      string // The IP address or hostname of the container.
+	hostname      string // The IP address or hostname of the container.
 	version       string // The request MongoDB version, when running within a container
 	eType         int    // Specify whether mongo should run as a container or regular process
 	network       string // The name of the docker network to which the UT container should be attached
-  exposePort    bool   // Specify whether container port should be exposed to the host OS.
+	exposePort    bool   // Specify whether container port should be exposed to the host OS.
 	debug         bool   // Log debug statements
 	containerName string // The container name, when running mgo within a container
 	tomb          tomb.Tomb
@@ -143,9 +143,9 @@ func (dbs *DBServer) execContainer(network string, exposePort bool) *exec.Cmd {
 			network,
 		}...)
 	}
-  if exposePort {
+	if exposePort {
 		args = append(args, []string{"-p", fmt.Sprintf("%d:%d", 27017, 27017)}...)
-  }
+	}
 	args = append(args, []string{
 		"--name",
 		dbs.containerName,
@@ -175,13 +175,16 @@ func (dbs *DBServer) GetHostName() string {
 
 // GetContainerName returns the name of the container, when running the Mongo UT instance in a container.
 func (dbs *DBServer) GetContainerName() string {
-  return dbs.containerName
+	return dbs.containerName
 }
 
 // GetContainerIpAddr returns the IP address of the test Mongo instance
-// The client should connect directly on the docker bridge network (such as when the client is also 
+// The client should connect directly on the docker bridge network (such as when the client is also
 // running in a container), then client should connect to port 27017.
 func (dbs *DBServer) GetContainerIpAddr() (string, error) {
+	if dbs.network == "" {
+		return "127.0.0.1", nil
+	}
 	start := time.Now()
 	var err error
 	var stderr bytes.Buffer
@@ -389,7 +392,7 @@ func (dbs *DBServer) SessionWithTimeout(timeout time.Duration) *mgo.Session {
 	if dbs.session == nil {
 		mgo.ResetStats()
 		var err error
-    fmt.Printf("[%s] Dialing mongod located at '%s'\n", time.Now().String(), dbs.hostPort)
+		fmt.Printf("[%s] Dialing mongod located at '%s'\n", time.Now().String(), dbs.hostPort)
 		dbs.session, err = mgo.DialWithTimeout(dbs.hostPort+"/test", timeout)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[%s] Unable to dial mongod located at '%s'. Timeout=%v, Error: %s\n", time.Now().String(), dbs.hostPort, timeout, err.Error())
