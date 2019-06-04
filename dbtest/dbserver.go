@@ -186,6 +186,10 @@ func (dbs *DBServer) GetContainerIpAddr() (string, error) {
 	var err error
 	var stderr bytes.Buffer
 	for time.Since(start) < 60*time.Second {
+		if dbs.server.ProcessState != nil {
+			// The process has exited
+			return "", fmt.Errorf("Process has exited\n%s", dbs.output.String())
+		}
 		stderr.Reset()
 		args := []string{"inspect", "-f", "'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'", dbs.containerName}
 		cmd := exec.Command("docker", args...) // #nosec
@@ -195,7 +199,7 @@ func (dbs *DBServer) GetContainerIpAddr() (string, error) {
 		err = cmd.Run()
 		if err != nil {
 			// This could be because the container has not started yet. Retry later
-			fmt.Printf("[%s] Failed to get container IP address. Will retry later...\n", time.Now().String())
+			fmt.Printf("[%s] Failed to get container IP address. Will retry later.\n", time.Now().String())
 			time.Sleep(3 * time.Second)
 			continue
 		}
@@ -291,6 +295,13 @@ func (dbs *DBServer) start() {
 	if dbs.debug {
 		fmt.Printf("[%s] Mongo instance started\n", time.Now().String())
 	}
+	go func() {
+		// Call Wait() so cmd.ProcessState is set after command has completed.
+		err = dbs.server.Wait()
+		if err != nil {
+			fmt.Printf("[%s] Command exited\n", time.Now().String())
+		}
+	}()
 	if dbs.eType == Docker {
 		ipAddr, err2 := dbs.GetContainerIpAddr()
 		if err2 != nil {
