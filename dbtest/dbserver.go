@@ -188,7 +188,8 @@ func (dbs *DBServer) GetContainerIpAddr() (string, error) {
 	for time.Since(start) < 60*time.Second {
 		if dbs.server.ProcessState != nil {
 			// The process has exited
-			return "", fmt.Errorf("Process has exited\n%s", dbs.output.String())
+			fmt.Printf("[%s] Mongo container has exited unexpectedly. Output:\n%s\n", time.Now().String(), dbs.output.String())
+			return "", fmt.Errorf("Process has exited")
 		}
 		stderr.Reset()
 		args := []string{"inspect", "-f", "'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'", dbs.containerName}
@@ -299,7 +300,7 @@ func (dbs *DBServer) start() {
 		// Call Wait() so cmd.ProcessState is set after command has completed.
 		err = dbs.server.Wait()
 		if err != nil {
-			fmt.Printf("[%s] Command exited\n", time.Now().String())
+			fmt.Printf("[%s] Command exited. Output:\n%s\n", time.Now().String(), dbs.output.String())
 		}
 	}()
 	if dbs.eType == Docker {
