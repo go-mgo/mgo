@@ -28,13 +28,14 @@
 package bson
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"net/url"
 	"reflect"
+	"runtime"
 	"strconv"
 	"sync"
-	"runtime"
 	"time"
 )
 
@@ -72,26 +73,38 @@ const (
 	setterNone
 	setterType
 	setterAddr
+	setterCtxType
+	setterCtxAddr
 )
 
 var setterStyles map[reflect.Type]int
 var setterIface reflect.Type
+var setterCtxIface reflect.Type
 var setterMutex sync.RWMutex
 
 func init() {
 	var iface Setter
+	var ifaceCtx SetterCtx
 	setterIface = reflect.TypeOf(&iface).Elem()
+	setterCtxIface = reflect.TypeOf(&ifaceCtx).Elem()
 	setterStyles = make(map[reflect.Type]int)
 }
 
-func setterStyle(outt reflect.Type) int {
+func setterStyle(ctx context.Context, outt reflect.Type) int {
+	if IsSkipCustom(ctx, outt) {
+		return setterNone
+	}
 	setterMutex.RLock()
 	style := setterStyles[outt]
 	setterMutex.RUnlock()
 	if style == setterUnknown {
 		setterMutex.Lock()
 		defer setterMutex.Unlock()
-		if outt.Implements(setterIface) {
+		if outt.Implements(setterCtxIface) {
+			setterStyles[outt] = setterCtxType
+		} else if reflect.PtrTo(outt).Implements(setterCtxIface) {
+			setterStyles[outt] = setterCtxAddr
+		} else if outt.Implements(setterIface) {
 			setterStyles[outt] = setterType
 		} else if reflect.PtrTo(outt).Implements(setterIface) {
 			setterStyles[outt] = setterAddr
@@ -103,9 +116,9 @@ func setterStyle(outt reflect.Type) int {
 	return style
 }
 
-func getSetter(outt reflect.Type, out reflect.Value) Setter {
-	style := setterStyle(outt)
-	if style == setterNone {
+func getSetter(ctx context.Context, outt reflect.Type, out reflect.Value) Setter {
+	style := setterStyle(ctx, outt)
+	if style != setterType && style != setterAddr {
 		return nil
 	}
 	if style == setterAddr {
@@ -119,6 +132,22 @@ func getSetter(outt reflect.Type, out reflect.Value) Setter {
 	return out.Interface().(Setter)
 }
 
+func getSetterCtx(ctx context.Context, outt reflect.Type, out reflect.Value) SetterCtx {
+	style := setterStyle(ctx, outt)
+	if style != setterCtxType && style != setterCtxAddr {
+		return nil
+	}
+	if style == setterCtxAddr {
+		if !out.CanAddr() {
+			return nil
+		}
+		out = out.Addr()
+	} else if outt.Kind() == reflect.Ptr && out.IsNil() {
+		out.Set(reflect.New(outt.Elem()))
+	}
+	return out.Interface().(SetterCtx)
+}
+
 func clearMap(m reflect.Value) {
 	var none reflect.Value
 	for _, k := range m.MapKeys() {
@@ -126,7 +155,7 @@ func clearMap(m reflect.Value) {
 	}
 }
 
-func (d *decoder) readDocTo(out reflect.Value) {
+func (d *decoder) readDocTo(ctx context.Context, out reflect.Value) {
 	var elemType reflect.Type
 	outt := out.Type()
 	outk := outt.Kind()
@@ -135,9 +164,18 @@ func (d *decoder) readDocTo(out reflect.Value) {
 		if outk == reflect.Ptr && out.IsNil() {
 			out.Set(reflect.New(outt.Elem()))
 		}
-		if setter := getSetter(outt, out); setter != nil {
+		if setterCtx := getSetterCtx(ctx, outt, out); setterCtx != nil {
 			var raw Raw
-			d.readDocTo(reflect.ValueOf(&raw))
+			d.readDocTo(ctx, reflect.ValueOf(&raw))
+			err := setterCtx.SetBSONWithContext(ctx, raw)
+			if _, ok := err.(*TypeError); err != nil && !ok {
+				panic(err)
+			}
+			return
+		}
+		if setter := getSetter(ctx, outt, out); setter != nil {
+			var raw Raw
+			d.readDocTo(ctx, reflect.ValueOf(&raw))
 			err := setter.SetBSON(raw)
 			if _, ok := err.(*TypeError); err != nil && !ok {
 				panic(err)
@@ -215,10 +253,10 @@ func (d *decoder) readDocTo(out reflect.Value) {
 	case reflect.Slice:
 		switch outt.Elem() {
 		case typeDocElem:
-			origout.Set(d.readDocElems(outt))
+			origout.Set(d.readDocElems(ctx, outt))
 			return
 		case typeRawDocElem:
-			origout.Set(d.readRawDocElems(outt))
+			origout.Set(d.readRawDocElems(ctx, outt))
 			return
 		}
 		fallthrough
@@ -241,7 +279,7 @@ func (d *decoder) readDocTo(out reflect.Value) {
 		switch outk {
 		case reflect.Map:
 			e := reflect.New(elemType).Elem()
-			if d.readElemTo(e, kind) {
+			if d.readElemTo(ctx, e, kind) {
 				k := reflect.ValueOf(name)
 				if convertKey {
 					k = k.Convert(keyType)
@@ -250,24 +288,24 @@ func (d *decoder) readDocTo(out reflect.Value) {
 			}
 		case reflect.Struct:
 			if outt == typeRaw {
-				d.dropElem(kind)
+				d.dropElem(ctx, kind)
 			} else {
 				if info, ok := fieldsMap[name]; ok {
 					if info.Inline == nil {
-						d.readElemTo(out.Field(info.Num), kind)
+						d.readElemTo(ctx, out.Field(info.Num), kind)
 					} else {
-						d.readElemTo(out.FieldByIndex(info.Inline), kind)
+						d.readElemTo(ctx, out.FieldByIndex(info.Inline), kind)
 					}
 				} else if inlineMap.IsValid() {
 					if inlineMap.IsNil() {
 						inlineMap.Set(reflect.MakeMap(inlineMap.Type()))
 					}
 					e := reflect.New(elemType).Elem()
-					if d.readElemTo(e, kind) {
+					if d.readElemTo(ctx, e, kind) {
 						inlineMap.SetMapIndex(reflect.ValueOf(name), e)
 					}
 				} else {
-					d.dropElem(kind)
+					d.dropElem(ctx, kind)
 				}
 			}
 		case reflect.Slice:
@@ -288,7 +326,7 @@ func (d *decoder) readDocTo(out reflect.Value) {
 	}
 }
 
-func (d *decoder) readArrayDocTo(out reflect.Value) {
+func (d *decoder) readArrayDocTo(ctx context.Context, out reflect.Value) {
 	end := int(d.readInt32())
 	end += d.i - 4
 	if end <= d.i || end > len(d.in) || d.in[end-1] != '\x00' {
@@ -308,7 +346,7 @@ func (d *decoder) readArrayDocTo(out reflect.Value) {
 			corrupted()
 		}
 		d.i++
-		d.readElemTo(out.Index(i), kind)
+		d.readElemTo(ctx, out.Index(i), kind)
 		if d.i >= end {
 			corrupted()
 		}
@@ -323,11 +361,11 @@ func (d *decoder) readArrayDocTo(out reflect.Value) {
 	}
 }
 
-func (d *decoder) readSliceDoc(t reflect.Type) interface{} {
+func (d *decoder) readSliceDoc(ctx context.Context, t reflect.Type) interface{} {
 	tmp := make([]reflect.Value, 0, 8)
 	elemType := t.Elem()
 	if elemType == typeRawDocElem {
-		d.dropElem(0x04)
+		d.dropElem(ctx, 0x04)
 		return reflect.Zero(t).Interface()
 	}
 
@@ -346,7 +384,7 @@ func (d *decoder) readSliceDoc(t reflect.Type) interface{} {
 		}
 		d.i++
 		e := reflect.New(elemType).Elem()
-		if d.readElemTo(e, kind) {
+		if d.readElemTo(ctx, e, kind) {
 			tmp = append(tmp, e)
 		}
 		if d.i >= end {
@@ -369,14 +407,14 @@ func (d *decoder) readSliceDoc(t reflect.Type) interface{} {
 var typeSlice = reflect.TypeOf([]interface{}{})
 var typeIface = typeSlice.Elem()
 
-func (d *decoder) readDocElems(typ reflect.Type) reflect.Value {
+func (d *decoder) readDocElems(ctx context.Context, typ reflect.Type) reflect.Value {
 	docType := d.docType
 	d.docType = typ
 	slice := make([]DocElem, 0, 8)
 	d.readDocWith(func(kind byte, name string) {
 		e := DocElem{Name: name}
 		v := reflect.ValueOf(&e.Value)
-		if d.readElemTo(v.Elem(), kind) {
+		if d.readElemTo(ctx, v.Elem(), kind) {
 			slice = append(slice, e)
 		}
 	})
@@ -386,14 +424,14 @@ func (d *decoder) readDocElems(typ reflect.Type) reflect.Value {
 	return slicev
 }
 
-func (d *decoder) readRawDocElems(typ reflect.Type) reflect.Value {
+func (d *decoder) readRawDocElems(ctx context.Context, typ reflect.Type) reflect.Value {
 	docType := d.docType
 	d.docType = typ
 	slice := make([]RawDocElem, 0, 8)
 	d.readDocWith(func(kind byte, name string) {
 		e := RawDocElem{Name: name}
 		v := reflect.ValueOf(&e.Value)
-		if d.readElemTo(v.Elem(), kind) {
+		if d.readElemTo(ctx, v.Elem(), kind) {
 			slice = append(slice, e)
 		}
 	})
@@ -431,14 +469,14 @@ func (d *decoder) readDocWith(f func(kind byte, name string)) {
 
 var blackHole = settableValueOf(struct{}{})
 
-func (d *decoder) dropElem(kind byte) {
-	d.readElemTo(blackHole, kind)
+func (d *decoder) dropElem(ctx context.Context, kind byte) {
+	d.readElemTo(ctx, blackHole, kind)
 }
 
 // Attempt to decode an element from the document and put it into out.
 // If the types are not compatible, the returned ok value will be
 // false and out will be unchanged.
-func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
+func (d *decoder) readElemTo(ctx context.Context, out reflect.Value, kind byte) (good bool) {
 
 	start := d.i
 
@@ -448,25 +486,25 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 		outk := out.Kind()
 		switch outk {
 		case reflect.Interface, reflect.Ptr, reflect.Struct, reflect.Map:
-			d.readDocTo(out)
+			d.readDocTo(ctx, out)
 			return true
 		}
-		if setterStyle(outt) != setterNone {
-			d.readDocTo(out)
+		if setterStyle(ctx, outt) != setterNone {
+			d.readDocTo(ctx, out)
 			return true
 		}
 		if outk == reflect.Slice {
 			switch outt.Elem() {
 			case typeDocElem:
-				out.Set(d.readDocElems(outt))
+				out.Set(d.readDocElems(ctx, outt))
 			case typeRawDocElem:
-				out.Set(d.readRawDocElems(outt))
+				out.Set(d.readRawDocElems(ctx, outt))
 			default:
-				d.readDocTo(blackHole)
+				d.readDocTo(ctx, blackHole)
 			}
 			return true
 		}
-		d.readDocTo(blackHole)
+		d.readDocTo(ctx, blackHole)
 		return true
 	}
 
@@ -481,9 +519,9 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 		panic("Can't happen. Handled above.")
 	case 0x04: // Array
 		outt := out.Type()
-		if setterStyle(outt) != setterNone {
+		if setterStyle(ctx, outt) != setterNone {
 			// Skip the value so its data is handed to the setter below.
-			d.dropElem(kind)
+			d.dropElem(ctx, kind)
 			break
 		}
 		for outt.Kind() == reflect.Ptr {
@@ -491,12 +529,12 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 		}
 		switch outt.Kind() {
 		case reflect.Array:
-			d.readArrayDocTo(out)
+			d.readArrayDocTo(ctx, out)
 			return true
 		case reflect.Slice:
-			in = d.readSliceDoc(outt)
+			in = d.readSliceDoc(ctx, outt)
 		default:
-			in = d.readSliceDoc(typeSlice)
+			in = d.readSliceDoc(ctx, typeSlice)
 		}
 	case 0x05: // Binary
 		b := d.readBinary()
@@ -532,7 +570,7 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 	case 0x0F: // JavaScript with scope
 		d.i += 4 // Skip length
 		js := JavaScript{d.readStr(), make(M)}
-		d.readDocTo(reflect.ValueOf(js.Scope))
+		d.readDocTo(ctx, reflect.ValueOf(js.Scope))
 		in = js
 	case 0x10: // Int32
 		in = int(d.readInt32())
@@ -550,9 +588,9 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 	case 0xFF: // Min key
 		in = MinKey
 	default:
-    var st []byte = make([]byte, 4096)
-    w := runtime.Stack(st, false)
-    panic(fmt.Sprintf("Unknown element kind (0x%02X) BT: %s", kind, string(st[:w])))
+		var st []byte = make([]byte, 4096)
+		w := runtime.Stack(st, false)
+		panic(fmt.Sprintf("Unknown element kind (0x%02X) BT: %s", kind, string(st[:w])))
 	}
 
 	outt := out.Type()
@@ -562,7 +600,21 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 		return true
 	}
 
-	if setter := getSetter(outt, out); setter != nil {
+	if setterCtx := getSetterCtx(ctx, outt, out); setterCtx != nil {
+		err := setterCtx.SetBSONWithContext(ctx, Raw{kind, d.in[start:d.i]})
+		if err == SetZero {
+			out.Set(reflect.Zero(outt))
+			return true
+		}
+		if err == nil {
+			return true
+		}
+		if _, ok := err.(*TypeError); !ok {
+			panic(err)
+		}
+		return false
+	}
+	if setter := getSetter(ctx, outt, out); setter != nil {
 		err := setter.SetBSON(Raw{kind, d.in[start:d.i]})
 		if err == SetZero {
 			out.Set(reflect.Zero(outt))

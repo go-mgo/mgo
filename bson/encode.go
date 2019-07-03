@@ -28,6 +28,7 @@
 package bson
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -81,15 +82,35 @@ type encoder struct {
 	out []byte
 }
 
-func (e *encoder) addDoc(v reflect.Value) {
+func (e *encoder) addDoc(ctx context.Context, v reflect.Value) {
+	//cnt := 0
+	//Debug(4, fmt.Sprintf("addDoc(%v)-A", valueType(v)))
+	//defer func() {
+	//	Debug(-4, fmt.Sprintf("addDoc(%v)-Z", valueType(v)))
+	//}()
 	for {
-		if vi, ok := v.Interface().(Getter); ok {
-			getv, err := vi.GetBSON()
-			if err != nil {
-				panic(err)
+		//cnt += 1
+		if !IsSkipCustom(ctx, v.Type()) {
+			if vi, ok := v.Interface().(GetterCtx); ok {
+				//Debug(0, fmt.Sprintf("addDoc(%02d)-GetterCtx(%v)", cnt, valueType(v)))
+				getv, err := vi.GetBSONWithContext(ctx)
+				if err != nil {
+					panic(err)
+				}
+				v = reflect.ValueOf(getv)
+				ctx = NewContextWithSkipCustom(ctx, getv)
+				continue
 			}
-			v = reflect.ValueOf(getv)
-			continue
+			if vi, ok := v.Interface().(Getter); ok {
+				//Debug(0, fmt.Sprintf("addDoc(%02d)-Getter(%v)", cnt, valueType(v)))
+				getv, err := vi.GetBSON()
+				if err != nil {
+					panic(err)
+				}
+				v = reflect.ValueOf(getv)
+				ctx = NewContextWithSkipCustom(ctx, getv)
+				continue
+			}
 		}
 		if v.Kind() == reflect.Ptr {
 			v = v.Elem()
@@ -97,6 +118,7 @@ func (e *encoder) addDoc(v reflect.Value) {
 		}
 		break
 	}
+	//Debug(0, fmt.Sprintf("addDoc(%v)-B", valueType(v)))
 
 	if v.Type() == typeRaw {
 		raw := v.Interface().(Raw)
@@ -110,15 +132,16 @@ func (e *encoder) addDoc(v reflect.Value) {
 		return
 	}
 
+	//Debug(0, fmt.Sprintf("addDoc(%v)-C", valueType(v)))
 	start := e.reserveInt32()
 
 	switch v.Kind() {
 	case reflect.Map:
-		e.addMap(v)
+		e.addMap(ctx, v)
 	case reflect.Struct:
-		e.addStruct(v)
+		e.addStruct(ctx, v)
 	case reflect.Array, reflect.Slice:
-		e.addSlice(v)
+		e.addSlice(ctx, v)
 	default:
 		panic("Can't marshal " + v.Type().String() + " as a BSON document")
 	}
@@ -127,13 +150,13 @@ func (e *encoder) addDoc(v reflect.Value) {
 	e.setInt32(start, int32(len(e.out)-start))
 }
 
-func (e *encoder) addMap(v reflect.Value) {
+func (e *encoder) addMap(ctx context.Context, v reflect.Value) {
 	for _, k := range v.MapKeys() {
-		e.addElem(k.String(), v.MapIndex(k), false)
+		e.addElem(ctx, k.String(), v.MapIndex(k), false)
 	}
 }
 
-func (e *encoder) addStruct(v reflect.Value) {
+func (e *encoder) addStruct(ctx context.Context, v reflect.Value) {
 	sinfo, err := getStructInfo(v.Type())
 	if err != nil {
 		panic(err)
@@ -147,7 +170,7 @@ func (e *encoder) addStruct(v reflect.Value) {
 				if _, found := sinfo.FieldsMap[ks]; found {
 					panic(fmt.Sprintf("Can't have key %q in inlined map; conflicts with struct field", ks))
 				}
-				e.addElem(ks, m.MapIndex(k), false)
+				e.addElem(ctx, ks, m.MapIndex(k), false)
 			}
 		}
 	}
@@ -160,7 +183,7 @@ func (e *encoder) addStruct(v reflect.Value) {
 		if info.OmitEmpty && isZero(value) {
 			continue
 		}
-		e.addElem(info.Key, value, info.MinSize)
+		e.addElem(ctx, info.Key, value, info.MinSize)
 	}
 }
 
@@ -200,17 +223,21 @@ func isZero(v reflect.Value) bool {
 	return false
 }
 
-func (e *encoder) addSlice(v reflect.Value) {
+func (e *encoder) addSlice(ctx context.Context, v reflect.Value) {
+	//Debug(4, fmt.Sprintf("addSlice(%v)-A", valueType(v)))
+	//defer func() {
+	//	Debug(-4, fmt.Sprintf("addSlice(%v)-Z", valueType(v)))
+	//}()
 	vi := v.Interface()
 	if d, ok := vi.(D); ok {
 		for _, elem := range d {
-			e.addElem(elem.Name, reflect.ValueOf(elem.Value), false)
+			e.addElem(ctx, elem.Name, reflect.ValueOf(elem.Value), false)
 		}
 		return
 	}
 	if d, ok := vi.(RawD); ok {
 		for _, elem := range d {
-			e.addElem(elem.Name, reflect.ValueOf(elem.Value), false)
+			e.addElem(ctx, elem.Name, reflect.ValueOf(elem.Value), false)
 		}
 		return
 	}
@@ -219,19 +246,19 @@ func (e *encoder) addSlice(v reflect.Value) {
 	if et == typeDocElem {
 		for i := 0; i < l; i++ {
 			elem := v.Index(i).Interface().(DocElem)
-			e.addElem(elem.Name, reflect.ValueOf(elem.Value), false)
+			e.addElem(ctx, elem.Name, reflect.ValueOf(elem.Value), false)
 		}
 		return
 	}
 	if et == typeRawDocElem {
 		for i := 0; i < l; i++ {
 			elem := v.Index(i).Interface().(RawDocElem)
-			e.addElem(elem.Name, reflect.ValueOf(elem.Value), false)
+			e.addElem(ctx, elem.Name, reflect.ValueOf(elem.Value), false)
 		}
 		return
 	}
 	for i := 0; i < l; i++ {
-		e.addElem(itoa(i), v.Index(i), false)
+		e.addElem(ctx, itoa(i), v.Index(i), false)
 	}
 }
 
@@ -244,29 +271,49 @@ func (e *encoder) addElemName(kind byte, name string) {
 	e.addBytes(0)
 }
 
-func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
+func (e *encoder) addElem(ctx context.Context, name string, v reflect.Value, minSize bool) {
+	//Debug(4, fmt.Sprintf("addElem(%v)[%v]-A", valueType(v), name))
+	//defer func() {
+	//	Debug(-4, fmt.Sprintf("addElem(%v)[%v]-Z", valueType(v), name))
+	//}()
 
 	if !v.IsValid() {
 		e.addElemName(0x0A, name)
 		return
 	}
 
-	if getter, ok := v.Interface().(Getter); ok {
-		getv, err := getter.GetBSON()
-		if err != nil {
-			panic(err)
+	//Debug(0, fmt.Sprintf("addElem(%v)-B", valueType(v)))
+	if !IsSkipCustom(ctx, v.Type()) {
+		if getter, ok := v.Interface().(GetterCtx); ok {
+			//Debug(0, fmt.Sprintf("addElem-GetterCtx(%v)", valueType(v)))
+			getv, err := getter.GetBSONWithContext(ctx)
+			if err != nil {
+				panic(err)
+			}
+			v = reflect.ValueOf(getv)
+			e.addElem(NewContextWithSkipCustom(ctx, getv), name, v, minSize)
+			return
 		}
-		e.addElem(name, reflect.ValueOf(getv), minSize)
-		return
+		if getter, ok := v.Interface().(Getter); ok {
+			//Debug(0, fmt.Sprintf("addElem-Getter(%v)", valueType(v)))
+			getv, err := getter.GetBSON()
+			if err != nil {
+				panic(err)
+			}
+			v = reflect.ValueOf(getv)
+			e.addElem(NewContextWithSkipCustom(ctx, getv), name, v, minSize)
+			return
+		}
 	}
 
+	//Debug(0, fmt.Sprintf("addElem(%v)-C", valueType(v)))
 	switch v.Kind() {
 
 	case reflect.Interface:
-		e.addElem(name, v.Elem(), minSize)
+		e.addElem(ctx, name, v.Elem(), minSize)
 
 	case reflect.Ptr:
-		e.addElem(name, v.Elem(), minSize)
+		e.addElem(ctx, name, v.Elem(), minSize)
 
 	case reflect.String:
 		s := v.String()
@@ -348,7 +395,7 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 
 	case reflect.Map:
 		e.addElemName(0x03, name)
-		e.addDoc(v)
+		e.addDoc(ctx, v)
 
 	case reflect.Slice:
 		vt := v.Type()
@@ -358,10 +405,10 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 			e.addBinary(0x00, v.Bytes())
 		} else if et == typeDocElem || et == typeRawDocElem {
 			e.addElemName(0x03, name)
-			e.addDoc(v)
+			e.addDoc(ctx, v)
 		} else {
 			e.addElemName(0x04, name)
-			e.addDoc(v)
+			e.addDoc(ctx, v)
 		}
 
 	case reflect.Array:
@@ -381,7 +428,7 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 			}
 		} else {
 			e.addElemName(0x04, name)
-			e.addDoc(v)
+			e.addDoc(ctx, v)
 		}
 
 	case reflect.Struct:
@@ -429,7 +476,7 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 				e.addElemName(0x0F, name)
 				start := e.reserveInt32()
 				e.addStr(s.Code)
-				e.addDoc(reflect.ValueOf(s.Scope))
+				e.addDoc(ctx, reflect.ValueOf(s.Scope))
 				e.setInt32(start, int32(len(e.out)-start))
 			}
 
@@ -447,7 +494,7 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 
 		default:
 			e.addElemName(0x03, name)
-			e.addDoc(v)
+			e.addDoc(ctx, v)
 		}
 
 	default:
