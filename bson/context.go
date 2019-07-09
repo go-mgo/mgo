@@ -69,7 +69,6 @@ func NewContextWithSkipCustom(ctx context.Context, valu interface{}) context.Con
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	//Debug(0, fmt.Sprintf("NewContextWithSkipCustom: %s", baseTypeName(reflect.TypeOf(valu))))
 	return context.WithValue(ctx, bsonKey, &bsonOptions{skipCustom: baseTypeName(reflect.TypeOf(valu))})
 }
 
@@ -84,38 +83,7 @@ func NewContextWithSkipCustom(ctx context.Context, valu interface{}) context.Con
 // skipCustom will not work (it will skip all variants).
 func IsSkipCustom(ctx context.Context, typ reflect.Type) bool {
 	if opts, _ := fromContext(ctx); opts != nil {
-		//Debug(0, fmt.Sprintf("IsSkipCustom(%s) opts(%s) base(%s) %v", typ, opts.skipCustom,
-		//	baseTypeName(typ), opts.skipCustom == baseTypeName(typ)))
 		return opts.skipCustom == baseTypeName(typ)
 	}
-	//Debug(0, fmt.Sprintf("IsSkipCustom(%s) false", typ))
 	return false
 }
-
-// These were useful in debugging infinite loop issues:
-//    - calling Unmarshal from custom SetBSON function (decode.go)
-//    - encode.go calling custom GetBSON after just calling custom GetBSON for a given type
-// uncomment them (along with the invocations of Debug()) to aid debugging.
-//func valueType(valu reflect.Value) string {
-//	if !valu.IsValid() {
-//		return "Invalid"
-//	}
-//	return fmt.Sprintf("%s", valu.Type())
-//}
-//
-//var currentIndentLevel int = 0
-//var infinteLoopCounter int = 10000
-//
-//func Debug(delta int, msg string) {
-//	infinteLoopCounter--
-//	if infinteLoopCounter < 0 {
-//		panic(fmt.Errorf("YOU ARE IN INFINITE LOOP"))
-//	}
-//	if delta > 0 {
-//		currentIndentLevel += delta
-//	}
-//	fmt.Printf("%s%s\n", strings.Repeat(" ", currentIndentLevel), msg)
-//	if delta < 0 {
-//		currentIndentLevel += delta
-//	}
-//}

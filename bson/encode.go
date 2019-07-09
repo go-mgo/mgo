@@ -83,16 +83,10 @@ type encoder struct {
 }
 
 func (e *encoder) addDoc(ctx context.Context, v reflect.Value) {
-	//cnt := 0
-	//Debug(4, fmt.Sprintf("addDoc(%v)-A", valueType(v)))
-	//defer func() {
-	//	Debug(-4, fmt.Sprintf("addDoc(%v)-Z", valueType(v)))
-	//}()
 	for {
 		//cnt += 1
 		if !IsSkipCustom(ctx, v.Type()) {
 			if vi, ok := v.Interface().(GetterCtx); ok {
-				//Debug(0, fmt.Sprintf("addDoc(%02d)-GetterCtx(%v)", cnt, valueType(v)))
 				getv, err := vi.GetBSONWithContext(ctx)
 				if err != nil {
 					panic(err)
@@ -102,7 +96,6 @@ func (e *encoder) addDoc(ctx context.Context, v reflect.Value) {
 				continue
 			}
 			if vi, ok := v.Interface().(Getter); ok {
-				//Debug(0, fmt.Sprintf("addDoc(%02d)-Getter(%v)", cnt, valueType(v)))
 				getv, err := vi.GetBSON()
 				if err != nil {
 					panic(err)
@@ -118,7 +111,6 @@ func (e *encoder) addDoc(ctx context.Context, v reflect.Value) {
 		}
 		break
 	}
-	//Debug(0, fmt.Sprintf("addDoc(%v)-B", valueType(v)))
 
 	if v.Type() == typeRaw {
 		raw := v.Interface().(Raw)
@@ -132,7 +124,6 @@ func (e *encoder) addDoc(ctx context.Context, v reflect.Value) {
 		return
 	}
 
-	//Debug(0, fmt.Sprintf("addDoc(%v)-C", valueType(v)))
 	start := e.reserveInt32()
 
 	switch v.Kind() {
@@ -224,10 +215,6 @@ func isZero(v reflect.Value) bool {
 }
 
 func (e *encoder) addSlice(ctx context.Context, v reflect.Value) {
-	//Debug(4, fmt.Sprintf("addSlice(%v)-A", valueType(v)))
-	//defer func() {
-	//	Debug(-4, fmt.Sprintf("addSlice(%v)-Z", valueType(v)))
-	//}()
 	vi := v.Interface()
 	if d, ok := vi.(D); ok {
 		for _, elem := range d {
@@ -272,20 +259,13 @@ func (e *encoder) addElemName(kind byte, name string) {
 }
 
 func (e *encoder) addElem(ctx context.Context, name string, v reflect.Value, minSize bool) {
-	//Debug(4, fmt.Sprintf("addElem(%v)[%v]-A", valueType(v), name))
-	//defer func() {
-	//	Debug(-4, fmt.Sprintf("addElem(%v)[%v]-Z", valueType(v), name))
-	//}()
-
 	if !v.IsValid() {
 		e.addElemName(0x0A, name)
 		return
 	}
 
-	//Debug(0, fmt.Sprintf("addElem(%v)-B", valueType(v)))
 	if !IsSkipCustom(ctx, v.Type()) {
 		if getter, ok := v.Interface().(GetterCtx); ok {
-			//Debug(0, fmt.Sprintf("addElem-GetterCtx(%v)", valueType(v)))
 			getv, err := getter.GetBSONWithContext(ctx)
 			if err != nil {
 				panic(err)
@@ -295,7 +275,6 @@ func (e *encoder) addElem(ctx context.Context, name string, v reflect.Value, min
 			return
 		}
 		if getter, ok := v.Interface().(Getter); ok {
-			//Debug(0, fmt.Sprintf("addElem-Getter(%v)", valueType(v)))
 			getv, err := getter.GetBSON()
 			if err != nil {
 				panic(err)
@@ -306,7 +285,6 @@ func (e *encoder) addElem(ctx context.Context, name string, v reflect.Value, min
 		}
 	}
 
-	//Debug(0, fmt.Sprintf("addElem(%v)-C", valueType(v)))
 	switch v.Kind() {
 
 	case reflect.Interface:
