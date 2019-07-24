@@ -227,8 +227,12 @@ func (server *mongoServer) Connect(timeout time.Duration, socket *mongoSocket) e
 func (server *mongoServer) Close() {
 	server.Lock()
 	server.closed = true
-	liveSockets := server.liveSockets
-	unusedSockets := server.unusedSockets
+	// Copy the socket lists since other code paths such as removeSocket() will in-place modify
+	// them.
+	liveSockets := make([]*mongoSocket, len(server.liveSockets))
+	copy(liveSockets, server.liveSockets)
+	unusedSockets := make([]*mongoSocket, len(server.unusedSockets))
+	copy(unusedSockets, server.unusedSockets)
 	server.liveSockets = nil
 	server.unusedSockets = nil
 	server.Unlock()
