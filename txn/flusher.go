@@ -576,7 +576,7 @@ func (f *flusher) assert(t *transaction, revnos []int64, pull map[bson.ObjectId]
 			continue
 		}
 		if op.Insert != nil {
-			return fmt.Errorf("Insert can only Assert txn.DocMissing", op.Assert)
+			return fmt.Errorf("Insert can only Assert txn.DocMissing: %v", op.Assert)
 		}
 		// if revnos[i] < 0 { abort }?
 

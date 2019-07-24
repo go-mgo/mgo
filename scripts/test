@@ -1,0 +1,31 @@
+#!/bin/bash
+
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+export PATH="$PATH:$GOPATH/bin"
+export PATH="$PATH:$MONGODB/bin"
+
+run_test() {
+    (set -x; ./testdb/setup.sh start)
+    (set -x; GO111MODULE=on go test -gocheck.v)
+}
+
+set +e
+run_test
+RC="$?"
+set -e
+
+if ! [[ -z "$IN_DOCKER" ]]; then
+    echo "test run exited; press enter exit script"
+    echo
+    echo "to enter the container to poke around before exiting:"
+    echo
+    echo 'docker exec -ti $(docker ps | grep mgotest | awk '\''{print $1}'\'') /bin/bash'
+    echo
+    echo 'PRESS ENTER TO EXIT'
+    read
+fi
+
+exit $RC
