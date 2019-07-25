@@ -62,6 +62,12 @@ type mongoCluster struct {
 	sync               chan bool
 	dial               dialer
 	maxSocketReuseTime time.Duration
+	// The maximum number of sockets connected to the same server in a cluster. If the limit is reached for a server,
+	// the attempt to establish the connection will fail (not block).
+	//
+	// The purpose of the pool limit is primarily to protect the mongo cluster itself. Connections are expensive on
+	// the server (thread-per-connection), and the failure modes of a mongo cluster once you begin hitting connection
+	// limits can be catastrophic.
 	poolLimit          int
 	minPoolSize        int
 }

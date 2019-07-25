@@ -49,6 +49,8 @@ type mongoServer struct {
 	ResolvedAddr       string
 	tcpaddr            *net.TCPAddr
 	unusedSockets      []*mongoSocket
+	// Contains nils and pointers to connected sockets. nils may be here for the purpose of reserving a spot for the
+	// purpose of counting towards the total connections per server limit.
 	liveSockets        []*mongoSocket
 	closed             bool
 	abended            bool
@@ -140,8 +142,9 @@ func (server *mongoServer) AcquireSocket(poolLimit int, minPoolSize int, timeout
 			socket = &mongoSocket{
 				socketState: Connecting,
 			}
-			// hold our spot in the liveSockets slice
-			server.liveSockets = append(server.liveSockets, socket)
+			// hold a spot in the liveSockets slice to ensure connecting sockets are counted
+			// against the pool limit.
+			server.liveSockets = append(server.liveSockets, nil)
 			server.Unlock()
 			// release server lock so we can initiate concurrent connections to mongodb
 			err = server.Connect(timeout, socket)
@@ -155,11 +158,25 @@ func (server *mongoServer) AcquireSocket(poolLimit int, minPoolSize int, timeout
 					socket.Close()
 					return nil, abended, errServerClosed
 				}
+				// Replace a nil placeholder with the new socket,
+				// it does not matter which nil-placeholder we replace.
+				//
+				// The reason we do not publish the socket in liveSockets until after
+				// connection is completed, is that an unconnected socket is not safe
+				// for concurrent use. Concurrent mongoServer.Close() calls may race with us
+				// and otherwise call Close() on an unlocked not-yet-connected socket.
+				for i, s := range server.liveSockets {
+					if s == nil {
+						server.liveSockets[i] = socket
+						break
+					}
+				}
 				server.Unlock()
 			} else {
 				// couldn't open connection to mongodb, releasing spot in liveSockets
 				server.Lock()
-				server.liveSockets = removeSocket(server.liveSockets, socket)
+				// remove the nil placeholder, it does not matter which one
+				server.liveSockets = removeSocket(server.liveSockets, nil)
 				server.Unlock()
 			}
 		}
@@ -238,7 +255,10 @@ func (server *mongoServer) Close() {
 	server.Unlock()
 	logf("Connections to %s closing (%d live sockets).", server.Addr, len(liveSockets))
 	for i, s := range liveSockets {
-		s.Close()
+		// s may be nil if the socket is currently connecting; see AcquireSocket() for details.
+		if s != nil {
+			s.Close()
+		}
 		liveSockets[i] = nil
 	}
 	for i := range unusedSockets {
