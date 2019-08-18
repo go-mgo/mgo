@@ -102,6 +102,7 @@ type Collection struct {
 	Database *Database
 	Name     string // "collection"
 	FullName string // "db.collection"
+	ordered  bool
 }
 
 type Query struct {
@@ -588,7 +589,7 @@ func (s *Session) DB(name string) *Database {
 // Creating this value is a very lightweight operation, and
 // involves no network communication.
 func (db *Database) C(name string) *Collection {
-	return &Collection{db, name, db.Name + "." + name}
+	return &Collection{Database: db, Name: name, FullName: db.Name + "." + name, ordered: true}
 }
 
 // With returns a copy of db that uses session s.
@@ -2434,7 +2435,7 @@ func IsDup(err error) bool {
 // happens while inserting the provided documents, the returned error will
 // be of type *LastError.
 func (c *Collection) Insert(docs ...interface{}) error {
-	_, err := c.writeOp(&insertOp{c.FullName, docs, 0}, true)
+	_, err := c.writeOp(&insertOp{c.FullName, docs, 0}, c.ordered)
 	return err
 }
 
@@ -2458,7 +2459,7 @@ func (c *Collection) Update(selector interface{}, update interface{}) error {
 		Selector:   selector,
 		Update:     update,
 	}
-	lerr, err := c.writeOp(&op, true)
+	lerr, err := c.writeOp(&op, c.ordered)
 	if err == nil && lerr != nil && !lerr.UpdatedExisting {
 		return ErrNotFound
 	}
@@ -2508,7 +2509,7 @@ func (c *Collection) UpdateAll(selector interface{}, update interface{}) (info *
 		Flags:      2,
 		Multi:      true,
 	}
-	lerr, err := c.writeOp(&op, true)
+	lerr, err := c.writeOp(&op, c.ordered)
 	if err == nil && lerr != nil {
 		info = &ChangeInfo{Updated: lerr.modified, Matched: lerr.N}
 	}
@@ -2541,7 +2542,7 @@ func (c *Collection) Upsert(selector interface{}, update interface{}) (info *Cha
 	}
 	var lerr *LastError
 	for i := 0; i < maxUpsertRetries; i++ {
-		lerr, err = c.writeOp(&op, true)
+		lerr, err = c.writeOp(&op, c.ordered)
 		// Retry duplicate key errors on upserts.
 		// https://docs.mongodb.com/v3.2/reference/method/db.collection.update/#use-unique-indexes
 		if !IsDup(err) {
@@ -2583,7 +2584,7 @@ func (c *Collection) Remove(selector interface{}) error {
 	if selector == nil {
 		selector = bson.D{}
 	}
-	lerr, err := c.writeOp(&deleteOp{c.FullName, selector, 1, 1}, true)
+	lerr, err := c.writeOp(&deleteOp{c.FullName, selector, 1, 1}, c.ordered)
 	if err == nil && lerr != nil && lerr.N == 0 {
 		return ErrNotFound
 	}
@@ -2612,7 +2613,7 @@ func (c *Collection) RemoveAll(selector interface{}) (info *ChangeInfo, err erro
 	if selector == nil {
 		selector = bson.D{}
 	}
-	lerr, err := c.writeOp(&deleteOp{c.FullName, selector, 0, 0}, true)
+	lerr, err := c.writeOp(&deleteOp{c.FullName, selector, 0, 0}, c.ordered)
 	if err == nil && lerr != nil {
 		info = &ChangeInfo{Removed: lerr.N, Matched: lerr.N}
 	}
@@ -4613,17 +4614,18 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 
 	if socket.ServerInfo().MaxWireVersion >= 2 {
 		// Servers with a more recent write protocol benefit from write commands.
-		if op, ok := op.(*insertOp); ok && len(op.documents) > 1000 {
+		switch ops := op.(type) {
+		case *insertOp:
 			var lerr LastError
 
 			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
-			all := op.documents
+			all := ops.documents
 			for i := 0; i < len(all); i += 1000 {
 				l := i + 1000
 				if l > len(all) {
 					l = len(all)
 				}
-				op.documents = all[i:l]
+				ops.documents = all[i:l]
 				oplerr, err := c.writeOpCommand(socket, safeOp, op, ordered, bypassValidation)
 				lerr.N += oplerr.N
 				lerr.modified += oplerr.modified
@@ -4632,8 +4634,34 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 						oplerr.ecases[ei].Index += i
 					}
 					lerr.ecases = append(lerr.ecases, oplerr.ecases...)
-					if op.flags&1 == 0 {
+					if ops.flags&1 == 0 {
 						return &lerr, err
+					}
+				}
+			}
+			if len(lerr.ecases) != 0 {
+				return &lerr, lerr.ecases[0].Err
+			}
+			return &lerr, nil
+		case bulkUpdateOp:
+			var lerr LastError
+			all := ops
+			for i := 0; i < len(all); i += 1000 {
+				l := i + 1000
+				if l > len(all) {
+					l = len(all)
+				}
+				ops = all[i:l]
+				oplerr, err := c.writeOpCommand(socket, safeOp, ops, ordered, bypassValidation)
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
+				if err != nil {
+					for ei := range oplerr.ecases {
+						oplerr.ecases[ei].Index += i
+					}
+					lerr.ecases = append(lerr.ecases, oplerr.ecases...)
+					if ordered {
+						break
 					}
 				}
 			}
@@ -4812,6 +4840,15 @@ func (c *Collection) writeOpCommand(socket *mongoSocket, safeOp *queryOp, op int
 		return nil, nil
 	}
 	return lerr, err
+}
+
+// Unordered puts the collection operation in unordered mode.
+//
+// In unordered mode the indvidual operations may be sent
+// out of order, which means latter operations may proceed
+// even if prior ones have failed.
+func (c *Collection) Unordered() {
+	c.ordered = false
 }
 
 func hasErrMsg(d []byte) bool {
