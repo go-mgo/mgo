@@ -27,11 +27,13 @@
 package mgo_test
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	. "gopkg.in/check.v1"
@@ -1477,7 +1479,6 @@ func (s *S) TestSecondaryModeWithMongosInsert(c *C) {
 	c.Assert(result.A, Equals, 1)
 }
 
-
 func (s *S) TestRemovalOfClusterMember(c *C) {
 	if *fast {
 		c.Skip("-fast")
@@ -2087,4 +2088,73 @@ func (s *S) TestDoNotFallbackToMonotonic(c *C) {
 		c.Assert(q12b, Equals, q12a)
 		c.Assert(q13b, Equals, q13a)
 	}
+}
+
+func (s *S) TestConnectServerFailed(c *C) {
+	dials := int32(0)
+	maxDials := 50
+	info := &mgo.DialInfo{
+		Addrs: []string{"localhost:40001"},
+		DialServer: func(addr *mgo.ServerAddr) (net.Conn, error) {
+			n := atomic.AddInt32(&dials, 1)
+			if n == int32(maxDials/2) {
+				return nil, errors.New("expected dial failed")
+			}
+			return net.Dial("tcp", addr.String())
+		},
+	}
+
+	session, err := mgo.DialWithInfo(info)
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	mgo.ResetStats()
+
+	errs := make(chan error, 1)
+	var done int32
+	var finished sync.WaitGroup
+	var starting sync.WaitGroup
+	defer func() {
+		atomic.StoreInt32(&done, 1)
+		finished.Wait()
+	}()
+	for i := 0; i < maxDials; i++ {
+		finished.Add(1)
+		starting.Add(1)
+		go func(s0 *mgo.Session) {
+			defer finished.Done()
+			for i := 0; ; i++ {
+				if atomic.LoadInt32(&done) == 1 {
+					break
+				}
+				err := func(s0 *mgo.Session) error {
+					s := s0.Copy()
+					defer s.Close()
+					coll := s.DB("mydb").C("mycoll")
+
+					var ret []interface{}
+					return coll.Find(nil).All(&ret)
+				}(s0)
+				if err != nil {
+					select {
+					case errs <- err:
+					default:
+					}
+				}
+				if i == 0 {
+					starting.Done()
+				}
+			}
+		}(session)
+		time.Sleep(10 * time.Millisecond)
+	}
+	starting.Wait()
+
+	// no errors expect.
+	var opErr error
+	select {
+	case opErr = <-errs:
+	default:
+	}
+	c.Assert(opErr, IsNil)
 }
