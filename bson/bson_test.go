@@ -1312,6 +1312,10 @@ var twoWayCrossItems = []crossTypeItem{
 	{&struct{ V [2]int }{[...]int{1, 2}}, map[string][2]int{"v": [2]int{1, 2}}},
 	{&struct{ V [2]byte }{[...]byte{1, 2}}, map[string][2]byte{"v": [2]byte{1, 2}}},
 
+	// pointer to arrays
+	{&struct{ V *[2]int }{&[2]int{1, 2}}, map[string]*[2]int{"v": &[2]int{1, 2}}},
+	{&struct{ V *[2]byte }{&[2]byte{1, 2}}, map[string]*[2]byte{"v": &[2]byte{1, 2}}},
+
 	// zero time
 	{&struct{ V time.Time }{}, map[string]interface{}{"v": time.Time{}}},
 
