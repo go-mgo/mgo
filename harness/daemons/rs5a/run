@@ -3,5 +3,6 @@
 . ../.env
 
 exec mongod $COMMONDOPTS \
-	--port 40002 \
-	--auth
+	--shardsvr \
+	--replSet rs5 \
+	--port 40051 \

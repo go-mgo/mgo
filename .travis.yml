@@ -32,6 +32,7 @@ install:
     - go get gopkg.in/check.v1
     - go get gopkg.in/yaml.v2
     - go get gopkg.in/tomb.v2
+    - go get github.com/xdg/stringprep
 
 before_script:
     - export NOIPV6=1
@@ -39,7 +40,7 @@ before_script:
 
 script:
     - (cd bson && go test -check.v)
-    - go test -check.v -fast
+    - go test -check.v -fast -cursor-timeout
     - (cd txn && go test -check.v)
 
 # vim:sw=4:ts=4:et

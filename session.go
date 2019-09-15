@@ -138,7 +138,8 @@ type Iter struct {
 	docsBeforeMore int
 	timeout        time.Duration
 	timedout       bool
-	findCmd        bool
+	isFindCmd      bool
+	isChangeStream bool
 }
 
 var (
@@ -200,7 +201,7 @@ const (
 //
 //     connect=replicaSet
 //
-//  	   Discover replica sets automatically. Default connection behavior.
+//	   Discover replica sets automatically. Default connection behavior.
 //
 //
 //     replicaSet=<setname>
@@ -279,44 +280,106 @@ func ParseURL(url string) (*DialInfo, error) {
 	source := ""
 	setName := ""
 	poolLimit := 0
-	for k, v := range uinfo.options {
-		switch k {
+	readPreferenceMode := Primary
+	writeConcern := &Safe{}
+	var readPreferenceTagSets []bson.D
+	for _, opt := range uinfo.options {
+		switch opt.key {
 		case "authSource":
-			source = v
+			source = opt.value
 		case "authMechanism":
-			mechanism = v
+			mechanism = opt.value
 		case "gssapiServiceName":
-			service = v
+			service = opt.value
 		case "replicaSet":
-			setName = v
+			setName = opt.value
 		case "maxPoolSize":
-			poolLimit, err = strconv.Atoi(v)
+			poolLimit, err = strconv.Atoi(opt.value)
 			if err != nil {
-				return nil, errors.New("bad value for maxPoolSize: " + v)
+				return nil, errors.New("bad value for maxPoolSize: " + opt.value)
 			}
+		case "readPreference":
+			switch opt.value {
+			case "nearest":
+				readPreferenceMode = Nearest
+			case "primary":
+				readPreferenceMode = Primary
+			case "primaryPreferred":
+				readPreferenceMode = PrimaryPreferred
+			case "secondary":
+				readPreferenceMode = Secondary
+			case "secondaryPreferred":
+				readPreferenceMode = SecondaryPreferred
+			default:
+				return nil, errors.New("bad value for readPreference: " + opt.value)
+			}
+		case "readPreferenceTags":
+			tags := strings.Split(opt.value, ",")
+			var doc bson.D
+			for _, tag := range tags {
+				kvp := strings.Split(tag, ":")
+				if len(kvp) != 2 {
+					return nil, errors.New("bad value for readPreferenceTags: " + opt.value)
+				}
+				doc = append(doc, bson.DocElem{Name: strings.TrimSpace(kvp[0]), Value: strings.TrimSpace(kvp[1])})
+			}
+			readPreferenceTagSets = append(readPreferenceTagSets, doc)
 		case "connect":
-			if v == "direct" {
+			if opt.value == "direct" {
 				direct = true
 				break
 			}
-			if v == "replicaSet" {
+			if opt.value == "replicaSet" {
 				break
 			}
 			fallthrough
+		case "w":
+			intval, err := strconv.Atoi(opt.value)
+			if err == nil {
+				if intval < 0 {
+					return nil, errors.New("w values must be equal or greater than 0")
+				}
+				writeConcern.W = intval
+			} else {
+				writeConcern.WMode = opt.value
+			}
+		case "journal":
+			if opt.value == "true" {
+				writeConcern.J = true
+			} else if opt.value == "false" {
+				writeConcern.J = false
+			}
+		case "wtimeoutMS":
+			intval, err := strconv.Atoi(opt.value)
+			if err == nil && intval >= 0 {
+				writeConcern.WTimeout = intval
+			} else {
+				return nil, errors.New("invalud wtimeoutMS value: " + opt.value)
+			}
 		default:
-			return nil, errors.New("unsupported connection URL option: " + k + "=" + v)
+			return nil, errors.New("unsupported connection URL option: " + opt.key + "=" + opt.value)
 		}
 	}
+
+	if readPreferenceMode == Primary && len(readPreferenceTagSets) > 0 {
+		return nil, errors.New("readPreferenceTagSet may not be specified when readPreference is primary")
+	}
+
 	info := DialInfo{
-		Addrs:          uinfo.addrs,
-		Direct:         direct,
-		Database:       uinfo.db,
-		Username:       uinfo.user,
-		Password:       uinfo.pass,
-		Mechanism:      mechanism,
-		Service:        service,
-		Source:         source,
-		PoolLimit:      poolLimit,
+		Addrs:     uinfo.addrs,
+		Direct:    direct,
+		Database:  uinfo.db,
+		Username:  uinfo.user,
+		Password:  uinfo.pass,
+		Mechanism: mechanism,
+		Service:   service,
+		Source:    source,
+		PoolLimit: poolLimit,
+		ReadPreference: &ReadPreference{
+			Mode:    readPreferenceMode,
+			TagSets: readPreferenceTagSets,
+		},
+		WriteConcern:   writeConcern,
 		ReplicaSetName: setName,
 	}
 	return &info, nil
@@ -384,12 +447,28 @@ type DialInfo struct {
 	// See Session.SetPoolLimit for details.
 	PoolLimit int
 
+	// ReadPreference defines the manner in which servers are chosen. See
+	// Session.SetMode and Session.SelectServers.
+	ReadPreference *ReadPreference
+
+	// WriteConcern defines default write concern for sessions.
+	WriteConcern *Safe
+
 	// DialServer optionally specifies the dial function for establishing
 	// connections with the MongoDB servers.
 	DialServer func(addr *ServerAddr) (net.Conn, error)
 
 	// WARNING: This field is obsolete. See DialServer above.
 	Dial func(addr net.Addr) (net.Conn, error)
+}
+
+// ReadPreference defines the manner in which servers are chosen.
+type ReadPreference struct {
+	// Mode determines the consistency of results. See Session.SetMode.
+	Mode Mode
+
+	// TagSets indicates which servers are allowed to be used. See Session.SelectServers.
+	TagSets []bson.D
 }
 
 // mgo.v3: Drop DialInfo.Dial.
@@ -464,7 +543,18 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 		session.Close()
 		return nil, err
 	}
-	session.SetMode(Strong, true)
+
+	if info.ReadPreference != nil {
+		session.SelectServers(info.ReadPreference.TagSets...)
+		session.SetMode(info.ReadPreference.Mode, true)
+	} else {
+		session.SetMode(Strong, true)
+	}
+
+	if info.WriteConcern != nil {
+		session.SetSafe(info.WriteConcern)
+	}
+
 	return session, nil
 }
 
@@ -477,21 +567,26 @@ type urlInfo struct {
 	user    string
 	pass    string
 	db      string
-	options map[string]string
+	options []urlInfoOption
+}
+
+type urlInfoOption struct {
+	key   string
+	value string
 }
 
 func extractURL(s string) (*urlInfo, error) {
 	if strings.HasPrefix(s, "mongodb://") {
 		s = s[10:]
 	}
-	info := &urlInfo{options: make(map[string]string)}
+	info := &urlInfo{}
 	if c := strings.Index(s, "?"); c != -1 {
 		for _, pair := range strings.FieldsFunc(s[c+1:], isOptSep) {
 			l := strings.SplitN(pair, "=", 2)
 			if len(l) != 2 || l[0] == "" || l[1] == "" {
 				return nil, errors.New("connection option must be key=value: " + pair)
 			}
-			info.options[l[0]] = l[1]
+			info.options = append(info.options, urlInfoOption{key: l[0], value: l[1]})
 		}
 		s = s[:c]
 	}
@@ -567,6 +662,17 @@ func (s *Session) LiveServers() (addrs []string) {
 	addrs = s.cluster().LiveServers()
 	s.m.RUnlock()
 	return addrs
+}
+
+// ReadableServer returns a server address which is suitable for reading
+// according to the current session.
+func (s *Session) ReadableServer() (string, error) {
+	socket, err := s.acquireSocket(true)
+	if err != nil {
+		return "", err
+	}
+	defer socket.Release()
+	return socket.server.Addr, nil
 }
 
 // DB returns a value representing the named database. If name
@@ -861,7 +967,7 @@ func (db *Database) UpsertUser(user *User) error {
 	}
 	err := rundb.runUserCmd("updateUser", user)
 	// retry with createUser when isAuthError in order to enable the "localhost exception"
-	if isNotFound(err) || isAuthError(err) {
+	if isNotFound(err) || isNoMatchingDoc(err) || isAuthError(err) {
 		return rundb.runUserCmd("createUser", user)
 	}
 	if !isNoCmd(err) {
@@ -915,9 +1021,19 @@ func isNotFound(err error) bool {
 	return ok && e.Code == 11
 }
 
+func isNoMatchingDoc(err error) bool {
+	e, ok := err.(*QueryError)
+	return ok && e.Code == 47
+}
+
 func isAuthError(err error) bool {
 	e, ok := err.(*QueryError)
 	return ok && e.Code == 13
+}
+
+func isNotMasterError(err error) bool {
+	e, ok := err.(*QueryError)
+	return ok && strings.Contains(e.Message, "not master")
 }
 
 func (db *Database) runUserCmd(cmdName string, user *User) error {
@@ -967,7 +1083,7 @@ func (db *Database) AddUser(username, password string, readOnly bool) error {
 		}
 	}
 	err := db.runUserCmd("updateUser", user)
-	if isNotFound(err) {
+	if isNotFound(err) || isNoMatchingDoc(err) {
 		return db.runUserCmd("createUser", user)
 	}
 	if !isNoCmd(err) {
@@ -990,7 +1106,7 @@ func (db *Database) RemoveUser(user string) error {
 		users := db.C("system.users")
 		return users.Remove(bson.M{"user": user})
 	}
-	if isNotFound(err) {
+	if isNotFound(err) || isNoMatchingDoc(err) {
 		return ErrNotFound
 	}
 	return err
@@ -1095,6 +1211,14 @@ type Collation struct {
 	// or "shifted" (spaces and punctuation not considered base characters, and only
 	// distinguished at strength > 3). Defaults to "non-ignorable".
 	Alternate string `bson:"alternate,omitempty"`
+
+	// MaxVariable defines which characters are affected when the value for Alternate is
+	// "shifted". It may be set to "punct" to affect punctuation or spaces, or "space" to
+	// affect only spaces.
+	MaxVariable string `bson:"maxVariable,omitempty"`
+
+	// Normalization defines whether text is normalized into Unicode NFD.
+	Normalization bool `bson:"normalization,omitempty"`
 
 	// Backwards defines whether to have secondary differences considered in reverse order,
 	// as done in the French language.
@@ -1535,24 +1659,43 @@ func (idxs indexSlice) Swap(i, j int)      { idxs[i], idxs[j] = idxs[j], idxs[i]
 func simpleIndexKey(realKey bson.D) (key []string) {
 	for i := range realKey {
 		field := realKey[i].Name
-		vi, ok := realKey[i].Value.(int)
-		if !ok {
-			vf, _ := realKey[i].Value.(float64)
-			vi = int(vf)
+
+		// Extract index value type
+		var vi int
+		var vs string
+		var isNumeric bool
+		switch v := realKey[i].Value.(type) {
+		case int:
+			vi = int(v)
+			isNumeric = true
+		case int32:
+			vi = int(v)
+			isNumeric = true
+		case int64:
+			vi = int(v)
+			isNumeric = true
+		case float64:
+			vi = int(v)
+			isNumeric = true
+		case string:
+			vs = v
+		default:
+			panic("Got unknown index key type for field " + field)
 		}
-		if vi == 1 {
-			key = append(key, field)
-			continue
-		}
-		if vi == -1 {
-			key = append(key, "-"+field)
-			continue
-		}
-		if vs, ok := realKey[i].Value.(string); ok {
+
+		// assemble mgo index string equivalent
+		if isNumeric {
+			switch vi {
+			case 1:
+				key = append(key, field)
+			case -1:
+				key = append(key, "-"+field)
+			default:
+				panic("Got unknown index key value for field " + field)
+			}
+		} else {
 			key = append(key, "$"+vs+":"+field)
-			continue
 		}
-		panic("Got unknown index key type for field " + field)
 	}
 	return
 }
@@ -2299,6 +2442,7 @@ func (c *Collection) NewIter(session *Session, firstBatch []bson.Raw, cursorId i
 		timeout: -1,
 		err:     err,
 	}
+
 	iter.gotReply.L = &iter.m
 	for _, doc := range firstBatch {
 		iter.docData.Push(doc.Data)
@@ -2308,6 +2452,15 @@ func (c *Collection) NewIter(session *Session, firstBatch []bson.Raw, cursorId i
 		iter.op.collection = c.FullName
 		iter.op.replyFunc = iter.replyFunc()
 	}
+
+	if err != nil {
+		return iter
+	}
+
+	if socket.ServerInfo().MaxWireVersion >= 4 && c.FullName != "admin.$cmd" {
+		iter.isFindCmd = true
+	}
+
 	return iter
 }
 
@@ -2858,6 +3011,14 @@ func (q *Query) Sort(fields ...string) *Query {
 	return q
 }
 
+func (q *Query) Collation(collation *Collation) *Query {
+	q.m.Lock()
+	q.op.options.Collation = collation
+	q.op.hasOptions = true
+	q.m.Unlock()
+	return q
+}
+
 // Explain returns a number of details about how the MongoDB server would
 // execute the requested query, such as the number of objects examined,
 // the number of times the read lock was yielded to allow writes to go in,
@@ -3149,18 +3310,22 @@ func prepareFindOp(socket *mongoSocket, op *queryOp, limit int32) bool {
 	}
 
 	find := findCmd{
-		Collection:  op.collection[nameDot+1:],
-		Filter:      op.query,
-		Projection:  op.selector,
-		Sort:        op.options.OrderBy,
-		Skip:        op.skip,
-		Limit:       limit,
-		MaxTimeMS:   op.options.MaxTimeMS,
-		MaxScan:     op.options.MaxScan,
-		Hint:        op.options.Hint,
-		Comment:     op.options.Comment,
-		Snapshot:    op.options.Snapshot,
-		OplogReplay: op.flags&flagLogReplay != 0,
+		Collection:      op.collection[nameDot+1:],
+		Filter:          op.query,
+		Projection:      op.selector,
+		Sort:            op.options.OrderBy,
+		Skip:            op.skip,
+		Limit:           limit,
+		MaxTimeMS:       op.options.MaxTimeMS,
+		MaxScan:         op.options.MaxScan,
+		Hint:            op.options.Hint,
+		Comment:         op.options.Comment,
+		Snapshot:        op.options.Snapshot,
+		Tailable:        op.flags&flagTailable != 0,
+		AwaitData:       op.flags&flagAwaitData != 0,
+		OplogReplay:     op.flags&flagLogReplay != 0,
+		NoCursorTimeout: op.flags&flagNoCursorTimeout != 0,
+		Collation:       op.options.Collation,
 	}
 	if op.limit < 0 {
 		find.BatchSize = -op.limit
@@ -3222,6 +3387,7 @@ type findCmd struct {
 	OplogReplay         bool        `bson:"oplogReplay,omitempty"`
 	NoCursorTimeout     bool        `bson:"noCursorTimeout,omitempty"`
 	AllowPartialResults bool        `bson:"allowPartialResults,omitempty"`
+	Collation           *Collation  `bson:"collation,omitempty"`
 }
 
 // getMoreCmd holds the command used for requesting more query results on MongoDB 3.2+.
@@ -3454,7 +3620,7 @@ func (q *Query) Iter() *Iter {
 	op.replyFunc = iter.op.replyFunc
 
 	if prepareFindOp(socket, &op, limit) {
-		iter.findCmd = true
+		iter.isFindCmd = true
 	}
 
 	iter.server = socket.Server()
@@ -3683,19 +3849,26 @@ func (iter *Iter) Timeout() bool {
 func (iter *Iter) Next(result interface{}) bool {
 	iter.m.Lock()
 	iter.timedout = false
-	timeout := time.Time{}
+	deadline := time.Time{}
+
+	// check should we expect more data.
 	for iter.err == nil && iter.docData.Len() == 0 && (iter.docsToReceive > 0 || iter.op.cursorId != 0) {
+		// either there is a getMore running or we will schedule one, set
+		// the deadline regardless.
+		if iter.timeout >= 0 && deadline.IsZero() {
+			deadline = time.Now().Add(iter.timeout)
+		}
+
+		// If we have yet to receive data, increment the timer until we timeout.
 		if iter.docsToReceive == 0 {
-			if iter.timeout >= 0 {
-				if timeout.IsZero() {
-					timeout = time.Now().Add(iter.timeout)
-				}
-				if time.Now().After(timeout) {
+			if !deadline.IsZero() {
+				if time.Now().After(deadline) {
 					iter.timedout = true
 					iter.m.Unlock()
 					return false
 				}
 			}
+			// run a getmore to fetch more data.
 			iter.getMore()
 			if iter.err != nil {
 				break
@@ -3704,6 +3877,7 @@ func (iter *Iter) Next(result interface{}) bool {
 		iter.gotReply.Wait()
 	}
 
+	// We have data from the getMore.
 	// Exhaust available data before reporting any errors.
 	if docData, ok := iter.docData.Pop().([]byte); ok {
 		close := false
@@ -3719,6 +3893,7 @@ func (iter *Iter) Next(result interface{}) bool {
 			}
 		}
 		if iter.op.cursorId != 0 && iter.err == nil {
+			// we still have a live cursor and currently expect data.
 			iter.docsBeforeMore--
 			if iter.docsBeforeMore == -1 {
 				iter.getMore()
@@ -3860,6 +4035,9 @@ func (iter *Iter) For(result interface{}, f func() error) (err error) {
 // socket depends on the cluster sync loop, and the cluster sync loop might
 // attempt actions which cause replyFunc to be called, inducing a deadlock.
 func (iter *Iter) acquireSocket() (*mongoSocket, error) {
+	if iter.session.cluster_ == nil {
+		return nil, errors.New("Closed explicitly")
+	}
 	socket, err := iter.session.acquireSocket(true)
 	if err != nil {
 		return nil, err
@@ -3908,7 +4086,7 @@ func (iter *Iter) getMore() {
 		}
 	}
 	var op interface{}
-	if iter.findCmd {
+	if iter.isFindCmd || iter.isChangeStream {
 		op = iter.getMoreCmd()
 	} else {
 		op = &iter.op
@@ -4511,7 +4689,7 @@ func (iter *Iter) replyFunc() replyFunc {
 			} else {
 				iter.err = ErrNotFound
 			}
-		} else if iter.findCmd {
+		} else if iter.isFindCmd {
 			debugf("Iter %p received reply document %d/%d (cursor=%d)", iter, docNum+1, int(op.replyDocs), op.cursorId)
 			var findReply struct {
 				Ok     bool
@@ -4523,7 +4701,7 @@ func (iter *Iter) replyFunc() replyFunc {
 				iter.err = err
 			} else if !findReply.Ok && findReply.Errmsg != "" {
 				iter.err = &QueryError{Code: findReply.Code, Message: findReply.Errmsg}
-			} else if len(findReply.Cursor.FirstBatch) == 0 && len(findReply.Cursor.NextBatch) == 0 {
+			} else if !iter.isChangeStream && len(findReply.Cursor.FirstBatch) == 0 && len(findReply.Cursor.NextBatch) == 0 {
 				iter.err = ErrNotFound
 			} else {
 				batch := findReply.Cursor.FirstBatch

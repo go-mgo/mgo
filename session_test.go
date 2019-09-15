@@ -38,7 +38,7 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2"
+	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
 
@@ -129,6 +129,137 @@ func (s *S) TestURLParsing(c *C) {
 			session.Close()
 		}
 		c.Assert(err, ErrorMatches, "unsupported connection URL option: (foo=1|bar=2)")
+	}
+}
+
+func (s *S) TestURLReadPreference(c *C) {
+	type test struct {
+		url  string
+		mode mgo.Mode
+	}
+
+	tests := []test{
+		{"localhost:40001?readPreference=primary", mgo.Primary},
+		{"localhost:40001?readPreference=primaryPreferred", mgo.PrimaryPreferred},
+		{"localhost:40001?readPreference=secondary", mgo.Secondary},
+		{"localhost:40001?readPreference=secondaryPreferred", mgo.SecondaryPreferred},
+		{"localhost:40001?readPreference=nearest", mgo.Nearest},
+	}
+
+	for _, test := range tests {
+		info, err := mgo.ParseURL(test.url)
+		c.Assert(err, IsNil)
+		c.Assert(info.ReadPreference, NotNil)
+		c.Assert(info.ReadPreference.Mode, Equals, test.mode)
+	}
+}
+
+func (s *S) TestURLWriteConcern(c *C) {
+	type test struct {
+		url  string
+		safe *mgo.Safe
+	}
+
+	tests := []test{
+		{"localhost:31012?w=1", &mgo.Safe{W: 1}},
+		{"localhost:31012?w=0", &mgo.Safe{W: 0}},
+		{"localhost:31012?w=2", &mgo.Safe{W: 2}},
+		{"localhost:31012?w=3", &mgo.Safe{W: 3}},
+		{"localhost:31012?w=42", &mgo.Safe{W: 42}},
+		{"localhost:31012?w=majority", &mgo.Safe{WMode: "majority"}},
+		{"localhost:31012?w=foo", &mgo.Safe{WMode: "foo"}},
+		{"localhost:31012?w=one", &mgo.Safe{WMode: "one"}},
+		{"localhost:31012?wtimeoutMS=100", &mgo.Safe{WTimeout: 100}},
+		{"localhost:31012?wtimeoutMS=0", &mgo.Safe{WTimeout: 0}},
+		{"localhost:31012?wtimeoutMS=1", &mgo.Safe{WTimeout: 1}},
+		{"localhost:31012?journal=true", &mgo.Safe{J: true}},
+		{"localhost:31012?journal=false", &mgo.Safe{J: false}},
+		{"localhost:31012", &mgo.Safe{}},
+	}
+
+	for _, test := range tests {
+		info, err := mgo.ParseURL(test.url)
+		c.Assert(err, IsNil)
+		c.Assert(info.WriteConcern, NotNil)
+		c.Assert(info.WriteConcern, DeepEquals, test.safe)
+	}
+
+	errorCases := []string{
+		"localhost:31012?w=-1",
+		"localhost:31012?w=-34",
+		"localhost:31012?wtimeoutMS=-34",
+		"localhost:31012?wtimeoutMS=-1",
+	}
+
+	for _, url := range errorCases {
+		info, err := mgo.ParseURL(url)
+		c.Assert(err, NotNil)
+		c.Assert(info, IsNil)
+	}
+}
+
+func (s *S) TestURLInvalidReadPreference(c *C) {
+	urls := []string{
+		"localhost:40001?readPreference=foo",
+		"localhost:40001?readPreference=primarypreferred",
+	}
+	for _, url := range urls {
+		_, err := mgo.ParseURL(url)
+		c.Assert(err, NotNil)
+	}
+}
+
+func (s *S) TestURLReadPreferenceTags(c *C) {
+	type test struct {
+		url     string
+		tagSets []bson.D
+	}
+
+	tests := []test{
+		{"localhost:40001?readPreference=secondary&readPreferenceTags=dc:ny,rack:1", []bson.D{{{"dc", "ny"}, {"rack", "1"}}}},
+		{"localhost:40001?readPreference=secondary&readPreferenceTags= dc : ny ,  rack :   1 ", []bson.D{{{"dc", "ny"}, {"rack", "1"}}}},
+		{"localhost:40001?readPreference=secondary&readPreferenceTags=dc:ny", []bson.D{{{"dc", "ny"}}}},
+		{"localhost:40001?readPreference=secondary&readPreferenceTags=rack:1&readPreferenceTags=dc:ny", []bson.D{{{"rack", "1"}}, {{"dc", "ny"}}}},
+	}
+
+	for _, test := range tests {
+		info, err := mgo.ParseURL(test.url)
+		c.Assert(err, IsNil)
+		c.Assert(info.ReadPreference, NotNil)
+		c.Assert(info.ReadPreference.TagSets, DeepEquals, test.tagSets)
+	}
+}
+
+func (s *S) TestURLInvalidReadPreferenceTags(c *C) {
+	urls := []string{
+		"localhost:40001?readPreference=secondary&readPreferenceTags=dc",
+		"localhost:40001?readPreference=secondary&readPreferenceTags=dc:ny,rack",
+		"localhost:40001?readPreference=secondary&readPreferenceTags=dc,rack",
+		"localhost:40001?readPreference=primary&readPreferenceTags=dc:ny",
+	}
+	for _, url := range urls {
+		_, err := mgo.ParseURL(url)
+		c.Assert(err, NotNil)
+	}
+}
+
+func (s *S) TestReadableServer(c *C) {
+	session, err := mgo.Dial("localhost:40011,localhost:40012,localhost:40013")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	session.SetMode(mgo.Primary, true)
+	primary_address, err := session.ReadableServer()
+	c.Assert(err, IsNil)
+	c.Assert(primary_address, Equals, "localhost:40011")
+
+	session.SetMode(mgo.Secondary, true)
+	secondary_address, err := session.ReadableServer()
+	c.Assert(err, IsNil)
+
+	valid_addresses := []string{"localhost:40012", "localhost:40013"}
+	if secondary_address != valid_addresses[0] && secondary_address != valid_addresses[1] {
+		c.Fatalf("secondary_address should be in %v, not: %v", valid_addresses, secondary_address)
 	}
 }
 
@@ -301,11 +432,19 @@ func (s *S) TestDatabaseAndCollectionNames(c *C) {
 
 	names, err = db1.CollectionNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, DeepEquals, []string{"col1", "col2", "system.indexes"})
+	if s.versionAtLeast(3, 2) {
+		c.Assert(names, DeepEquals, []string{"col1", "col2"})
+	} else {
+		c.Assert(names, DeepEquals, []string{"col1", "col2", "system.indexes"})
+	}
 
 	names, err = db2.CollectionNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, DeepEquals, []string{"col3", "system.indexes"})
+	if s.versionAtLeast(3, 2) {
+		c.Assert(names, DeepEquals, []string{"col3"})
+	} else {
+		c.Assert(names, DeepEquals, []string{"col3", "system.indexes"})
+	}
 }
 
 func (s *S) TestSelect(c *C) {
@@ -730,11 +869,24 @@ func (s *S) TestDropDatabase(c *C) {
 	c.Assert(filterDBs(names), DeepEquals, []string{})
 }
 
+func findIndexByName(c *mgo.Collection, name string) (mgo.Index, error) {
+	indexes, err := c.Indexes()
+	if err != nil {
+		return mgo.Index{}, err
+	}
+	for _, v := range indexes {
+		if v.Name == name {
+			return v, nil
+		}
+	}
+	return mgo.Index{}, mgo.ErrNotFound
+}
+
 func filterDBs(dbs []string) []string {
 	var i int
 	for _, name := range dbs {
 		switch name {
-		case "admin", "local":
+		case "admin", "local", "config":
 		default:
 			dbs[i] = name
 			i++
@@ -760,14 +912,22 @@ func (s *S) TestDropCollection(c *C) {
 
 	names, err := db.CollectionNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, DeepEquals, []string{"col2", "system.indexes"})
+	if s.versionAtLeast(3, 2) {
+		c.Assert(names, DeepEquals, []string{"col2"})
+	} else {
+		c.Assert(names, DeepEquals, []string{"col2", "system.indexes"})
+	}
 
 	err = db.C("col2").DropCollection()
 	c.Assert(err, IsNil)
 
 	names, err = db.CollectionNames()
 	c.Assert(err, IsNil)
-	c.Assert(names, DeepEquals, []string{"system.indexes"})
+	if s.versionAtLeast(3, 2) {
+		c.Assert(names, DeepEquals, []string(nil))
+	} else {
+		c.Assert(names, DeepEquals, []string{"system.indexes"})
+	}
 }
 
 func (s *S) TestCreateCollectionCapped(c *C) {
@@ -797,6 +957,9 @@ func (s *S) TestCreateCollectionCapped(c *C) {
 }
 
 func (s *S) TestCreateCollectionNoIndex(c *C) {
+	if s.versionAtLeast(3, 7) {
+		c.Skip("autoIndexId removed in MongoDB 3.7+")
+	}
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -817,6 +980,9 @@ func (s *S) TestCreateCollectionNoIndex(c *C) {
 }
 
 func (s *S) TestCreateCollectionForceIndex(c *C) {
+	if s.versionAtLeast(3, 7) {
+		c.Skip("autoIndexId removed in MongoDB 3.7+")
+	}
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
@@ -1104,8 +1270,10 @@ func (s *S) TestFindAndModifyBug997828(c *C) {
 	if s.versionAtLeast(2, 1) {
 		qerr, _ := err.(*mgo.QueryError)
 		c.Assert(qerr, NotNil, Commentf("err: %#v", err))
-		if s.versionAtLeast(2, 6) {
-			// Oh, the dance of error codes. :-(
+		// Oh, the dance of error codes. :-(
+		if s.versionAtLeast(3, 7) {
+			c.Assert(qerr.Code, Equals, 14)
+		} else if s.versionAtLeast(2, 6) {
 			c.Assert(qerr.Code, Equals, 16837)
 		} else {
 			c.Assert(qerr.Code, Equals, 10140)
@@ -1336,7 +1504,10 @@ func (s *S) TestQueryComment(c *C) {
 
 	commentField := "query.$comment"
 	nField := "query.$query.n"
-	if s.versionAtLeast(3, 2) {
+	if s.versionAtLeast(3, 6) {
+		commentField = "command.comment"
+		nField = "command.filter.n"
+	} else if s.versionAtLeast(3, 2) {
 		commentField = "query.comment"
 		nField = "query.filter.n"
 	}
@@ -1543,15 +1714,30 @@ func (s *S) TestFindIterLimit(c *C) {
 	c.Assert(stats.SocketsInUse, Equals, 0)
 }
 
-var cursorTimeout = flag.Bool("cursor-timeout", false, "Enable cursor timeout test")
+var cursorTimeout = flag.Bool("cursor-timeout", false, "Enable cursor timeout tests")
+
+// This error message varies based on server version.
+var cursorTimeoutRegex = "invalid cursor|Cursor not found, cursor id: .*|cursor id .* not found"
 
 func (s *S) TestFindIterCursorTimeout(c *C) {
 	if !*cursorTimeout {
 		c.Skip("-cursor-timeout")
 	}
+
+	if !s.versionAtLeast(3, 0, 2) {
+		c.Skip("cursorTimeoutMillis parameter requires 3.0.2+")
+	}
+
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
 	defer session.Close()
+
+	// Set a short cursor timeout on the server.
+	err = session.Run(bson.D{{"setParameter", 1}, {"cursorTimeoutMillis", int64(10)}}, nil)
+	c.Assert(err, IsNil)
+
+	// Set timeout back to normal when this test completes.
+	defer session.Run(bson.D{{"setParameter", 1}, {"cursorTimeoutMillis", int64(6 * 10 * 1000)}}, nil)
 
 	type Doc struct {
 		Id int "_id"
@@ -1559,7 +1745,7 @@ func (s *S) TestFindIterCursorTimeout(c *C) {
 
 	coll := session.DB("test").C("test")
 	coll.Remove(nil)
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 10; i++ {
 		err = coll.Insert(Doc{i})
 		c.Assert(err, IsNil)
 	}
@@ -1571,20 +1757,80 @@ func (s *S) TestFindIterCursorTimeout(c *C) {
 		c.Fatalf("iterator failed to return any documents")
 	}
 
-	for i := 10; i > 0; i-- {
-		c.Logf("Sleeping... %d minutes to go...", i)
-		time.Sleep(1*time.Minute + 2*time.Second)
-	}
+	// Give the cursor an opportunity to time out. While we only set timeout to 10ms, in practice
+	// it seems to take a bit longer for the server to actually kill the cursor.
+	time.Sleep(5 * time.Second)
 
 	// Drain any existing documents that were fetched.
 	if !iter.Next(&doc) {
 		c.Fatalf("iterator with timed out cursor failed to return previously cached document")
 	}
 	if iter.Next(&doc) {
-		c.Fatalf("timed out cursor returned document")
+		c.Fatalf("timed out cursor returned document, expected error")
 	}
 
-	c.Assert(iter.Err(), Equals, mgo.ErrCursor)
+	c.Assert(iter.Err(), ErrorMatches, cursorTimeoutRegex)
+}
+
+func (s *S) TestFindIterCursorNoTimeout(c *C) {
+	if !*cursorTimeout {
+		c.Skip("-cursor-timeout")
+	}
+
+	if !s.versionAtLeast(3, 0, 2) {
+		c.Skip("cursorTimeoutMillis parameter requires 3.0.2+")
+	}
+
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	// Set a short cursor timeout on the server.
+	err = session.Run(bson.D{{"setParameter", 1}, {"cursorTimeoutMillis", int64(10)}}, nil)
+	c.Assert(err, IsNil)
+
+	// Set timeout back to normal when this test completes.
+	defer session.Run(bson.D{{"setParameter", 1}, {"cursorTimeoutMillis", int64(6 * 10 * 1000)}}, nil)
+
+	session.SetCursorTimeout(0)
+
+	type Doc struct {
+		Id int "_id"
+	}
+
+	coll := session.DB("test").C("test")
+	coll.Remove(nil)
+	for i := 0; i < 10; i++ {
+		err = coll.Insert(Doc{i})
+		c.Assert(err, IsNil)
+	}
+
+	session.SetBatch(1)
+	iter := coll.Find(nil).Iter()
+	var doc Doc
+	if !iter.Next(&doc) {
+		c.Fatalf("iterator failed to return any documents")
+	}
+
+	// Sleep until cursorTimeoutMillis has passed. While we only set timeout to 10ms, in practice
+	// it seems to take a bit longer for the server to actually kill cursors.
+	time.Sleep(5 * time.Second)
+
+	// Drain any existing documents that were fetched.
+	if !iter.Next(&doc) {
+		c.Fatalf("iterator failed to return previously cached document")
+	}
+	for i := 0; i < 8; i++ {
+		if !iter.Next(&doc) {
+			c.Errorf("iterator failed on iteration %d", i)
+			break
+		}
+	}
+	if iter.Next(&doc) {
+		c.Error("iterator returned more than 10 documents")
+	}
+
+	c.Assert(iter.Err(), IsNil)
 }
 
 func (s *S) TestTooManyItemsLimitBug(c *C) {
@@ -1704,8 +1950,10 @@ func (s *S) TestFindIterLimitWithMore(c *C) {
 	for iter.Next(&discard) {
 		nresults++
 	}
-	if nresults < total/2 || nresults >= total {
-		c.Fatalf("Bad result size with negative limit: %d", nresults)
+	if nresults < total/2 {
+		c.Fatalf("Too few results with negative limit: %d < %d/2", nresults, total)
+	} else if nresults > total {
+		c.Fatalf("Too many results with negative limit: %d > %d", nresults, total)
 	}
 
 	cursorsOpen := serverCursorsOpen(session)
@@ -1728,7 +1976,7 @@ func (s *S) TestFindIterLimitWithMore(c *C) {
 	for iter.Next(&discard) {
 		nresults++
 	}
-	if nresults < total/2 || nresults >= total {
+	if nresults < total/2 || nresults > total {
 		c.Fatalf("Bad result size with MinInt32 limit: %d", nresults)
 	}
 }
@@ -2041,7 +2289,6 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 
 	session, err := mgo.Dial("localhost:40001")
 	c.Assert(err, IsNil)
-	defer session.Close()
 
 	cresult := struct{ ErrMsg string }{}
 
@@ -2081,9 +2328,9 @@ func (s *S) TestFindTailNoTimeout(c *C) {
 	// The following call to Next will block.
 	go func() {
 		time.Sleep(5e8)
-		session := session.New()
-		defer session.Close()
-		coll := session.DB("mydb").C("mycoll")
+		s := session.New()
+		defer s.Close()
+		coll := s.DB("mydb").C("mycoll")
 		coll.Insert(M{"n": 47})
 	}()
 
@@ -2983,7 +3230,7 @@ func (s *S) TestEnsureIndex(c *C) {
 	defer session.Close()
 
 	coll := session.DB("mydb").C("mycoll")
-	idxs := session.DB("mydb").C("system.indexes")
+	// 	idxs := session.DB("mydb").C("system.indexes")
 
 	for _, test := range indexTests {
 		if !s.versionAtLeast(2, 4) && test.expected["textIndexVersion"] != nil {
@@ -3002,22 +3249,22 @@ func (s *S) TestEnsureIndex(c *C) {
 			expectedName, _ = test.expected["name"].(string)
 		}
 
-		obtained := M{}
-		err = idxs.Find(M{"name": expectedName}).One(obtained)
-		c.Assert(err, IsNil)
-
-		delete(obtained, "v")
-
-		if s.versionAtLeast(2, 7) {
-			// Was deprecated in 2.6, and not being reported by 2.7+.
-			delete(test.expected, "dropDups")
-			test.index.DropDups = false
-		}
-		if s.versionAtLeast(3, 2) && test.expected["textIndexVersion"] != nil {
-			test.expected["textIndexVersion"] = 3
-		}
-
-		c.Assert(obtained, DeepEquals, test.expected)
+		// 		obtained := M{}
+		// 		err = idxs.Find(M{"name": expectedName}).One(obtained)
+		// 		c.Assert(err, IsNil) // XXX ERR HERE
+		//
+		// 		delete(obtained, "v")
+		//
+		// 		if s.versionAtLeast(2, 7) {
+		// 			// Was deprecated in 2.6, and not being reported by 2.7+.
+		// 			delete(test.expected, "dropDups")
+		// 			test.index.DropDups = false
+		// 		}
+		// 		if s.versionAtLeast(3, 2) && test.expected["textIndexVersion"] != nil {
+		// 			test.expected["textIndexVersion"] = 3
+		// 		}
+		//
+		// 		c.Assert(obtained, DeepEquals, test.expected)
 
 		// The result of Indexes must match closely what was used to create the index.
 		indexes, err := coll.Indexes()
@@ -3054,6 +3301,10 @@ func (s *S) TestEnsureIndex(c *C) {
 				}
 				wantIndex.Weights[name] = 1
 			}
+		}
+		if s.versionAtLeast(3, 0) {
+			// 3.0 no longer takes dropDups
+			wantIndex.DropDups = false
 		}
 		c.Assert(gotIndex, DeepEquals, wantIndex)
 
@@ -3120,31 +3371,13 @@ func (s *S) TestEnsureIndexKey(c *C) {
 	err = coll.EnsureIndexKey("a", "-b")
 	c.Assert(err, IsNil)
 
-	sysidx := session.DB("mydb").C("system.indexes")
-
-	result1 := M{}
-	err = sysidx.Find(M{"name": "a_1"}).One(result1)
+	result1, err := findIndexByName(coll, "a_1")
 	c.Assert(err, IsNil)
+	c.Assert(result1.Key, DeepEquals, []string{"a"})
 
-	result2 := M{}
-	err = sysidx.Find(M{"name": "a_1_b_-1"}).One(result2)
+	result2, err := findIndexByName(coll, "a_1_b_-1")
 	c.Assert(err, IsNil)
-
-	delete(result1, "v")
-	expected1 := M{
-		"name": "a_1",
-		"key":  M{"a": 1},
-		"ns":   "mydb.mycoll",
-	}
-	c.Assert(result1, DeepEquals, expected1)
-
-	delete(result2, "v")
-	expected2 := M{
-		"name": "a_1_b_-1",
-		"key":  M{"a": 1, "b": -1},
-		"ns":   "mydb.mycoll",
-	}
-	c.Assert(result2, DeepEquals, expected2)
+	c.Assert(result2.Key, DeepEquals, []string{"a", "-b"})
 }
 
 func (s *S) TestEnsureIndexDropIndex(c *C) {
@@ -3163,18 +3396,16 @@ func (s *S) TestEnsureIndexDropIndex(c *C) {
 	err = coll.DropIndex("-b")
 	c.Assert(err, IsNil)
 
-	sysidx := session.DB("mydb").C("system.indexes")
-
-	err = sysidx.Find(M{"name": "a_1"}).One(nil)
+	_, err = findIndexByName(coll, "a_1")
 	c.Assert(err, IsNil)
 
-	err = sysidx.Find(M{"name": "b_1"}).One(nil)
+	_, err = findIndexByName(coll, "b_1")
 	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = coll.DropIndex("a")
 	c.Assert(err, IsNil)
 
-	err = sysidx.Find(M{"name": "a_1"}).One(nil)
+	_, err = findIndexByName(coll, "a_1")
 	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = coll.DropIndex("a")
@@ -3197,18 +3428,16 @@ func (s *S) TestEnsureIndexDropIndexName(c *C) {
 	err = coll.DropIndexName("a")
 	c.Assert(err, IsNil)
 
-	sysidx := session.DB("mydb").C("system.indexes")
-
-	err = sysidx.Find(M{"name": "a_1"}).One(nil)
+	_, err = findIndexByName(coll, "a_1")
 	c.Assert(err, IsNil)
 
-	err = sysidx.Find(M{"name": "a"}).One(nil)
+	_, err = findIndexByName(coll, "a")
 	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = coll.DropIndexName("a_1")
 	c.Assert(err, IsNil)
 
-	err = sysidx.Find(M{"name": "a_1"}).One(nil)
+	_, err = findIndexByName(coll, "a_1")
 	c.Assert(err, Equals, mgo.ErrNotFound)
 
 	err = coll.DropIndexName("a_1")
@@ -3352,6 +3581,10 @@ func (s *S) TestEnsureIndexEvalGetIndexes(c *C) {
 	c.Assert(err, IsNil)
 	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({d: '2d'})"}}, nil)
 	c.Assert(err, IsNil)
+	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({e: NumberLong(1)})"}}, nil)
+	c.Assert(err, IsNil)
+	err = session.Run(bson.D{{"eval", "db.getSiblingDB('mydb').mycoll.ensureIndex({f: NumberInt(1)})"}}, nil)
+	c.Assert(err, IsNil)
 
 	indexes, err := coll.Indexes()
 	c.Assert(err, IsNil)
@@ -3370,6 +3603,10 @@ func (s *S) TestEnsureIndexEvalGetIndexes(c *C) {
 		c.Assert(indexes[4].Name, Equals, "d_")
 		c.Assert(indexes[4].Key, DeepEquals, []string{"$2d:d"})
 	}
+	c.Assert(indexes[5].Name, Equals, "e_1")
+	c.Assert(indexes[5].Key, DeepEquals, []string{"e"})
+	c.Assert(indexes[6].Name, Equals, "f_1")
+	c.Assert(indexes[6].Key, DeepEquals, []string{"f"})
 }
 
 var testTTL = flag.Bool("test-ttl", false, "test TTL collections (may take 1 minute)")
@@ -3684,15 +3921,18 @@ func (s *S) TestBuildInfo(c *C) {
 	c.Assert(err, IsNil)
 
 	var v []int
+	var nightly bool
 	for i, a := range strings.Split(info.Version, ".") {
-		for _, token := range []string{"-rc", "-pre"} {
-			if i == 2 && strings.Contains(a, token) {
-				a = a[:strings.Index(a, token)]
-				info.VersionArray[len(info.VersionArray)-1] = 0
-			}
+		if i == 2 && strings.Index(a, "-") != -1 {
+			nightly = true
+			a = a[:strings.Index(a, "-")]
+			info.VersionArray[len(info.VersionArray)-1] = 0
 		}
 		n, err := strconv.Atoi(a)
 		c.Assert(err, IsNil)
+		if nightly {
+			n += 1
+		}
 		v = append(v, n)
 	}
 	for len(v) < 4 {
@@ -3772,48 +4012,6 @@ func (s *S) TestFsync(c *C) {
 	c.Assert(err, IsNil)
 	err = session.Fsync(true)
 	c.Assert(err, IsNil)
-}
-
-func (s *S) TestRepairCursor(c *C) {
-	if !s.versionAtLeast(2, 7) {
-		c.Skip("RepairCursor only works on 2.7+")
-	}
-
-	session, err := mgo.Dial("localhost:40001")
-	c.Assert(err, IsNil)
-	defer session.Close()
-	session.SetBatch(2)
-
-	coll := session.DB("mydb").C("mycoll3")
-	err = coll.DropCollection()
-
-	ns := []int{0, 10, 20, 30, 40, 50}
-	for _, n := range ns {
-		coll.Insert(M{"n": n})
-	}
-
-	repairIter := coll.Repair()
-
-	c.Assert(repairIter.Err(), IsNil)
-
-	result := struct{ N int }{}
-	resultCounts := map[int]int{}
-	for repairIter.Next(&result) {
-		resultCounts[result.N]++
-	}
-
-	c.Assert(repairIter.Next(&result), Equals, false)
-	c.Assert(repairIter.Err(), IsNil)
-	c.Assert(repairIter.Close(), IsNil)
-
-	// Verify that the results of the repair cursor are valid.
-	// The repair cursor can return multiple copies
-	// of the same document, so to check correctness we only
-	// need to verify that at least 1 of each document was returned.
-
-	for _, key := range ns {
-		c.Assert(resultCounts[key] > 0, Equals, true)
-	}
 }
 
 func (s *S) TestPipeIter(c *C) {
@@ -4197,6 +4395,48 @@ func (s *S) TestVersionAtLeast(c *C) {
 
 		bi = mgo.BuildInfo{VersionArray: pair[1]}
 		c.Assert(bi.VersionAtLeast(pair[0]...), Equals, false)
+	}
+}
+
+func (s *S) TestCollationQueries(c *C) {
+	if !s.versionAtLeast(3, 3, 12) {
+		c.Skip("collations being released with 3.4")
+	}
+	session, err := mgo.Dial("localhost:40001")
+	c.Assert(err, IsNil)
+	defer session.Close()
+
+	docsToInsert := []bson.M{
+		{"text_number": "010"},
+		{"text_number": "2"},
+		{"text_number": "10"},
+	}
+
+	coll := session.DB("mydb").C("mycoll")
+	for _, doc := range docsToInsert {
+		err = coll.Insert(doc)
+		c.Assert(err, IsNil)
+	}
+
+	collation := &mgo.Collation{
+		Locale:          "en",
+		NumericOrdering: true,
+	}
+
+	err = coll.EnsureIndex(mgo.Index{
+		Key:       []string{"text_number"},
+		Collation: collation,
+	})
+	c.Assert(err, IsNil)
+
+	iter := coll.Find(nil).Sort("text_number").Collation(collation).Iter()
+	defer iter.Close()
+	for _, expectedRes := range []string{"2", "010", "10"} {
+		res := make(bson.M)
+		found := iter.Next(&res)
+		c.Assert(iter.Err(), IsNil)
+		c.Assert(found, Equals, true)
+		c.Assert(res["text_number"], Equals, expectedRes)
 	}
 }
 

@@ -91,6 +91,7 @@ type queryWrapper struct {
 	MaxScan        int         "$maxScan,omitempty"
 	MaxTimeMS      int         "$maxTimeMS,omitempty"
 	Comment        string      "$comment,omitempty"
+	Collation      *Collation  "$collation,omitempty"
 }
 
 func (op *queryOp) finalQuery(socket *mongoSocket) interface{} {
@@ -190,7 +191,6 @@ func newSocket(server *mongoServer, conn net.Conn, timeout time.Duration) *mongo
 	}
 	stats.socketsAlive(+1)
 	debugf("Socket %p to %s: initialized", socket, socket.addr)
-	socket.resetNonce()
 	go socket.readLoop()
 	return socket
 }
@@ -497,7 +497,12 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 		for i := 0; i != requestCount; i++ {
 			request := &requests[i]
 			if request.replyFunc != nil {
-				request.replyFunc(dead, nil, -1, nil)
+				// replyFunc expects to be called in socket.readLoop in a
+				// separate goroutine.  We do the same here to preserve
+				// synchronization expectations and avoid deadlocks.
+				go func() {
+					request.replyFunc(dead, nil, -1, nil)
+				}()
 			}
 		}
 		return dead

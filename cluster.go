@@ -644,7 +644,7 @@ func (cluster *mongoCluster) AcquireSocket(mode Mode, slaveOk bool, syncTimeout 
 				logf("Cannot confirm server %s as master (%v)", server.Addr, err)
 				s.Release()
 				cluster.syncServers()
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(syncShortDelay)
 				continue
 			}
 		}
