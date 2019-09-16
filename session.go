@@ -4408,13 +4408,13 @@ func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 	s.m.RLock()
 	// If there is a slave socket reserved and its use is acceptable, take it as long
 	// as there isn't a master socket which would be preferred by the read preference mode.
-	if s.slaveSocket != nil && s.slaveOk && slaveOk && (s.masterSocket == nil || s.consistency != PrimaryPreferred && s.consistency != Monotonic) {
+	if s.slaveSocket != nil && s.slaveSocket.dead == nil && s.slaveOk && slaveOk && (s.masterSocket == nil || s.consistency != PrimaryPreferred && s.consistency != Monotonic) {
 		socket := s.slaveSocket
 		socket.Acquire()
 		s.m.RUnlock()
 		return socket, nil
 	}
-	if s.masterSocket != nil {
+	if s.masterSocket != nil && s.masterSocket.dead == nil {
 		socket := s.masterSocket
 		socket.Acquire()
 		s.m.RUnlock()
@@ -4426,6 +4426,14 @@ func (s *Session) acquireSocket(slaveOk bool) (*mongoSocket, error) {
 	// so try again but with an exclusive lock now.
 	s.m.Lock()
 	defer s.m.Unlock()
+
+	// if socket was killed
+	if s.masterSocket != nil && s.masterSocket.dead != nil {
+		s.masterSocket = nil
+	}
+	if s.slaveSocket != nil && s.slaveSocket.dead != nil {
+		s.slaveSocket = nil
+	}
 
 	if s.slaveSocket != nil && s.slaveOk && slaveOk && (s.masterSocket == nil || s.consistency != PrimaryPreferred && s.consistency != Monotonic) {
 		s.slaveSocket.Acquire()
