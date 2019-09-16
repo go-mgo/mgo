@@ -703,6 +703,8 @@ func (s *S) TestPurgeMissingPipelineSizeLimit(c *C) {
 }
 
 var flaky = flag.Bool("flaky", false, "Include flaky tests")
+var txnQueueLength = flag.Int("qlength", 100, "txn-queue length for tests")
+
 
 func (s *S) TestTxnQueueStressTest(c *C) {
 	// This fails about 20% of the time on Mongo 3.2 (I haven't tried
@@ -776,3 +778,117 @@ func (s *S) TestTxnQueueStressTest(c *C) {
 		}
 	}
 }
+
+type txnQueue struct {
+	Queue []string `bson:"txn-queue"`
+}
+
+func (s *S) TestTxnQueueAssertionGrowth(c *C) {
+	txn.SetDebug(false) // too much spam
+	err := s.accounts.Insert(M{"_id": 0, "balance": 0})
+	c.Assert(err, IsNil)
+	// Create many assertion only transactions.
+	t := time.Now()
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Assert: M{"balance": 0},
+	}}
+	for n := 0; n < *txnQueueLength; n++ {
+		err = s.runner.Run(ops, "", nil)
+		c.Assert(err, IsNil)
+	}
+	var qdoc txnQueue
+	err = s.accounts.FindId(0).One(&qdoc)
+	c.Assert(err, IsNil)
+	c.Check(len(qdoc.Queue), Equals, *txnQueueLength)
+	c.Logf("%8.3fs to set up %d assertions", time.Since(t).Seconds(), *txnQueueLength)
+	t = time.Now()
+	txn.SetChaos(txn.Chaos{})
+	ops = []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Update: M{"$inc": M{"balance": 100}},
+	}}
+	err = s.runner.Run(ops, "", nil)
+	c.Logf("%8.3fs to clear N=%d assertions and add one more txn",
+		time.Since(t).Seconds(), *txnQueueLength)
+	err = s.accounts.FindId(0).One(&qdoc)
+	c.Assert(err, IsNil)
+	c.Check(len(qdoc.Queue), Equals, 1)
+}
+
+func (s *S) TestTxnQueueBrokenPrepared(c *C) {
+	txn.SetDebug(false) // too much spam
+	badTxnToken := "123456789012345678901234_deadbeef"
+	err := s.accounts.Insert(M{"_id": 0, "balance": 0, "txn-queue": []string{badTxnToken}})
+	c.Assert(err, IsNil)
+	t := time.Now()
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Update: M{"$set": M{"balance": 0}},
+	}}
+	errString := `cannot find transaction ObjectIdHex("123456789012345678901234")`
+	for n := 0; n < *txnQueueLength; n++ {
+		err = s.runner.Run(ops, "", nil)
+		c.Assert(err.Error(), Equals, errString)
+	}
+	var qdoc txnQueue
+	err = s.accounts.FindId(0).One(&qdoc)
+	c.Assert(err, IsNil)
+	c.Check(len(qdoc.Queue), Equals, *txnQueueLength+1)
+	c.Logf("%8.3fs to set up %d 'prepared' txns", time.Since(t).Seconds(), *txnQueueLength)
+	t = time.Now()
+	s.accounts.UpdateId(0, bson.M{"$pullAll": bson.M{"txn-queue": []string{badTxnToken}}})
+	ops = []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Update: M{"$inc": M{"balance": 100}},
+	}}
+	err = s.runner.ResumeAll()
+	c.Assert(err, IsNil)
+	c.Logf("%8.3fs to ResumeAll N=%d 'prepared' txns",
+		time.Since(t).Seconds(), *txnQueueLength)
+	err = s.accounts.FindId(0).One(&qdoc)
+	c.Assert(err, IsNil)
+	c.Check(len(qdoc.Queue), Equals, 1)
+}
+
+func (s *S) TestTxnQueuePreparing(c *C) {
+	txn.SetDebug(false) // too much spam
+	err := s.accounts.Insert(M{"_id": 0, "balance": 0, "txn-queue": []string{}})
+	c.Assert(err, IsNil)
+	t := time.Now()
+	txn.SetChaos(txn.Chaos{
+		KillChance: 1.0,
+		Breakpoint: "set-prepared",
+	})
+	ops := []txn.Op{{
+		C:      "accounts",
+		Id:     0,
+		Update: M{"$set": M{"balance": 0}},
+	}}
+	for n := 0; n < *txnQueueLength; n++ {
+		err = s.runner.Run(ops, "", nil)
+		c.Assert(err, Equals, txn.ErrChaos)
+	}
+	var qdoc txnQueue
+	err = s.accounts.FindId(0).One(&qdoc)
+	c.Assert(err, IsNil)
+	c.Check(len(qdoc.Queue), Equals, *txnQueueLength)
+	c.Logf("%8.3fs to set up %d 'preparing' txns", time.Since(t).Seconds(), *txnQueueLength)
+	txn.SetChaos(txn.Chaos{})
+	t = time.Now()
+	err = s.runner.ResumeAll()
+	c.Logf("%8.3fs to ResumeAll N=%d 'preparing' txns",
+		time.Since(t).Seconds(), *txnQueueLength)
+	err = s.accounts.FindId(0).One(&qdoc)
+	c.Assert(err, IsNil)
+	expectedCount := 100
+	if *txnQueueLength <= expectedCount {
+		expectedCount = *txnQueueLength - 1
+	}
+	c.Check(len(qdoc.Queue), Equals, expectedCount)
+}
+
