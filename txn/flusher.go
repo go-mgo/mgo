@@ -244,6 +244,21 @@ NextDoc:
 		change.Upsert = false
 		chaos("")
 		if _, err := cquery.Apply(change, &info); err == nil {
+			if f.opts.MaxTxnQueueLength > 0 && len(info.Queue) > f.opts.MaxTxnQueueLength {
+				// txn-queue is too long, abort this transaction. abortOrReload will pull the tokens from
+				// all of the docs that we've touched so far.
+				revno[dkey] = info.Revno
+				f.queue[dkey] = info.Queue
+				revnos := assembledRevnos(t.Ops, revno)
+				pull := map[bson.ObjectId]*transaction{t.Id: t}
+				err := f.abortOrReload(t, revnos, pull)
+				if err == nil {
+					// If we managed to abort the transaction, report on the bad data
+					return nil, fmt.Errorf("txn-queue for %v in %q has too many transactions (%d)",
+						dkey.Id, dkey.C, len(info.Queue))
+				}
+				return nil, err
+			}
 			if info.Remove == "" {
 				// Fast path, unless workload is insert/remove heavy.
 				revno[dkey] = info.Revno
@@ -610,8 +625,8 @@ func (f *flusher) assert(t *transaction, revnos []int64, pull map[bson.ObjectId]
 
 func (f *flusher) abortOrReload(t *transaction, revnos []int64, pull map[bson.ObjectId]*transaction) (err error) {
 	f.debugf("Aborting or reloading %s (was %q)", t, t.State)
-	if t.State == tprepared {
-		qdoc := bson.D{{"_id", t.Id}, {"s", tprepared}}
+	if t.State == tprepared || t.State == tpreparing {
+		qdoc := bson.D{{"_id", t.Id}, {"s", t.State}}
 		udoc := bson.D{{"$set", bson.D{{"s", taborting}}}}
 		chaos("set-aborting")
 		if err = f.tc.Update(qdoc, udoc); err == nil {
