@@ -4262,7 +4262,7 @@ type valueResult struct {
 //             Update: bson.M{"$inc": bson.M{"n": 1}},
 //             ReturnNew: true,
 //     }
-//     info, err = col.Find(M{"_id": id}).Apply(change, &doc)
+//     info, err = col.Find(bson.M{"_id": id}).Apply(change, &doc)
 //     fmt.Println(doc.N)
 //
 // This method depends on MongoDB >= 2.0 to work properly.
