@@ -710,7 +710,7 @@ func getStructInfo(st reflect.Type) (*structInfo, error) {
 		if tag != "" {
 			info.Key = tag
 		} else {
-			info.Key = strings.ToLower(field.Name)
+			info.Key = getJSONTag(field)
 		}
 
 		if _, found = fieldsMap[info.Key]; found {
@@ -731,4 +731,13 @@ func getStructInfo(st reflect.Type) (*structInfo, error) {
 	structMap[st] = sinfo
 	structMapMutex.Unlock()
 	return sinfo, nil
+}
+
+func getJSONTag(field reflect.StructField) string {
+	tag := field.Tag.Get("json")
+	if tag == "" {
+		return strings.ToLower(field.Name)
+	}
+	// should we behave json "omitempty","-"... the same for bson?
+	return tag
 }
