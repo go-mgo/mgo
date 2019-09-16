@@ -75,22 +75,22 @@ const (
 // multiple goroutines will cause them to share the same underlying socket.
 // See the documentation on Session.SetMode for more details.
 type Session struct {
-	m                sync.RWMutex
+	defaultdb        string
+	sourcedb         string
+	syncTimeout      time.Duration
+	sockTimeout      time.Duration
+	poolLimit        int
+	consistency      Mode
+	creds            []Credential
+	dialCred         *Credential
+	safeOp           *queryOp
 	cluster_         *mongoCluster
 	slaveSocket      *mongoSocket
 	masterSocket     *mongoSocket
-	slaveOk          bool
-	consistency      Mode
+	m                sync.RWMutex
 	queryConfig      query
-	safeOp           *queryOp
-	syncTimeout      time.Duration
-	sockTimeout      time.Duration
-	defaultdb        string
-	sourcedb         string
-	dialCred         *Credential
-	creds            []Credential
-	poolLimit        int
 	bypassValidation bool
+	slaveOk          bool
 }
 
 type Database struct {
@@ -133,10 +133,10 @@ type Iter struct {
 	err            error
 	op             getMoreOp
 	prefetch       float64
-	limit          int32
 	docsToReceive  int
 	docsBeforeMore int
 	timeout        time.Duration
+	limit          int32
 	timedout       bool
 	findCmd        bool
 }
@@ -279,44 +279,81 @@ func ParseURL(url string) (*DialInfo, error) {
 	source := ""
 	setName := ""
 	poolLimit := 0
-	for k, v := range uinfo.options {
-		switch k {
+	readPreferenceMode := Primary
+	var readPreferenceTagSets []bson.D
+	for _, opt := range uinfo.options {
+		switch opt.key {
 		case "authSource":
-			source = v
+			source = opt.value
 		case "authMechanism":
-			mechanism = v
+			mechanism = opt.value
 		case "gssapiServiceName":
-			service = v
+			service = opt.value
 		case "replicaSet":
-			setName = v
+			setName = opt.value
 		case "maxPoolSize":
-			poolLimit, err = strconv.Atoi(v)
+			poolLimit, err = strconv.Atoi(opt.value)
 			if err != nil {
-				return nil, errors.New("bad value for maxPoolSize: " + v)
+				return nil, errors.New("bad value for maxPoolSize: " + opt.value)
 			}
+		case "readPreference":
+			switch opt.value {
+			case "nearest":
+				readPreferenceMode = Nearest
+			case "primary":
+				readPreferenceMode = Primary
+			case "primaryPreferred":
+				readPreferenceMode = PrimaryPreferred
+			case "secondary":
+				readPreferenceMode = Secondary
+			case "secondaryPreferred":
+				readPreferenceMode = SecondaryPreferred
+			default:
+				return nil, errors.New("bad value for readPreference: " + opt.value)
+			}
+		case "readPreferenceTags":
+			tags := strings.Split(opt.value, ",")
+			var doc bson.D
+			for _, tag := range tags {
+				kvp := strings.Split(tag, ":")
+				if len(kvp) != 2 {
+					return nil, errors.New("bad value for readPreferenceTags: " + opt.value)
+				}
+				doc = append(doc, bson.DocElem{Name: strings.TrimSpace(kvp[0]), Value: strings.TrimSpace(kvp[1])})
+			}
+			readPreferenceTagSets = append(readPreferenceTagSets, doc)
 		case "connect":
-			if v == "direct" {
+			if opt.value == "direct" {
 				direct = true
 				break
 			}
-			if v == "replicaSet" {
+			if opt.value == "replicaSet" {
 				break
 			}
 			fallthrough
 		default:
-			return nil, errors.New("unsupported connection URL option: " + k + "=" + v)
+			return nil, errors.New("unsupported connection URL option: " + opt.key + "=" + opt.value)
 		}
 	}
+
+	if readPreferenceMode == Primary && len(readPreferenceTagSets) > 0 {
+		return nil, errors.New("readPreferenceTagSet may not be specified when readPreference is primary")
+	}
+
 	info := DialInfo{
-		Addrs:          uinfo.addrs,
-		Direct:         direct,
-		Database:       uinfo.db,
-		Username:       uinfo.user,
-		Password:       uinfo.pass,
-		Mechanism:      mechanism,
-		Service:        service,
-		Source:         source,
-		PoolLimit:      poolLimit,
+		Addrs:     uinfo.addrs,
+		Direct:    direct,
+		Database:  uinfo.db,
+		Username:  uinfo.user,
+		Password:  uinfo.pass,
+		Mechanism: mechanism,
+		Service:   service,
+		Source:    source,
+		PoolLimit: poolLimit,
+		ReadPreference: &ReadPreference{
+			Mode:    readPreferenceMode,
+			TagSets: readPreferenceTagSets,
+		},
 		ReplicaSetName: setName,
 	}
 	return &info, nil
@@ -328,23 +365,11 @@ type DialInfo struct {
 	// Addrs holds the addresses for the seed servers.
 	Addrs []string
 
-	// Direct informs whether to establish connections only with the
-	// specified seed servers, or to obtain information for the whole
-	// cluster and establish connections with further servers too.
-	Direct bool
-
 	// Timeout is the amount of time to wait for a server to respond when
 	// first connecting and on follow up operations in the session. If
 	// timeout is zero, the call may block forever waiting for a connection
 	// to be established. Timeout does not affect logic in DialServer.
 	Timeout time.Duration
-
-	// FailFast will cause connection and query attempts to fail faster when
-	// the server is unavailable, instead of retrying until the configured
-	// timeout period. Note that an unavailable server may silently drop
-	// packets instead of rejecting them, in which case it's impossible to
-	// distinguish it from a slow server, so the timeout stays relevant.
-	FailFast bool
 
 	// Database is the default database name used when the Session.DB method
 	// is called with an empty name, and is also used during the initial
@@ -384,12 +409,37 @@ type DialInfo struct {
 	// See Session.SetPoolLimit for details.
 	PoolLimit int
 
+	// ReadPreference defines the manner in which servers are chosen. See
+	// Session.SetMode and Session.SelectServers.
+	ReadPreference *ReadPreference
+
+	// FailFast will cause connection and query attempts to fail faster when
+	// the server is unavailable, instead of retrying until the configured
+	// timeout period. Note that an unavailable server may silently drop
+	// packets instead of rejecting them, in which case it's impossible to
+	// distinguish it from a slow server, so the timeout stays relevant.
+	FailFast bool
+
+	// Direct informs whether to establish connections only with the
+	// specified seed servers, or to obtain information for the whole
+	// cluster and establish connections with further servers too.
+	Direct bool
+
 	// DialServer optionally specifies the dial function for establishing
 	// connections with the MongoDB servers.
 	DialServer func(addr *ServerAddr) (net.Conn, error)
 
 	// WARNING: This field is obsolete. See DialServer above.
 	Dial func(addr net.Addr) (net.Conn, error)
+}
+
+// ReadPreference defines the manner in which servers are chosen.
+type ReadPreference struct {
+	// Mode determines the consistency of results. See Session.SetMode.
+	Mode Mode
+
+	// TagSets indicates which servers are allowed to be used. See Session.SelectServers.
+	TagSets []bson.D
 }
 
 // mgo.v3: Drop DialInfo.Dial.
@@ -464,7 +514,14 @@ func DialWithInfo(info *DialInfo) (*Session, error) {
 		session.Close()
 		return nil, err
 	}
-	session.SetMode(Strong, true)
+
+	if info.ReadPreference != nil {
+		session.SelectServers(info.ReadPreference.TagSets...)
+		session.SetMode(info.ReadPreference.Mode, true)
+	} else {
+		session.SetMode(Strong, true)
+	}
+
 	return session, nil
 }
 
@@ -477,21 +534,25 @@ type urlInfo struct {
 	user    string
 	pass    string
 	db      string
-	options map[string]string
+	options []urlInfoOption
+}
+
+type urlInfoOption struct {
+	key   string
+	value string
 }
 
 func extractURL(s string) (*urlInfo, error) {
-	if strings.HasPrefix(s, "mongodb://") {
-		s = s[10:]
-	}
+	s = strings.TrimPrefix(s, "mongodb://")
 	info := &urlInfo{options: make(map[string]string)}
+
 	if c := strings.Index(s, "?"); c != -1 {
 		for _, pair := range strings.FieldsFunc(s[c+1:], isOptSep) {
 			l := strings.SplitN(pair, "=", 2)
 			if len(l) != 2 || l[0] == "" || l[1] == "" {
 				return nil, errors.New("connection option must be key=value: " + pair)
 			}
-			info.options[l[0]] = l[1]
+			info.options = append(info.options, urlInfoOption{key: l[0], value: l[1]})
 		}
 		s = s[:c]
 	}
@@ -1061,9 +1122,6 @@ type Collation struct {
 	// Locale defines the collation locale.
 	Locale string `bson:"locale"`
 
-	// CaseLevel defines whether to turn case sensitivity on at strength 1 or 2.
-	CaseLevel bool `bson:"caseLevel,omitempty"`
-
 	// CaseFirst may be set to "upper" or "lower" to define whether
 	// to have uppercase or lowercase items first. Default is "off".
 	CaseFirst string `bson:"caseFirst,omitempty"`
@@ -1086,15 +1144,26 @@ type Collation struct {
 	// Strength defaults to 3.
 	Strength int `bson:"strength,omitempty"`
 
-	// NumericOrdering defines whether to order numbers based on numerical
-	// order and not collation order.
-	NumericOrdering bool `bson:"numericOrdering,omitempty"`
-
 	// Alternate controls whether spaces and punctuation are considered base characters.
 	// May be set to "non-ignorable" (spaces and punctuation considered base characters)
 	// or "shifted" (spaces and punctuation not considered base characters, and only
 	// distinguished at strength > 3). Defaults to "non-ignorable".
 	Alternate string `bson:"alternate,omitempty"`
+
+	// MaxVariable defines which characters are affected when the value for Alternate is
+	// "shifted". It may be set to "punct" to affect punctuation or spaces, or "space" to
+	// affect only spaces.
+	MaxVariable string `bson:"maxVariable,omitempty"`
+
+	// Normalization defines whether text is normalized into Unicode NFD.
+	Normalization bool `bson:"normalization,omitempty"`
+
+	// CaseLevel defines whether to turn case sensitivity on at strength 1 or 2.
+	CaseLevel bool `bson:"caseLevel,omitempty"`
+
+	// NumericOrdering defines whether to order numbers based on numerical
+	// order and not collation order.
+	NumericOrdering bool `bson:"numericOrdering,omitempty"`
 
 	// Backwards defines whether to have secondary differences considered in reverse order,
 	// as done in the French language.
@@ -2247,26 +2316,31 @@ func (p *Pipe) Iter() *Iter {
 	return c.NewIter(p.session, firstBatch, result.Cursor.Id, err)
 }
 
-// NewIter returns a newly created iterator with the provided parameters.
-// Using this method is not recommended unless the desired functionality
-// is not yet exposed via a more convenient interface (Find, Pipe, etc).
+// NewIter returns a newly created iterator with the provided parameters. Using
+// this method is not recommended unless the desired functionality is not yet
+// exposed via a more convenient interface (Find, Pipe, etc).
 //
 // The optional session parameter associates the lifetime of the returned
-// iterator to an arbitrary session. If nil, the iterator will be bound to
-// c's session.
+// iterator to an arbitrary session. If nil, the iterator will be bound to c's
+// session.
 //
 // Documents in firstBatch will be individually provided by the returned
-// iterator before documents from cursorId are made available. If cursorId
-// is zero, only the documents in firstBatch are provided.
+// iterator before documents from cursorId are made available. If cursorId is
+// zero, only the documents in firstBatch are provided.
 //
-// If err is not nil, the iterator's Err method will report it after
-// exhausting documents in firstBatch.
+// If err is not nil, the iterator's Err method will report it after exhausting
+// documents in firstBatch.
 //
-// NewIter must be called right after the cursor id is obtained, and must not
-// be called on a collection in Eventual mode, because the cursor id is
-// associated with the specific server that returned it. The provided session
-// parameter may be in any mode or state, though.
+// NewIter must not be called on a collection in Eventual mode, because the
+// cursor id is associated with the specific server that returned it. The
+// provided session parameter may be in any mode or state, though.
 //
+// The new Iter fetches documents in batches of the server defined default,
+// however this can be changed by setting the session Batch method.
+//
+// When using MongoDB 3.2+ NewIter supports re-using an existing cursor on the
+// server. Ensure the connection has been established (i.e. by calling
+// session.Ping()) before calling NewIter.
 func (c *Collection) NewIter(session *Session, firstBatch []bson.Raw, cursorId int64, err error) *Iter {
 	var server *mongoServer
 	csession := c.Database.Session
@@ -2299,16 +2373,48 @@ func (c *Collection) NewIter(session *Session, firstBatch []bson.Raw, cursorId i
 		timeout: -1,
 		err:     err,
 	}
+
+	if socket.ServerInfo().MaxWireVersion >= 4 && c.FullName != "admin.$cmd" {
+		iter.findCmd = true
+	}
+
 	iter.gotReply.L = &iter.m
 	for _, doc := range firstBatch {
 		iter.docData.Push(doc.Data)
 	}
 	if cursorId != 0 {
+		if socket != nil && socket.ServerInfo().MaxWireVersion >= 4 {
+			iter.docsBeforeMore = len(firstBatch)
+		}
 		iter.op.cursorId = cursorId
 		iter.op.collection = c.FullName
 		iter.op.replyFunc = iter.replyFunc()
 	}
 	return iter
+}
+
+// State returns the current state of Iter. When combined with NewIter an
+// existing cursor can be reused on Mongo 3.2+. Like NewIter, this method should
+// be avoided if the desired functionality is exposed via a more convenient
+// interface.
+//
+// Care must be taken to resume using Iter only when connected directly to the
+// same server that the cursor was created on (with a Monotonic connection or
+// with the connect=direct connection option).
+func (iter *Iter) State() (int64, []bson.Raw) {
+	// Make a copy of the docData to avoid changing iter state
+	iter.m.Lock()
+	data := iter.docData
+	iter.m.Unlock()
+
+	batch := make([]bson.Raw, 0, data.Len())
+	for data.Len() > 0 {
+		batch = append(batch, bson.Raw{
+			Kind: 0x00,
+			Data: data.Pop().([]byte),
+		})
+	}
+	return iter.op.cursorId, batch
 }
 
 // All works like Iter.All.
@@ -2858,6 +2964,14 @@ func (q *Query) Sort(fields ...string) *Query {
 	return q
 }
 
+func (q *Query) Collation(collation *Collation) *Query {
+	q.m.Lock()
+	q.op.options.Collation = collation
+	q.op.hasOptions = true
+	q.m.Unlock()
+	return q
+}
+
 // Explain returns a number of details about how the MongoDB server would
 // execute the requested query, such as the number of objects examined,
 // the number of times the read lock was yielded to allow writes to go in,
@@ -3161,6 +3275,7 @@ func prepareFindOp(socket *mongoSocket, op *queryOp, limit int32) bool {
 		Comment:     op.options.Comment,
 		Snapshot:    op.options.Snapshot,
 		OplogReplay: op.flags&flagLogReplay != 0,
+		Collation:   op.options.Collation,
 	}
 	if op.limit < 0 {
 		find.BatchSize = -op.limit
@@ -3222,6 +3337,7 @@ type findCmd struct {
 	OplogReplay         bool        `bson:"oplogReplay,omitempty"`
 	NoCursorTimeout     bool        `bson:"noCursorTimeout,omitempty"`
 	AllowPartialResults bool        `bson:"allowPartialResults,omitempty"`
+	Collation           *Collation  `bson:"collation,omitempty"`
 }
 
 // getMoreCmd holds the command used for requesting more query results on MongoDB 3.2+.
@@ -4020,11 +4136,11 @@ type mapReduceCmd struct {
 	Map        string ",omitempty"
 	Reduce     string ",omitempty"
 	Finalize   string ",omitempty"
-	Limit      int32  ",omitempty"
 	Out        interface{}
 	Query      interface{} ",omitempty"
 	Sort       interface{} ",omitempty"
 	Scope      interface{} ",omitempty"
+	Limit      int32       ",omitempty"
 	Verbose    bool        ",omitempty"
 }
 

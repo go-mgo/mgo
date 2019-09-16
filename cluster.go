@@ -646,6 +646,10 @@ func (cluster *mongoCluster) AcquireSocket(mode Mode, slaveOk bool, syncTimeout 
 				cluster.syncServers()
 				time.Sleep(100 * time.Millisecond)
 				continue
+			} else {
+				server.Lock()
+				server.abended = false
+				server.Unlock()
 			}
 		}
 		return s, nil

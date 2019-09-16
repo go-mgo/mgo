@@ -67,18 +67,17 @@ const (
 )
 
 type queryOp struct {
-	collection string
 	query      interface{}
+	collection string
+	serverTags []bson.D
+	selector   interface{}
+	replyFunc  replyFunc
+	mode       Mode
 	skip       int32
 	limit      int32
-	selector   interface{}
-	flags      queryOpFlags
-	replyFunc  replyFunc
-
-	mode       Mode
 	options    queryWrapper
 	hasOptions bool
-	serverTags []bson.D
+	flags      queryOpFlags
 }
 
 type queryWrapper struct {
@@ -91,6 +90,7 @@ type queryWrapper struct {
 	MaxScan        int         "$maxScan,omitempty"
 	MaxTimeMS      int         "$maxTimeMS,omitempty"
 	Comment        string      "$comment,omitempty"
+	Collation      *Collation  "$collation,omitempty"
 }
 
 func (op *queryOp) finalQuery(socket *mongoSocket) interface{} {
