@@ -377,8 +377,54 @@ func (s *S) Test64bitInt(c *C) {
 // --------------------------------------------------------------------------
 // Generic two-way struct marshaling tests.
 
+type prefixPtr string
+type prefixVal string
+
+func (t *prefixPtr) GetBSON() (interface{}, error) {
+	if t == nil {
+		return nil, nil
+	}
+	return "foo-" + string(*t), nil
+}
+
+func (t *prefixPtr) SetBSON(raw bson.Raw) error {
+	var s string
+	if raw.Kind == 0x0A {
+		return bson.SetZero
+	}
+	if err := raw.Unmarshal(&s); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(s, "foo-") {
+		return errors.New("Prefix not found: " + s)
+	}
+	*t = prefixPtr(s[4:])
+	return nil
+}
+
+func (t prefixVal) GetBSON() (interface{}, error) {
+	return "foo-" + string(t), nil
+}
+
+func (t *prefixVal) SetBSON(raw bson.Raw) error {
+	var s string
+	if raw.Kind == 0x0A {
+		return bson.SetZero
+	}
+	if err := raw.Unmarshal(&s); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(s, "foo-") {
+		return errors.New("Prefix not found: " + s)
+	}
+	*t = prefixVal(s[4:])
+	return nil
+}
+
 var bytevar = byte(8)
 var byteptr = &bytevar
+var prefixptr = prefixPtr("bar")
+var prefixval = prefixVal("bar")
 
 var structItems = []testItemType{
 	{&struct{ Ptr *byte }{nil},
@@ -415,6 +461,24 @@ var structItems = []testItemType{
 	// Byte arrays.
 	{&struct{ V [2]byte }{[2]byte{'y', 'o'}},
 		"\x05v\x00\x02\x00\x00\x00\x00yo"},
+
+	{&struct{ V prefixPtr }{prefixPtr("buzz")},
+		"\x02v\x00\x09\x00\x00\x00foo-buzz\x00"},
+
+	{&struct{ V *prefixPtr }{&prefixptr},
+		"\x02v\x00\x08\x00\x00\x00foo-bar\x00"},
+
+	{&struct{ V *prefixPtr }{nil},
+		"\x0Av\x00"},
+
+	{&struct{ V prefixVal }{prefixVal("buzz")},
+		"\x02v\x00\x09\x00\x00\x00foo-buzz\x00"},
+
+	{&struct{ V *prefixVal }{&prefixval},
+		"\x02v\x00\x08\x00\x00\x00foo-bar\x00"},
+
+	{&struct{ V *prefixVal }{nil},
+		"\x0Av\x00"},
 }
 
 func (s *S) TestMarshalStructItems(c *C) {
