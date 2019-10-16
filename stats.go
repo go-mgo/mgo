@@ -105,9 +105,16 @@ func (stats *Stats) conn(delta int, master bool) {
 		statsMutex.Lock()
 		if master {
 			stats.MasterConns += delta
+			if stats.MasterConns < 0 {
+				stats.MasterConns = 0
+			}
 		} else {
 			stats.SlaveConns += delta
+			if stats.SlaveConns < 0 {
+				stats.SlaveConns = 0
+			}
 		}
+
 		statsMutex.Unlock()
 	}
 }
@@ -140,6 +147,9 @@ func (stats *Stats) socketsInUse(delta int) {
 	if stats != nil {
 		statsMutex.Lock()
 		stats.SocketsInUse += delta
+		if stats.SocketsInUse < 0 {
+			stats.SocketsInUse = 0
+		}
 		statsMutex.Unlock()
 	}
 }
@@ -156,6 +166,9 @@ func (stats *Stats) socketsAlive(delta int) {
 	if stats != nil {
 		statsMutex.Lock()
 		stats.SocketsAlive += delta
+		if stats.SocketsAlive < 0 {
+			stats.SocketsAlive = 0
+		}
 		statsMutex.Unlock()
 	}
 }
@@ -164,6 +177,9 @@ func (stats *Stats) socketRefs(delta int) {
 	if stats != nil {
 		statsMutex.Lock()
 		stats.SocketRefs += delta
+		if stats.SocketRefs < 0 {
+			stats.SocketRefs = 0
+		}
 		statsMutex.Unlock()
 	}
 }
