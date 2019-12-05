@@ -150,10 +150,6 @@ func (dbs *DBServer) execContainer(network string, exposePort bool) *exec.Cmd {
 		"--name",
 		dbs.containerName,
 		fmt.Sprintf("mongo:%s", dbs.version),
-		"--nssize", "1",
-		"--noprealloc",
-		"--smallfiles",
-		"--nojournal",
 	}...)
 	return exec.Command("docker", args...)
 }
