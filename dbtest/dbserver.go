@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
+	"gopkg.in/tomb.v2"
 )
 
 // Constants to define how the DB test instance should be executed
