@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/tomb.v2"
 )
 
@@ -47,6 +48,7 @@ type DBServer struct {
 	debug         bool   // Log debug statements
 	containerName string // The container name, when running mgo within a container
 	tomb          tomb.Tomb
+	rsName		  string 		// ReplicaSet Name. If not empty- the mongod will be started as a Replica Set Server
 }
 
 // SetPath defines the path to the directory where the database files will be
@@ -79,6 +81,11 @@ func (dbs *DBServer) SetNetwork(network string) {
 // SetExposePort sets whether the container port should be exposed to the host OS.
 func (dbs *DBServer) SetExposePort(exposePort bool) {
 	dbs.exposePort = exposePort
+}
+
+// SetReplicaSetName sets whether the mongod is started as a replica set
+func (dbs *DBServer) SetReplicaSetName(rsName string) {
+	dbs.rsName = rsName
 }
 
 // Start Mongo DB within Docker container on host.
@@ -150,11 +157,16 @@ func (dbs *DBServer) execContainer(network string, exposePort bool) *exec.Cmd {
 		"--name",
 		dbs.containerName,
 		fmt.Sprintf("mongo:%s", dbs.version),
-		"--nssize", "1",
-		"--noprealloc",
-		"--smallfiles",
-		"--nojournal",
 	}...)
+
+	if dbs.rsName != "" {
+		args =  append(args, []string{
+			"mongod",
+			"--replSet",
+			dbs.rsName,
+		}...)
+	}
+	fmt.Println("DB start up arguments are: ", args)
 	return exec.Command("docker", args...)
 }
 
@@ -251,10 +263,13 @@ func (dbs *DBServer) execLocal(port int) *exec.Cmd {
 		"--dbpath", dbs.dbpath,
 		"--bind_ip", "127.0.0.1",
 		"--port", strconv.Itoa(port),
-		"--nssize", "1",
-		"--noprealloc",
-		"--smallfiles",
-		"--nojournal",
+	}
+
+	if dbs.rsName != "" {
+		args =  append(args, []string{
+			"--replSet",
+			dbs.rsName,
+		}...)
 	}
 	return exec.Command("mongod", args...)
 }
@@ -406,6 +421,26 @@ func (dbs *DBServer) SessionWithTimeout(timeout time.Duration) *mgo.Session {
 		mgo.ResetStats()
 		var err error
 		fmt.Printf("[%s] Dialing mongod located at '%s'\n", time.Now().String(), dbs.hostPort)
+		// If The MongoDB Driver is Configured with ReplicaSet - (Then configure Replica Set first!)
+		// Directly Connect First - and then configure Replica Set!
+		if dbs.rsName != "" {
+			dbs.session, err = mgo.DialWithTimeout(dbs.hostPort+"/test?connect=direct", timeout)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[%s] Unable to dial mongod located at '%s'. Timeout=%v, Error: %s\n", time.Now().String(), dbs.hostPort, timeout, err.Error())
+				fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
+				dbs.printMongoDebugInfo()
+				panic(err)
+			}
+			err = dbs.Initiate()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Unable to Configure Replica Set '%s'. Timeout=%v, Error: %s\n", dbs.rsName,  dbs.hostPort, timeout, err.Error())
+				fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
+				dbs.printMongoDebugInfo()
+				panic(err)
+			}
+			dbs.session.Close() // Create a new One Below without Direct=true...
+
+		}
 		dbs.session, err = mgo.DialWithTimeout(dbs.hostPort+"/test", timeout)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[%s] Unable to dial mongod located at '%s'. Timeout=%v, Error: %s\n", time.Now().String(), dbs.hostPort, timeout, err.Error())
@@ -483,3 +518,177 @@ func (dbs *DBServer) Wipe() {
 		}
 	}
 }
+
+// Code From https://github.com/juju/replicaset To Start MongoDB in replica Set Configuration
+// Config is the document stored in mongodb that defines the servers in the
+// replica set
+type Config struct {
+	Name            string   `bson:"_id"`
+	Version         int      `bson:"version"`
+	ProtocolVersion int      `bson:"protocolVersion,omitempty"`
+	Members         []Member `bson:"members"`
+}
+
+// Member holds configuration information for a replica set member.
+//
+// See http://docs.mongodb.org/manual/reference/replica-configuration/
+// for more details
+type Member struct {
+	// Id is a unique id for a member in a set.
+	Id int `bson:"_id"`
+
+	// Address holds the network address of the member,
+	// in the form hostname:port.
+	Address string `bson:"host"`
+}
+
+func (dbs *DBServer) Initiate() error {
+	monotonicSession := dbs.session.Clone()
+	defer monotonicSession.Close()
+	monotonicSession.SetMode(mgo.Monotonic, true)
+	protocolVersion := 1
+	var err error
+	// We don't know mongod's ability to use a correct IPv6 addr format
+	// until the server is started, but we need to know before we can start
+	// it. Try the older, incorrect format, if the correct format fails.
+	cfg := []Config{
+		{
+			Name:            dbs.rsName,
+			Version:         1,
+			ProtocolVersion: protocolVersion,
+			Members: []Member{{
+				Id:      0,
+				Address: dbs.hostPort,
+			}},
+		},
+	}
+
+	// Attempt replSetInitiate, with potential retries.
+	for i := 0; i < 5; i++ {
+		monotonicSession.Refresh()
+		if err = doAttemptInitiate(monotonicSession, cfg); err != nil {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		break
+	}
+
+	// Wait for replSetInitiate to complete. Even if err != nil,
+	// it may be that replSetInitiate is still in progress, so
+	// attempt CurrentStatus.
+	for i := 0; i < 10; i++ {
+		monotonicSession.Refresh()
+		var status *Status
+		status, err = getCurrentStatus(monotonicSession)
+		if err != nil {
+			fmt.Println("Initiate: fetching replication status failed: %v", err)
+		}
+		if err != nil || len(status.Members) == 0 {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	return err
+}
+
+// CurrentStatus returns the status of the replica set for the given session.
+func getCurrentStatus(session *mgo.Session) (*Status, error) {
+	status := &Status{}
+	err := session.Run("replSetGetStatus", status)
+	if err != nil {
+		return nil, fmt.Errorf("cannot get replica set status: %v", err)
+	}
+
+	for index, member := range status.Members {
+		status.Members[index].Address = member.Address
+	}
+	return status, nil
+}
+
+// Status holds data about the status of members of the replica set returned
+// from replSetGetStatus
+//
+// See http://docs.mongodb.org/manual/reference/command/replSetGetStatus/#dbcmd.replSetGetStatus
+type Status struct {
+	Name    string         `bson:"set"`
+	Members []MemberStatus `bson:"members"`
+}
+
+// Status holds the status of a replica set member returned from
+// replSetGetStatus.
+type MemberStatus struct {
+	// Id holds the replica set id of the member that the status is describing.
+	Id int `bson:"_id"`
+
+	// Address holds address of the member that the status is describing.
+	Address string `bson:"name"`
+
+	// Self holds whether this is the status for the member that
+	// the session is connected to.
+	Self bool `bson:"self"`
+
+	// ErrMsg holds the most recent error or status message received
+	// from the member.
+	ErrMsg string `bson:"errmsg"`
+
+	// Healthy reports whether the member is up. It is true for the
+	// member that the request was made to.
+	Healthy bool `bson:"health"`
+
+	// State describes the current state of the member.
+	State MemberState `bson:"state"`
+
+}
+// doAttemptInitiate will attempt to initiate a mongodb replicaset with each of
+// the given configs, returning as soon as one config is successful.
+func doAttemptInitiate(monotonicSession *mgo.Session, cfg []Config) error {
+	var err error
+	for _, c := range cfg {
+		if err = monotonicSession.Run(bson.D{{"replSetInitiate", c}}, nil); err != nil {
+			fmt.Println("Unsuccessful attempt to initiate replicaset: %v", err)
+			continue
+		}
+		return nil
+	}
+	return err
+}
+
+type MemberState int
+
+const (
+	StartupState = iota
+	PrimaryState
+	SecondaryState
+	RecoveringState
+	FatalState
+	Startup2State
+	UnknownState
+	ArbiterState
+	DownState
+	RollbackState
+	ShunnedState
+)
+
+var memberStateStrings = []string{
+	StartupState:    "STARTUP",
+	PrimaryState:    "PRIMARY",
+	SecondaryState:  "SECONDARY",
+	RecoveringState: "RECOVERING",
+	FatalState:      "FATAL",
+	Startup2State:   "STARTUP2",
+	UnknownState:    "UNKNOWN",
+	ArbiterState:    "ARBITER",
+	DownState:       "DOWN",
+	RollbackState:   "ROLLBACK",
+	ShunnedState:    "SHUNNED",
+}
+
+// String returns a string describing the state.
+func (state MemberState) String() string {
+	if state < 0 || int(state) >= len(memberStateStrings) {
+		return "INVALID_MEMBER_STATE"
+	}
+	return memberStateStrings[state]
+}
+
