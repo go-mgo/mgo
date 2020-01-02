@@ -9,6 +9,7 @@ personal time without a relevant benefit for those around me.
 Moving forward I would suggest you to look at one of these options:
 
   * [globalsign/mgo](https://github.com/globalsign/mgo) - Community supported fork of mgo.
+  * [kamva/mgm](https://github.com/kamva/mgm) - Model-based ODM For Go
   * [BoltDB](https://github.com/coreos/bbolt) - Single file in-memory document database for Go.
   * [Badger](https://github.com/dgraph-io/badger) - Fast in-memory document database for Go.
   * [DGraph](https://github.com/dgraph-io/dgraph) - Distributed graph database on top of Badger.
