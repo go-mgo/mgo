@@ -88,6 +88,11 @@ func (dbs *DBServer) SetReplicaSetName(rsName string) {
 	dbs.rsName = rsName
 }
 
+// SetContainerName sets the name of the docker container when the DB instance is started within a container.
+func (dbs *DBServer) SetContainerName(containerName string) {
+	dbs.containerName = containerName
+}
+
 // Start Mongo DB within Docker container on host.
 // It assumes Docker is already installed.
 func (dbs *DBServer) execContainer(network string, exposePort bool) *exec.Cmd {
@@ -126,18 +131,6 @@ func (dbs *DBServer) execContainer(network string, exposePort bool) *exec.Cmd {
 	if dbs.debug {
 		fmt.Printf("[%s] Pulled Mongo docker image\n", time.Now().String())
 	}
-
-	// Generate a name for the container. This will help to inspect the container
-	// and get the Mongo PID.
-	u := make([]byte, 8)
-	// The default number generator is deterministic.
-	s := rand.NewSource(time.Now().UnixNano())
-	r := rand.New(s)
-	_, err = r.Read(u)
-	if err != nil {
-		panic(err)
-	}
-	dbs.containerName = fmt.Sprintf("mongo-%s", hex.EncodeToString(u))
 
 	args = []string{
 		"run",
@@ -288,6 +281,20 @@ func (dbs *DBServer) start() {
 	}
 	addr := l.Addr().(*net.TCPAddr)
 	l.Close()
+
+  if dbs.containerName == "" {
+    // Generate a name for the container. This will help to inspect the container
+    // and get the Mongo PID.
+    u := make([]byte, 8)
+    // The default number generator is deterministic.
+    s := rand.NewSource(time.Now().UnixNano())
+    r := rand.New(s)
+    _, err = r.Read(u)
+    if err != nil {
+      panic(err)
+    }
+    dbs.containerName = fmt.Sprintf("mongo-%s", hex.EncodeToString(u))
+  }
 
 	dbs.tomb = tomb.Tomb{}
 	switch dbs.eType {
