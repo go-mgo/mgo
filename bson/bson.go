@@ -558,6 +558,12 @@ func Unmarshal(in []byte, out interface{}) (err error) {
 // See the Unmarshal function documentation for more details on the
 // unmarshalling process.
 func (raw Raw) Unmarshal(out interface{}) (err error) {
+	// If there is no data to unmarshal dont set out to an empty struct.
+	// This breaks read your own write semantics.
+	// For example, we end up a reading an empty struct from the db where there is no value for that in the db.
+	if len(raw.Data) == 0 {
+		return SetZero
+	}
 	defer handleErr(&err)
 	v := reflect.ValueOf(out)
 	switch v.Kind() {
