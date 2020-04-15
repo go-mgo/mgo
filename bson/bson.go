@@ -571,6 +571,9 @@ func Unmarshal(in []byte, out interface{}) (err error) {
 // See the Unmarshal function documentation for more details on the
 // unmarshalling process.
 func (raw Raw) Unmarshal(out interface{}) (err error) {
+	if len(raw.Data) == 0 {
+		return SetZero
+	}
 	defer handleErr(&err)
 	v := reflect.ValueOf(out)
 	switch v.Kind() {
