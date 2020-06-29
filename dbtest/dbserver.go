@@ -210,6 +210,7 @@ func (dbs *DBServer) GetContainerIpAddr() (string, error) {
 		}
 		ipAddr := strings.Trim(strings.TrimSpace(out.String()), "'")
 		dbs.hostname = ipAddr
+		log.Printf("Mongo IP address is %v", dbs.hostname)
 		if dbs.network == "" {
 			return "127.0.0.1", nil
 		} else {
