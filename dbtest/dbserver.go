@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -48,7 +49,7 @@ type DBServer struct {
 	debug         bool   // Log debug statements
 	containerName string // The container name, when running mgo within a container
 	tomb          tomb.Tomb
-	rsName		  string 		// ReplicaSet Name. If not empty- the mongod will be started as a Replica Set Server
+	rsName        string // ReplicaSet Name. If not empty- the mongod will be started as a Replica Set Server
 }
 
 // SetPath defines the path to the directory where the database files will be
@@ -112,8 +113,8 @@ func (dbs *DBServer) execContainer(network string, exposePort bool) *exec.Cmd {
 	// Error response from daemon: Get https://registry-1.docker.io/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
 	for time.Since(start) < 60*time.Second {
 		cmd := exec.Command("docker", args...)
+		log.Printf("Pulling Mongo docker image")
 		if dbs.debug {
-			fmt.Printf("[%s] Pulling Mongo docker image\n", time.Now().String())
 			cmd.Stdout = os.Stderr
 			cmd.Stderr = os.Stderr
 		}
@@ -121,16 +122,14 @@ func (dbs *DBServer) execContainer(network string, exposePort bool) *exec.Cmd {
 		if err == nil {
 			break
 		} else {
-			fmt.Printf("[%s] Failed to pull Mongo container image. err=%s", time.Now().String(), err.Error())
+			log.Printf("Failed to pull Mongo container image. err=%s", err.Error())
 			time.Sleep(5 * time.Second)
 		}
 	}
 	if err != nil {
 		panic(err)
 	}
-	if dbs.debug {
-		fmt.Printf("[%s] Pulled Mongo docker image\n", time.Now().String())
-	}
+	log.Printf("Pulled Mongo docker image")
 
 	args = []string{
 		"run",
@@ -153,7 +152,7 @@ func (dbs *DBServer) execContainer(network string, exposePort bool) *exec.Cmd {
 	}...)
 
 	if dbs.rsName != "" {
-		args =  append(args, []string{
+		args = append(args, []string{
 			"mongod",
 			"--replSet",
 			dbs.rsName,
@@ -193,7 +192,7 @@ func (dbs *DBServer) GetContainerIpAddr() (string, error) {
 	for time.Since(start) < 60*time.Second {
 		if dbs.server.ProcessState != nil {
 			// The process has exited
-			fmt.Printf("[%s] Mongo container has exited unexpectedly. Output:\n%s\n", time.Now().String(), dbs.output.String())
+			log.Printf("Mongo container has exited unexpectedly. Output:\n%s", dbs.output.String())
 			return "", fmt.Errorf("Process has exited")
 		}
 		stderr.Reset()
@@ -205,7 +204,7 @@ func (dbs *DBServer) GetContainerIpAddr() (string, error) {
 		err = cmd.Run()
 		if err != nil {
 			// This could be because the container has not started yet. Retry later
-			fmt.Printf("[%s] Failed to get container IP address. Will retry later.\n", time.Now().String())
+			log.Printf("Failed to get container IP address. Will retry later.")
 			time.Sleep(3 * time.Second)
 			continue
 		}
@@ -259,7 +258,7 @@ func (dbs *DBServer) execLocal(port int) *exec.Cmd {
 	}
 
 	if dbs.rsName != "" {
-		args =  append(args, []string{
+		args = append(args, []string{
 			"--replSet",
 			dbs.rsName,
 		}...)
@@ -268,6 +267,7 @@ func (dbs *DBServer) execLocal(port int) *exec.Cmd {
 }
 
 func (dbs *DBServer) start() {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Llongfile)
 	if dbs.server != nil {
 		panic("DBServer already started")
 	}
@@ -282,19 +282,19 @@ func (dbs *DBServer) start() {
 	addr := l.Addr().(*net.TCPAddr)
 	l.Close()
 
-  if dbs.containerName == "" {
-    // Generate a name for the container. This will help to inspect the container
-    // and get the Mongo PID.
-    u := make([]byte, 8)
-    // The default number generator is deterministic.
-    s := rand.NewSource(time.Now().UnixNano())
-    r := rand.New(s)
-    _, err = r.Read(u)
-    if err != nil {
-      panic(err)
-    }
-    dbs.containerName = fmt.Sprintf("mongo-%s", hex.EncodeToString(u))
-  }
+	if dbs.containerName == "" {
+		// Generate a name for the container. This will help to inspect the container
+		// and get the Mongo PID.
+		u := make([]byte, 8)
+		// The default number generator is deterministic.
+		s := rand.NewSource(time.Now().UnixNano())
+		r := rand.New(s)
+		_, err = r.Read(u)
+		if err != nil {
+			panic(err)
+		}
+		dbs.containerName = fmt.Sprintf("mongo-%s", hex.EncodeToString(u))
+	}
 
 	dbs.tomb = tomb.Tomb{}
 	switch dbs.eType {
@@ -309,20 +309,20 @@ func (dbs *DBServer) start() {
 	dbs.server.Stdout = &dbs.output
 	dbs.server.Stderr = &dbs.output
 	if dbs.debug {
-		fmt.Printf("[%s] Starting Mongo instance: %v. Address: %s. Network: '%s'\n", time.Now().String(), dbs.server.Args, dbs.hostPort, dbs.network)
+		log.Printf("Starting Mongo instance: %v. Address: %s. Network: '%s'", dbs.server.Args, dbs.hostPort, dbs.network)
 	}
 	err = dbs.server.Start()
 	if err != nil {
 		panic("Failed to start Mongo instance: " + err.Error())
 	}
 	if dbs.debug {
-		fmt.Printf("[%s] Mongo instance started\n", time.Now().String())
+		log.Printf("Mongo instance started")
 	}
 	go func() {
 		// Call Wait() so cmd.ProcessState is set after command has completed.
 		err = dbs.server.Wait()
 		if err != nil {
-			fmt.Printf("[%s] Command exited. Output:\n%s\n", time.Now().String(), dbs.output.String())
+			log.Printf("Command exited. Output:\n%s", dbs.output.String())
 		}
 	}()
 	if dbs.eType == Docker {
@@ -427,7 +427,7 @@ func (dbs *DBServer) SessionWithTimeout(timeout time.Duration) *mgo.Session {
 	if dbs.session == nil {
 		mgo.ResetStats()
 		var err error
-		fmt.Printf("[%s] Dialing mongod located at '%s'\n", time.Now().String(), dbs.hostPort)
+		log.Printf("Dialing mongod located at '%s'", dbs.hostPort)
 		// If The MongoDB Driver is Configured with ReplicaSet - (Then configure Replica Set first!)
 		// Directly Connect First - and then configure Replica Set!
 		if dbs.rsName != "" {
@@ -440,7 +440,7 @@ func (dbs *DBServer) SessionWithTimeout(timeout time.Duration) *mgo.Session {
 			}
 			err = dbs.Initiate()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Unable to Configure Replica Set '%s'. Timeout=%v, Error: %s\n", dbs.rsName,  dbs.hostPort, timeout, err.Error())
+				fmt.Fprintf(os.Stderr, "Unable to Configure Replica Set '%s'. Timeout=%v, Error: %s\n", dbs.rsName, dbs.hostPort, timeout, err.Error())
 				fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
 				dbs.printMongoDebugInfo()
 				panic(err)
@@ -498,7 +498,7 @@ func (dbs *DBServer) checkSessions() {
 // there is a session leak.
 func (dbs *DBServer) Wipe() {
 	if dbs.server == nil || dbs.session == nil {
-		fmt.Printf("[%s] Skip Wipe()\n", time.Now().String())
+		log.Printf("Skip Wipe()")
 		return
 	}
 	dbs.checkSessions()
@@ -517,7 +517,7 @@ func (dbs *DBServer) Wipe() {
 		switch name {
 		case "admin", "local", "config":
 		default:
-			fmt.Printf("Drop database '%s'\n", name)
+			log.Printf("Drop database '%s'", name)
 			err = session.DB(name).DropDatabase()
 			if err != nil {
 				panic(err)
@@ -645,8 +645,8 @@ type MemberStatus struct {
 
 	// State describes the current state of the member.
 	State MemberState `bson:"state"`
-
 }
+
 // doAttemptInitiate will attempt to initiate a mongodb replicaset with each of
 // the given configs, returning as soon as one config is successful.
 func doAttemptInitiate(monotonicSession *mgo.Session, cfg []Config) error {
@@ -698,4 +698,3 @@ func (state MemberState) String() string {
 	}
 	return memberStateStrings[state]
 }
-
