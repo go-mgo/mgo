@@ -158,7 +158,7 @@ func (dbs *DBServer) execContainer(network string, exposePort bool) *exec.Cmd {
 			dbs.rsName,
 		}...)
 	}
-	fmt.Println("DB start up arguments are: ", args)
+	log.Printf("DB start up arguments are: %v", args)
 	return exec.Command("docker", args...)
 }
 
@@ -204,7 +204,7 @@ func (dbs *DBServer) GetContainerIpAddr() (string, error) {
 		err = cmd.Run()
 		if err != nil {
 			// This could be because the container has not started yet. Retry later
-			log.Printf("Failed to get container IP address. Will retry later.")
+			log.Printf("Failed to get container IP address. Will retry later. Err: %v", err)
 			time.Sleep(3 * time.Second)
 			continue
 		}
@@ -216,7 +216,8 @@ func (dbs *DBServer) GetContainerIpAddr() (string, error) {
 			return dbs.hostname, err
 		}
 	}
-	return "", fmt.Errorf("[%s] Failed to run command. error=%s, stderr=%s\n", time.Now().String(), err.Error(), stderr.String())
+	log.Printf("Unable to get container IP address: %v", err)
+	return "", fmt.Errorf("Failed to run command. error=%s, stderr=%s\n", err.Error(), stderr.String())
 }
 
 // Stop the docker container running Mongo.
@@ -308,16 +309,12 @@ func (dbs *DBServer) start() {
 	}
 	dbs.server.Stdout = &dbs.output
 	dbs.server.Stderr = &dbs.output
-	if dbs.debug {
-		log.Printf("Starting Mongo instance: %v. Address: %s. Network: '%s'", dbs.server.Args, dbs.hostPort, dbs.network)
-	}
+	log.Printf("Starting Mongo instance: %v. Address: %s. Network: '%s'", dbs.server.Args, dbs.hostPort, dbs.network)
 	err = dbs.server.Start()
 	if err != nil {
 		panic("Failed to start Mongo instance: " + err.Error())
 	}
-	if dbs.debug {
-		log.Printf("Mongo instance started")
-	}
+	log.Printf("Mongo instance started")
 	go func() {
 		// Call Wait() so cmd.ProcessState is set after command has completed.
 		err = dbs.server.Wait()
@@ -427,21 +424,21 @@ func (dbs *DBServer) SessionWithTimeout(timeout time.Duration) *mgo.Session {
 	if dbs.session == nil {
 		mgo.ResetStats()
 		var err error
-		log.Printf("Dialing mongod located at '%s'", dbs.hostPort)
+		log.Printf("Dialing mongod located at '%s'. timeout: %v", dbs.hostPort, timeout)
 		// If The MongoDB Driver is Configured with ReplicaSet - (Then configure Replica Set first!)
 		// Directly Connect First - and then configure Replica Set!
 		if dbs.rsName != "" {
 			dbs.session, err = mgo.DialWithTimeout(dbs.hostPort+"/test?connect=direct", timeout)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "[%s] Unable to dial mongod located at '%s'. Timeout=%v, Error: %s\n", time.Now().String(), dbs.hostPort, timeout, err.Error())
-				fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
+				log.Printf("Unable to dial mongod located at '%s'. Timeout=%v, Error: %s", dbs.hostPort, timeout, err.Error())
+				log.Printf("%s", dbs.output.Bytes())
 				dbs.printMongoDebugInfo()
 				panic(err)
 			}
 			err = dbs.Initiate()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Unable to Configure Replica Set '%s'. Timeout=%v, Error: %s\n", dbs.rsName, dbs.hostPort, timeout, err.Error())
-				fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
+				log.Printf("Unable to Configure Replica Set '%s'. Timeout=%v, Error: %s", dbs.rsName, timeout, err.Error())
+				log.Printf("%s", dbs.output.Bytes())
 				dbs.printMongoDebugInfo()
 				panic(err)
 			}
@@ -450,8 +447,8 @@ func (dbs *DBServer) SessionWithTimeout(timeout time.Duration) *mgo.Session {
 		}
 		dbs.session, err = mgo.DialWithTimeout(dbs.hostPort+"/test", timeout)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[%s] Unable to dial mongod located at '%s'. Timeout=%v, Error: %s\n", time.Now().String(), dbs.hostPort, timeout, err.Error())
-			fmt.Fprintf(os.Stderr, "%s", dbs.output.Bytes())
+			log.Printf("Unable to dial mongod located at '%s'. Timeout=%v, Error: %s", dbs.hostPort, timeout, err.Error())
+			log.Printf("%s", dbs.output.Bytes())
 			dbs.printMongoDebugInfo()
 			panic(err)
 		}
@@ -588,7 +585,7 @@ func (dbs *DBServer) Initiate() error {
 		var status *Status
 		status, err = getCurrentStatus(monotonicSession)
 		if err != nil {
-			fmt.Println("Initiate: fetching replication status failed: %v", err)
+			log.Printf("Initiate: fetching replication status failed: %v", err)
 		}
 		if err != nil || len(status.Members) == 0 {
 			time.Sleep(500 * time.Millisecond)
@@ -653,7 +650,7 @@ func doAttemptInitiate(monotonicSession *mgo.Session, cfg []Config) error {
 	var err error
 	for _, c := range cfg {
 		if err = monotonicSession.Run(bson.D{{"replSetInitiate", c}}, nil); err != nil {
-			fmt.Println("Unsuccessful attempt to initiate replicaset: %v", err)
+			log.Printf("Unsuccessful attempt to initiate replicaset: %v", err)
 			continue
 		}
 		return nil
