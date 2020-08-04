@@ -2175,6 +2175,8 @@ type Pipe struct {
 	pipeline   interface{}
 	allowDisk  bool
 	batchSize  int
+	maxTimeMS  int64
+	collation  *Collation
 }
 
 type pipeCmd struct {
@@ -2183,6 +2185,8 @@ type pipeCmd struct {
 	Cursor    *pipeCmdCursor ",omitempty"
 	Explain   bool           ",omitempty"
 	AllowDisk bool           "allowDiskUse,omitempty"
+	MaxTimeMS int64          `bson:"maxTimeMS,omitempty"`
+	Collation *Collation     `bson:"collation,omitempty"`
 }
 
 type pipeCmdCursor struct {
@@ -2236,6 +2240,10 @@ func (p *Pipe) Iter() *Iter {
 		Pipeline:  p.pipeline,
 		AllowDisk: p.allowDisk,
 		Cursor:    &pipeCmdCursor{p.batchSize},
+		Collation: p.collation,
+	}
+	if p.maxTimeMS > 0 {
+		cmd.MaxTimeMS = p.maxTimeMS
 	}
 	err := c.Database.Run(cmd, &result)
 	if e, ok := err.(*QueryError); ok && e.Message == `unrecognized field "cursor` {
@@ -2371,6 +2379,30 @@ func (p *Pipe) AllowDiskUse() *Pipe {
 // The default batch size is defined by the database server.
 func (p *Pipe) Batch(n int) *Pipe {
 	p.batchSize = n
+	return p
+}
+
+// SetMaxTime sets the maximum amount of time to allow the query to run.
+//
+func (p *Pipe) SetMaxTime(d time.Duration) *Pipe {
+	p.maxTimeMS = int64(d / time.Millisecond)
+	return p
+}
+
+
+// Collation allows to specify language-specific rules for string comparison,
+// such as rules for lettercase and accent marks.
+// When specifying collation, the locale field is mandatory; all other collation
+// fields are optional
+//
+// Relevant documentation:
+//
+//      https://docs.mongodb.com/manual/reference/collation/
+//
+func (p *Pipe) Collation(collation *Collation) *Pipe {
+	if collation != nil {
+		p.collation = collation
+	}
 	return p
 }
 
@@ -2861,6 +2893,38 @@ func (q *Query) Sort(fields ...string) *Query {
 	return q
 }
 
+// Collation allows to specify language-specific rules for string comparison,
+// such as rules for lettercase and accent marks.
+// When specifying collation, the locale field is mandatory; all other collation
+// fields are optional
+//
+// For example, to perform a case and diacritic insensitive query:
+//
+//     var res []bson.M
+//     collation := &mgo.Collation{Locale: "en", Strength: 1}
+//     err = db.C("mycoll").Find(bson.M{"a": "a"}).Collation(collation).All(&res)
+//     if err != nil {
+//       return err
+//     }
+//
+// This query will match following documents:
+//
+//     {"a": "a"}
+//     {"a": "A"}
+//     {"a": "â"}
+//
+// Relevant documentation:
+//
+//      https://docs.mongodb.com/manual/reference/collation/
+//
+func (q *Query) Collation(collation *Collation) *Query {
+	q.m.Lock()
+	q.op.options.Collation = collation
+	q.op.hasOptions = true
+	q.m.Unlock()
+	return q
+}
+
 // Explain returns a number of details about how the MongoDB server would
 // execute the requested query, such as the number of objects examined,
 // the number of times the read lock was yielded to allow writes to go in,
@@ -3158,6 +3222,7 @@ func prepareFindOp(socket *mongoSocket, op *queryOp, limit int32) bool {
 		Sort:        op.options.OrderBy,
 		Skip:        op.skip,
 		Limit:       limit,
+		Collation:   op.options.Collation,
 		MaxTimeMS:   op.options.MaxTimeMS,
 		MaxScan:     op.options.MaxScan,
 		Hint:        op.options.Hint,
@@ -3225,6 +3290,7 @@ type findCmd struct {
 	OplogReplay         bool        `bson:"oplogReplay,omitempty"`
 	NoCursorTimeout     bool        `bson:"noCursorTimeout,omitempty"`
 	AllowPartialResults bool        `bson:"allowPartialResults,omitempty"`
+	Collation           *Collation  `bson:"collation,omitempty"`
 }
 
 // getMoreCmd holds the command used for requesting more query results on MongoDB 3.2+.
