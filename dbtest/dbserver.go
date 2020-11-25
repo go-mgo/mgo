@@ -102,7 +102,7 @@ func (dbs *DBServer) pullDockerImage(dockerImage string) {
 		dockerImage,
 	}
 	cmd := exec.Command("docker", args...)
-	err = cmd.Run()
+	err := cmd.Run()
 	if err == nil {
 		// The image is already present locally.
 		// Do not invoke docker pull because:
@@ -114,7 +114,7 @@ func (dbs *DBServer) pullDockerImage(dockerImage string) {
 	// It may take a long time to download the mongo image if the docker image is not installed.
 	// Execute 'docker pull' now to pull the image before executing it. Otherwise Dial() may fail
 	// with a timeout after 10 seconds.
-	args := []string{
+	args = []string{
 		"pull",
 		dockerImage,
 	}
@@ -127,8 +127,8 @@ func (dbs *DBServer) pullDockerImage(dockerImage string) {
 		cmd := exec.Command("docker", args...)
 		log.Printf("Pulling Mongo docker image %s", dockerImage)
 		if dbs.debug {
-			cmd.Stdout = stdout
-			cmd.Stderr = stderr
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
 		}
 		err = cmd.Run()
 		if err == nil {
@@ -155,7 +155,7 @@ func (dbs *DBServer) execContainer(network string, exposePort bool) *exec.Cmd {
 	dockerImage := fmt.Sprintf("mongo:%s", dbs.version)
 	dbs.pullDockerImage(dockerImage)
 
-	args = []string{
+	args := []string{
 		"run",
 		"-t",
 		"--rm", // Automatically remove the container when it exits
