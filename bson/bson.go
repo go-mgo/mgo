@@ -34,6 +34,7 @@ package bson
 
 import (
 	"bytes"
+	"context"
 	"crypto/md5"
 	"encoding/binary"
 	"encoding/hex"
@@ -60,6 +61,10 @@ import (
 // will stop and error out with the provided value.
 type Getter interface {
 	GetBSON() (interface{}, error)
+}
+
+type GetterCtx interface {
+	GetBSONWithContext(context.Context) (interface{}, error)
 }
 
 // A value implementing the bson.Setter interface will receive the BSON
@@ -91,6 +96,10 @@ type Getter interface {
 //
 type Setter interface {
 	SetBSON(raw Raw) error
+}
+
+type SetterCtx interface {
+	SetBSONWithContext(ctx context.Context, raw Raw) error
 }
 
 // SetZero may be returned from a SetBSON method to have the value set to
@@ -501,11 +510,15 @@ func handleErr(err *error) {
 //         F int64  "myf,omitempty,minsize"
 //     }
 //
-func Marshal(in interface{}) (out []byte, err error) {
+func MarshalWithContext(ctx context.Context, in interface{}) (out []byte, err error) {
 	defer handleErr(&err)
 	e := &encoder{make([]byte, 0, initialBufferSize)}
-	e.addDoc(reflect.ValueOf(in))
+	e.addDoc(ctx, reflect.ValueOf(in))
 	return e.out, nil
+}
+
+func Marshal(in interface{}) (out []byte, err error) {
+	return MarshalWithContext(context.TODO(), in)
 }
 
 // Unmarshal deserializes data from in into the out value.  The out value
@@ -543,7 +556,7 @@ func Marshal(in interface{}) (out []byte, err error) {
 // silently skipped.
 //
 // Pointer values are initialized when necessary.
-func Unmarshal(in []byte, out interface{}) (err error) {
+func UnmarshalWithContext(ctx context.Context, in []byte, out interface{}) (err error) {
 	if raw, ok := out.(*Raw); ok {
 		raw.Kind = 3
 		raw.Data = in
@@ -556,7 +569,7 @@ func Unmarshal(in []byte, out interface{}) (err error) {
 		fallthrough
 	case reflect.Map:
 		d := newDecoder(in)
-		d.readDocTo(v)
+		d.readDocTo(ctx, v)
 	case reflect.Struct:
 		return errors.New("Unmarshal can't deal with struct values. Use a pointer.")
 	default:
@@ -565,12 +578,16 @@ func Unmarshal(in []byte, out interface{}) (err error) {
 	return nil
 }
 
+func Unmarshal(in []byte, out interface{}) (err error) {
+	return UnmarshalWithContext(context.TODO(), in, out)
+}
+
 // Unmarshal deserializes raw into the out value.  If the out value type
 // is not compatible with raw, a *bson.TypeError is returned.
 //
 // See the Unmarshal function documentation for more details on the
 // unmarshalling process.
-func (raw Raw) Unmarshal(out interface{}) (err error) {
+func (raw Raw) UnmarshalWithContext(ctx context.Context, out interface{}) (err error) {
 	defer handleErr(&err)
 	v := reflect.ValueOf(out)
 	switch v.Kind() {
@@ -579,7 +596,7 @@ func (raw Raw) Unmarshal(out interface{}) (err error) {
 		fallthrough
 	case reflect.Map:
 		d := newDecoder(raw.Data)
-		good := d.readElemTo(v, raw.Kind)
+		good := d.readElemTo(ctx, v, raw.Kind)
 		if !good {
 			return &TypeError{v.Type(), raw.Kind}
 		}
@@ -589,6 +606,10 @@ func (raw Raw) Unmarshal(out interface{}) (err error) {
 		return errors.New("Raw Unmarshal needs a map or a valid pointer.")
 	}
 	return nil
+}
+
+func (raw Raw) Unmarshal(out interface{}) (err error) {
+	return raw.UnmarshalWithContext(context.TODO(), out)
 }
 
 type TypeError struct {

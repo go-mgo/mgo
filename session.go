@@ -1011,7 +1011,7 @@ type indexSpec struct {
 	DefaultLanguage  string  "default_language,omitempty"
 	LanguageOverride string  "language_override,omitempty"
 	TextIndexVersion int     "textIndexVersion,omitempty"
-
+	PartialFilterExpression  bson.M "partialFilterExpression,omitempty"
 	Collation *Collation "collation,omitempty"
 }
 
@@ -1021,6 +1021,7 @@ type Index struct {
 	DropDups   bool     // Drop documents with the same index key as a previously indexed one
 	Background bool     // Build index in background and return immediately
 	Sparse     bool     // Only index documents containing the Key fields
+	PartialFilterExpression bson.M //If specified, the index only references documents that match the filter expression
 
 	// If ExpireAfter is defined the server will periodically delete
 	// documents with indexed time.Time older than the provided delta.
@@ -1284,6 +1285,7 @@ func (c *Collection) EnsureIndex(index Index) error {
 		DropDups:         index.DropDups,
 		Background:       index.Background,
 		Sparse:           index.Sparse,
+		PartialFilterExpression: index.PartialFilterExpression,
 		Bits:             index.Bits,
 		Min:              index.Minf,
 		Max:              index.Maxf,
@@ -1494,20 +1496,21 @@ func (c *Collection) Indexes() (indexes []Index, err error) {
 
 func indexFromSpec(spec indexSpec) Index {
 	index := Index{
-		Name:             spec.Name,
-		Key:              simpleIndexKey(spec.Key),
-		Unique:           spec.Unique,
-		DropDups:         spec.DropDups,
-		Background:       spec.Background,
-		Sparse:           spec.Sparse,
-		Minf:             spec.Min,
-		Maxf:             spec.Max,
-		Bits:             spec.Bits,
-		BucketSize:       spec.BucketSize,
-		DefaultLanguage:  spec.DefaultLanguage,
-		LanguageOverride: spec.LanguageOverride,
-		ExpireAfter:      time.Duration(spec.ExpireAfter) * time.Second,
-		Collation:        spec.Collation,
+		Name:                    spec.Name,
+		Key:                     simpleIndexKey(spec.Key),
+		Unique:                  spec.Unique,
+		DropDups:                spec.DropDups,
+		Background:              spec.Background,
+		Sparse:                  spec.Sparse,
+		Minf:                    spec.Min,
+		Maxf:                    spec.Max,
+		Bits:                    spec.Bits,
+		BucketSize:              spec.BucketSize,
+		DefaultLanguage:         spec.DefaultLanguage,
+		LanguageOverride:        spec.LanguageOverride,
+		ExpireAfter:             time.Duration(spec.ExpireAfter) * time.Second,
+		Collation:               spec.Collation,
+		PartialFilterExpression: spec.PartialFilterExpression,
 	}
 	if float64(int(spec.Min)) == spec.Min && float64(int(spec.Max)) == spec.Max {
 		index.Min = int(spec.Min)
@@ -2172,6 +2175,8 @@ type Pipe struct {
 	pipeline   interface{}
 	allowDisk  bool
 	batchSize  int
+	maxTimeMS  int64
+	collation  *Collation
 }
 
 type pipeCmd struct {
@@ -2180,6 +2185,8 @@ type pipeCmd struct {
 	Cursor    *pipeCmdCursor ",omitempty"
 	Explain   bool           ",omitempty"
 	AllowDisk bool           "allowDiskUse,omitempty"
+	MaxTimeMS int64          `bson:"maxTimeMS,omitempty"`
+	Collation *Collation     `bson:"collation,omitempty"`
 }
 
 type pipeCmdCursor struct {
@@ -2233,6 +2240,10 @@ func (p *Pipe) Iter() *Iter {
 		Pipeline:  p.pipeline,
 		AllowDisk: p.allowDisk,
 		Cursor:    &pipeCmdCursor{p.batchSize},
+		Collation: p.collation,
+	}
+	if p.maxTimeMS > 0 {
+		cmd.MaxTimeMS = p.maxTimeMS
 	}
 	err := c.Database.Run(cmd, &result)
 	if e, ok := err.(*QueryError); ok && e.Message == `unrecognized field "cursor` {
@@ -2368,6 +2379,30 @@ func (p *Pipe) AllowDiskUse() *Pipe {
 // The default batch size is defined by the database server.
 func (p *Pipe) Batch(n int) *Pipe {
 	p.batchSize = n
+	return p
+}
+
+// SetMaxTime sets the maximum amount of time to allow the query to run.
+//
+func (p *Pipe) SetMaxTime(d time.Duration) *Pipe {
+	p.maxTimeMS = int64(d / time.Millisecond)
+	return p
+}
+
+
+// Collation allows to specify language-specific rules for string comparison,
+// such as rules for lettercase and accent marks.
+// When specifying collation, the locale field is mandatory; all other collation
+// fields are optional
+//
+// Relevant documentation:
+//
+//      https://docs.mongodb.com/manual/reference/collation/
+//
+func (p *Pipe) Collation(collation *Collation) *Pipe {
+	if collation != nil {
+		p.collation = collation
+	}
 	return p
 }
 
@@ -2858,6 +2893,38 @@ func (q *Query) Sort(fields ...string) *Query {
 	return q
 }
 
+// Collation allows to specify language-specific rules for string comparison,
+// such as rules for lettercase and accent marks.
+// When specifying collation, the locale field is mandatory; all other collation
+// fields are optional
+//
+// For example, to perform a case and diacritic insensitive query:
+//
+//     var res []bson.M
+//     collation := &mgo.Collation{Locale: "en", Strength: 1}
+//     err = db.C("mycoll").Find(bson.M{"a": "a"}).Collation(collation).All(&res)
+//     if err != nil {
+//       return err
+//     }
+//
+// This query will match following documents:
+//
+//     {"a": "a"}
+//     {"a": "A"}
+//     {"a": "â"}
+//
+// Relevant documentation:
+//
+//      https://docs.mongodb.com/manual/reference/collation/
+//
+func (q *Query) Collation(collation *Collation) *Query {
+	q.m.Lock()
+	q.op.options.Collation = collation
+	q.op.hasOptions = true
+	q.m.Unlock()
+	return q
+}
+
 // Explain returns a number of details about how the MongoDB server would
 // execute the requested query, such as the number of objects examined,
 // the number of times the read lock was yielded to allow writes to go in,
@@ -3155,6 +3222,7 @@ func prepareFindOp(socket *mongoSocket, op *queryOp, limit int32) bool {
 		Sort:        op.options.OrderBy,
 		Skip:        op.skip,
 		Limit:       limit,
+		Collation:   op.options.Collation,
 		MaxTimeMS:   op.options.MaxTimeMS,
 		MaxScan:     op.options.MaxScan,
 		Hint:        op.options.Hint,
@@ -3222,6 +3290,7 @@ type findCmd struct {
 	OplogReplay         bool        `bson:"oplogReplay,omitempty"`
 	NoCursorTimeout     bool        `bson:"noCursorTimeout,omitempty"`
 	AllowPartialResults bool        `bson:"allowPartialResults,omitempty"`
+	Collation           *Collation  `bson:"collation,omitempty"`
 }
 
 // getMoreCmd holds the command used for requesting more query results on MongoDB 3.2+.
@@ -4613,6 +4682,7 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 
 	if socket.ServerInfo().MaxWireVersion >= 2 {
 		// Servers with a more recent write protocol benefit from write commands.
+		inputOp := op
 		if op, ok := op.(*insertOp); ok && len(op.documents) > 1000 {
 			var lerr LastError
 
@@ -4635,6 +4705,54 @@ func (c *Collection) writeOp(op interface{}, ordered bool) (lerr *LastError, err
 					if op.flags&1 == 0 {
 						return &lerr, err
 					}
+				}
+			}
+			if len(lerr.ecases) != 0 {
+				return &lerr, lerr.ecases[0].Err
+			}
+			return &lerr, nil
+		} else if updateOps, ok := inputOp.(bulkUpdateOp); ok && len(updateOps) > 1000 {
+			var lerr LastError
+			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
+			all := updateOps
+			for i := 0; i < len(all); i += 1000 {
+				l := i + 1000
+				if l > len(all) {
+					l = len(all)
+				}
+				updateOps = all[i:l]
+				oplerr, err := c.writeOpCommand(socket, safeOp, updateOps, ordered, bypassValidation)
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
+				if err != nil {
+					for ei := range oplerr.ecases {
+						oplerr.ecases[ei].Index += i
+					}
+					lerr.ecases = append(lerr.ecases, oplerr.ecases...)
+				}
+			}
+			if len(lerr.ecases) != 0 {
+				return &lerr, lerr.ecases[0].Err
+			}
+			return &lerr, nil
+		} else if deleteOps, ok := inputOp.(bulkDeleteOp); ok && len(deleteOps) > 1000 {
+			var lerr LastError
+			// Maximum batch size is 1000. Must split out in separate operations for compatibility.
+			all := deleteOps
+			for i := 0; i < len(all); i += 1000 {
+				l := i + 1000
+				if l > len(all) {
+					l = len(all)
+				}
+				deleteOps = all[i:l]
+				oplerr, err := c.writeOpCommand(socket, safeOp, deleteOps, ordered, bypassValidation)
+				lerr.N += oplerr.N
+				lerr.modified += oplerr.modified
+				if err != nil {
+					for ei := range oplerr.ecases {
+						oplerr.ecases[ei].Index += i
+					}
+					lerr.ecases = append(lerr.ecases, oplerr.ecases...)
 				}
 			}
 			if len(lerr.ecases) != 0 {

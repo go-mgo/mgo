@@ -91,6 +91,7 @@ type queryWrapper struct {
 	MaxScan        int         "$maxScan,omitempty"
 	MaxTimeMS      int         "$maxTimeMS,omitempty"
 	Comment        string      "$comment,omitempty"
+	Collation      *Collation  `bson:"$collation,omitempty"`
 }
 
 func (op *queryOp) finalQuery(socket *mongoSocket) interface{} {
