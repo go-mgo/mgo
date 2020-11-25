@@ -119,7 +119,6 @@ func (dbs *DBServer) pullDockerImage(dockerImage string) {
 		dockerImage,
 	}
 	start := time.Now()
-	var err error
 	var stdout, stderr bytes.Buffer
 	// Seeing intermittent issues such as:
 	// Error response from daemon: Get https://registry-1.docker.io/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
