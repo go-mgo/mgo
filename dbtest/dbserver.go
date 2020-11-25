@@ -108,6 +108,7 @@ func (dbs *DBServer) pullDockerImage(dockerImage string) {
 		// Do not invoke docker pull because:
 		// 1. Every network operations counts towards the dockerhub API rate limiting.
 		// 2. Reduce the chance of intermittent network issues.
+		log.Printf("Docker image '%s' is already present in the local registry", dockerImage)
 		return
 	}
 
