@@ -94,35 +94,48 @@ func (dbs *DBServer) SetContainerName(containerName string) {
 	dbs.containerName = containerName
 }
 
-// Start Mongo DB within Docker container on host.
-// It assumes Docker is already installed.
-func (dbs *DBServer) execContainer(network string, exposePort bool) *exec.Cmd {
-	if dbs.version == "" {
-		dbs.version = "latest"
+func (dbs *DBServer) pullDockerImage(dockerImage string) {
+	// Check if the docker image exists in the local registry.
+	args := []string{
+		"images",
+		"-q",
+		dockerImage,
 	}
+	cmd := exec.Command("docker", args...)
+	err := cmd.Run()
+	if err == nil {
+		// The image is already present locally.
+		// Do not invoke docker pull because:
+		// 1. Every network operations counts towards the dockerhub API rate limiting.
+		// 2. Reduce the chance of intermittent network issues.
+		log.Printf("Docker image '%s' is already present in the local registry", dockerImage)
+		return
+	}
+
 	// It may take a long time to download the mongo image if the docker image is not installed.
 	// Execute 'docker pull' now to pull the image before executing it. Otherwise Dial() may fail
 	// with a timeout after 10 seconds.
-	args := []string{
+	args = []string{
 		"pull",
-		fmt.Sprintf("mongo:%s", dbs.version),
+		dockerImage,
 	}
 	start := time.Now()
-	var err error
+	var stdout, stderr bytes.Buffer
 	// Seeing intermittent issues such as:
 	// Error response from daemon: Get https://registry-1.docker.io/v2/: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
 	for time.Since(start) < 60*time.Second {
 		cmd := exec.Command("docker", args...)
-		log.Printf("Pulling Mongo docker image")
+		log.Printf("Pulling Mongo docker image %s", dockerImage)
 		if dbs.debug {
-			cmd.Stdout = os.Stderr
-			cmd.Stderr = os.Stderr
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
 		}
 		err = cmd.Run()
 		if err == nil {
 			break
 		} else {
-			log.Printf("Failed to pull Mongo container image. err=%s", err.Error())
+			log.Printf("Failed to pull Mongo container image. err=%s\n%s\n%s",
+				err.Error(), stdout.String(), stderr.String())
 			time.Sleep(5 * time.Second)
 		}
 	}
@@ -130,8 +143,19 @@ func (dbs *DBServer) execContainer(network string, exposePort bool) *exec.Cmd {
 		panic(err)
 	}
 	log.Printf("Pulled Mongo docker image")
+}
 
-	args = []string{
+// Start Mongo DB within Docker container on host.
+// It assumes Docker is already installed.
+func (dbs *DBServer) execContainer(network string, exposePort bool) *exec.Cmd {
+	if dbs.version == "" {
+		dbs.version = "latest"
+	}
+
+	dockerImage := fmt.Sprintf("mongo:%s", dbs.version)
+	dbs.pullDockerImage(dockerImage)
+
+	args := []string{
 		"run",
 		"-t",
 		"--rm", // Automatically remove the container when it exits
