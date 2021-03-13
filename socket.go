@@ -53,6 +53,7 @@ type mongoSocket struct {
 	gotNonce      sync.Cond
 	dead          error
 	serverInfo    *mongoServerInfo
+	writeLock     sync.Mutex
 }
 
 type queryOpFlags uint32
@@ -522,7 +523,27 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 	stats.sentOps(len(ops))
 
 	socket.updateDeadline(writeDeadline)
-	_, err = socket.conn.Write(buf)
+	socket.Unlock()
+
+	bufLen := len(buf)
+	writeCount := 0
+	socket.writeLock.Lock()
+	for writeCount < bufLen {
+		n, err := socket.conn.Write(buf[writeCount:])
+		if err != nil {
+			socket.writeLock.Unlock()
+			socket.Lock()
+			if !wasWaiting && requestCount > 0 {
+				socket.updateDeadline(readDeadline)
+			}
+			socket.Unlock()
+			return err
+		}
+		writeCount += n
+	}
+	socket.writeLock.Unlock()
+
+	socket.Lock()
 	if !wasWaiting && requestCount > 0 {
 		socket.updateDeadline(readDeadline)
 	}
