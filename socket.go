@@ -532,22 +532,22 @@ func (socket *mongoSocket) Query(ops ...interface{}) (err error) {
 		n, err := socket.conn.Write(buf[writeCount:])
 		if err != nil {
 			socket.writeLock.Unlock()
-			socket.Lock()
 			if !wasWaiting && requestCount > 0 {
+				socket.Lock()
 				socket.updateDeadline(readDeadline)
+				socket.Unlock()
 			}
-			socket.Unlock()
 			return err
 		}
 		writeCount += n
 	}
 	socket.writeLock.Unlock()
 
-	socket.Lock()
 	if !wasWaiting && requestCount > 0 {
+		socket.Lock()
 		socket.updateDeadline(readDeadline)
+		socket.Unlock()
 	}
-	socket.Unlock()
 	return err
 }
 
