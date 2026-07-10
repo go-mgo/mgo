@@ -124,32 +124,31 @@ func finalizeFile(file *GridFile) {
 //
 // A simple example inserting a new file:
 //
-//     func check(err error) {
-//         if err != nil {
-//             panic(err.String())
-//         }
-//     }
-//     file, err := db.GridFS("fs").Create("myfile.txt")
-//     check(err)
-//     n, err := file.Write([]byte("Hello world!"))
-//     check(err)
-//     err = file.Close()
-//     check(err)
-//     fmt.Printf("%d bytes written\n", n)
+//	func check(err error) {
+//	    if err != nil {
+//	        panic(err.String())
+//	    }
+//	}
+//	file, err := db.GridFS("fs").Create("myfile.txt")
+//	check(err)
+//	n, err := file.Write([]byte("Hello world!"))
+//	check(err)
+//	err = file.Close()
+//	check(err)
+//	fmt.Printf("%d bytes written\n", n)
 //
 // The io.Writer interface is implemented by *GridFile and may be used to
 // help on the file creation.  For example:
 //
-//     file, err := db.GridFS("fs").Create("myfile.txt")
-//     check(err)
-//     messages, err := os.Open("/var/log/messages")
-//     check(err)
-//     defer messages.Close()
-//     err = io.Copy(file, messages)
-//     check(err)
-//     err = file.Close()
-//     check(err)
-//
+//	file, err := db.GridFS("fs").Create("myfile.txt")
+//	check(err)
+//	messages, err := os.Open("/var/log/messages")
+//	check(err)
+//	defer messages.Close()
+//	err = io.Copy(file, messages)
+//	check(err)
+//	err = file.Close()
+//	check(err)
 func (gfs *GridFS) Create(name string) (file *GridFile, err error) {
 	file = gfs.newFile()
 	file.mode = gfsWriting
@@ -167,33 +166,32 @@ func (gfs *GridFS) Create(name string) (file *GridFile, err error) {
 //
 // The following example will print the first 8192 bytes from the file:
 //
-//     func check(err error) {
-//         if err != nil {
-//             panic(err.String())
-//         }
-//     }
-//     file, err := db.GridFS("fs").OpenId(objid)
-//     check(err)
-//     b := make([]byte, 8192)
-//     n, err := file.Read(b)
-//     check(err)
-//     fmt.Println(string(b))
-//     check(err)
-//     err = file.Close()
-//     check(err)
-//     fmt.Printf("%d bytes read\n", n)
+//	func check(err error) {
+//	    if err != nil {
+//	        panic(err.String())
+//	    }
+//	}
+//	file, err := db.GridFS("fs").OpenId(objid)
+//	check(err)
+//	b := make([]byte, 8192)
+//	n, err := file.Read(b)
+//	check(err)
+//	fmt.Println(string(b))
+//	check(err)
+//	err = file.Close()
+//	check(err)
+//	fmt.Printf("%d bytes read\n", n)
 //
 // The io.Reader interface is implemented by *GridFile and may be used to
 // deal with it.  As an example, the following snippet will dump the whole
 // file into the standard output:
 //
-//     file, err := db.GridFS("fs").OpenId(objid)
-//     check(err)
-//     err = io.Copy(os.Stdout, file)
-//     check(err)
-//     err = file.Close()
-//     check(err)
-//
+//	file, err := db.GridFS("fs").OpenId(objid)
+//	check(err)
+//	err = io.Copy(os.Stdout, file)
+//	check(err)
+//	err = file.Close()
+//	check(err)
 func (gfs *GridFS) OpenId(id interface{}) (file *GridFile, err error) {
 	var doc gfsFile
 	err = gfs.Files.Find(bson.M{"_id": id}).One(&doc)
@@ -216,28 +214,27 @@ func (gfs *GridFS) OpenId(id interface{}) (file *GridFile, err error) {
 //
 // The following example will print the first 8192 bytes from the file:
 //
-//     file, err := db.GridFS("fs").Open("myfile.txt")
-//     check(err)
-//     b := make([]byte, 8192)
-//     n, err := file.Read(b)
-//     check(err)
-//     fmt.Println(string(b))
-//     check(err)
-//     err = file.Close()
-//     check(err)
-//     fmt.Printf("%d bytes read\n", n)
+//	file, err := db.GridFS("fs").Open("myfile.txt")
+//	check(err)
+//	b := make([]byte, 8192)
+//	n, err := file.Read(b)
+//	check(err)
+//	fmt.Println(string(b))
+//	check(err)
+//	err = file.Close()
+//	check(err)
+//	fmt.Printf("%d bytes read\n", n)
 //
 // The io.Reader interface is implemented by *GridFile and may be used to
 // deal with it.  As an example, the following snippet will dump the whole
 // file into the standard output:
 //
-//     file, err := db.GridFS("fs").Open("myfile.txt")
-//     check(err)
-//     err = io.Copy(os.Stdout, file)
-//     check(err)
-//     err = file.Close()
-//     check(err)
-//
+//	file, err := db.GridFS("fs").Open("myfile.txt")
+//	check(err)
+//	err = io.Copy(os.Stdout, file)
+//	check(err)
+//	err = file.Close()
+//	check(err)
 func (gfs *GridFS) Open(name string) (file *GridFile, err error) {
 	var doc gfsFile
 	err = gfs.Files.Find(bson.M{"filename": name}).Sort("-uploadDate").One(&doc)
@@ -266,17 +263,16 @@ func (gfs *GridFS) Open(name string) (file *GridFile, err error) {
 //
 // For example:
 //
-//     gfs := db.GridFS("fs")
-//     query := gfs.Find(nil).Sort("filename")
-//     iter := query.Iter()
-//     var f *mgo.GridFile
-//     for gfs.OpenNext(iter, &f) {
-//         fmt.Printf("Filename: %s\n", f.Name())
-//     }
-//     if iter.Close() != nil {
-//         panic(iter.Close())
-//     }
-//
+//	gfs := db.GridFS("fs")
+//	query := gfs.Find(nil).Sort("filename")
+//	iter := query.Iter()
+//	var f *mgo.GridFile
+//	for gfs.OpenNext(iter, &f) {
+//	    fmt.Printf("Filename: %s\n", f.Name())
+//	}
+//	if iter.Close() != nil {
+//	    panic(iter.Close())
+//	}
 func (gfs *GridFS) OpenNext(iter *Iter, file **GridFile) bool {
 	if *file != nil {
 		// Ignoring the error here shouldn't be a big deal
@@ -301,14 +297,13 @@ func (gfs *GridFS) OpenNext(iter *Iter, file **GridFile) bool {
 //
 // This logic:
 //
-//     gfs := db.GridFS("fs")
-//     iter := gfs.Find(nil).Iter()
+//	gfs := db.GridFS("fs")
+//	iter := gfs.Find(nil).Iter()
 //
 // Is equivalent to:
 //
-//     files := db.C("fs" + ".files")
-//     iter := files.Find(nil).Iter()
-//
+//	files := db.C("fs" + ".files")
+//	iter := files.Find(nil).Iter()
 func (gfs *GridFS) Find(query interface{}) *Query {
 	return gfs.Files.Find(query)
 }
@@ -427,13 +422,12 @@ func (file *GridFile) SetContentType(ctype string) {
 // file into the result parameter. The meaning of keys under that field
 // is user-defined. For example:
 //
-//     result := struct{ INode int }{}
-//     err = file.GetMeta(&result)
-//     if err != nil {
-//         panic(err.String())
-//     }
-//     fmt.Printf("inode: %d\n", result.INode)
-//
+//	result := struct{ INode int }{}
+//	err = file.GetMeta(&result)
+//	if err != nil {
+//	    panic(err.String())
+//	}
+//	fmt.Printf("inode: %d\n", result.INode)
 func (file *GridFile) GetMeta(result interface{}) (err error) {
 	file.m.Lock()
 	if file.doc.Metadata != nil {
@@ -447,7 +441,7 @@ func (file *GridFile) GetMeta(result interface{}) (err error) {
 // file. The meaning of keys under that field is user-defined.
 // For example:
 //
-//     file.SetMeta(bson.M{"inode": inode})
+//	file.SetMeta(bson.M{"inode": inode})
 //
 // It is a runtime error to call this function when the file is not open
 // for writing.
@@ -657,7 +651,7 @@ func (file *GridFile) insertChunk(data []byte) {
 // an error, if any.
 func (file *GridFile) Seek(offset int64, whence int) (pos int64, err error) {
 	file.m.Lock()
-	debugf("GridFile %p: seeking for %s (whence=%d)", file, offset, whence)
+	debugf("GridFile %p: seeking for %d (whence=%d)", file, offset, whence)
 	defer file.m.Unlock()
 	switch whence {
 	case os.SEEK_SET:

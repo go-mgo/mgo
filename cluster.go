@@ -129,23 +129,40 @@ func (cluster *mongoCluster) removeServer(server *mongoServer) {
 }
 
 type isMasterResult struct {
-	IsMaster       bool
-	Secondary      bool
-	Primary        string
-	Hosts          []string
-	Passives       []string
-	Tags           bson.D
-	Msg            string
-	SetName        string `bson:"setName"`
-	MaxWireVersion int    `bson:"maxWireVersion"`
+	IsMaster           bool
+	IsWritablePrimary  bool `bson:"isWritablePrimary"`
+	Secondary          bool
+	Primary            string
+	Hosts              []string
+	Passives           []string
+	Tags               bson.D
+	Msg                string
+	SetName            string   `bson:"setName"`
+	MaxWireVersion     int      `bson:"maxWireVersion"`
+	SaslSupportedMechs []string `bson:"saslSupportedMechs"`
+}
+
+func (result *isMasterResult) normalize() {
+	if !result.IsMaster && result.IsWritablePrimary {
+		result.IsMaster = true
+	}
+	if result.IsMaster && !result.IsWritablePrimary {
+		result.IsWritablePrimary = true
+	}
 }
 
 func (cluster *mongoCluster) isMaster(socket *mongoSocket, result *isMasterResult) error {
 	// Monotonic let's it talk to a slave and still hold the socket.
 	session := newSession(Monotonic, cluster, 10*time.Second)
 	session.setSocket(socket)
-	err := session.Run("ismaster", result)
+	err := session.Run("hello", result)
+	if isNoCmd(err) {
+		err = session.Run("ismaster", result)
+	}
 	session.Close()
+	if err == nil {
+		result.normalize()
+	}
 	return err
 }
 
